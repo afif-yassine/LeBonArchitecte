@@ -4,11 +4,15 @@ import { join } from 'node:path';
 import { openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
-import { tickets as seedTickets } from '../src/mock/data.ts';
+import { simulateRun } from './simulate.ts';
+import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
+// Dossier de chaque vrai projet. Les projets d'exemple n'en ont pas.
+const PROJECT_DIRS: Record<string, string> = { lba: process.cwd() };
 const engine = new Engine(openDb(join(process.cwd(), '.lba', 'lba.db')));
-if (engine.isEmpty()) engine.seed(seedTickets); // premier démarrage : tickets de démonstration
+if (engine.isEmpty()) engine.seed(seedTickets, humanActions); // premier démarrage : tickets de démonstration
+else engine.seedActionsOnce(humanActions);
 
 const app = Fastify({ logger: false });
 
@@ -27,17 +31,36 @@ app.get('/api/tickets', async () => engine.tickets());
 app.get<Id>('/api/projects/:id/events', async (req) => engine.events({ project: req.params.id }));
 app.get<Id>('/api/tickets/:id/events', async (req) => engine.events({ ticket: req.params.id }));
 app.get('/api/pilot', async () => engine.pilot());
+app.get('/api/actions', async () => engine.actions());
+app.post<Id & { Body: { label?: string } }>('/api/actions/:id/resolve', async (req) => ({ message: engine.resolveAction(req.params.id, req.body?.label ?? 'Fait') }));
+app.post<Id & { Body: { dir?: -1 | 1 | 'tete' } }>('/api/tickets/:id/priority', async (req) => ({ message: engine.reorder(req.params.id, req.body?.dir ?? 'tete') }));
 app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => engine.setPilot(req.body as never));
 
 app.post<Id & { Body: { replace?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
 app.post<Id>('/api/tickets/:id/validate', async (req) => ({ message: engine.validate(req.params.id) }));
 app.post<Id & { Body: { problem?: string } }>('/api/tickets/:id/reject', async (req) => ({ message: engine.reject(req.params.id, req.body?.problem ?? '') }));
-// Démonstration tant que les adaptateurs ne sont pas branchés (J2-J3) : simule la fin d'un agent.
-app.post<Id & { Body: { result?: 'ok' | 'tests-ko' } }>('/api/tickets/:id/simulate-done', async (req) => {
-  const ok = req.body?.result !== 'tests-ko';
-  return { message: engine.agentDone(req.params.id, { criteriaOk: ok, checks: { 'Critères tenus': ok ? 'ok' : 'echec', 'Tests verts': ok ? 'ok' : 'echec', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } }) };
+app.post<Id & { Body: { command?: string } }>('/api/tickets/:id/run', async (req) => {
+  const t = engine.ticket(req.params.id);
+  const dir = PROJECT_DIRS[t.projectId];
+  if (!dir) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC : rien à exécuter.');
+  const r = await engine.run(t.id, req.body?.command ?? '', dir, 'vous');
+  const first = r.summary.split('\n')[0];
+  return { message: r.ok ? `Commande terminée : ${first}` : `Commande en échec : ${first}`, result: r };
 });
+app.post<{ Params: { id: string; step: string }; Body: { command?: string; evidence?: string; who?: string } }>('/api/tickets/:id/steps/:step/prove', async (req) => {
+  const t = engine.ticket(req.params.id);
+  return { message: await engine.proveStep(t.id, req.params.step, { ...req.body, cwd: PROJECT_DIRS[t.projectId] }, req.body?.who ?? 'agent') };
+});
+app.post<Id & { Body: { who?: string } }>('/api/tickets/:id/agent-done', async (req) => {
+  const ok = { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } as const;
+  return { message: engine.agentDone(req.params.id, { criteriaOk: true, checks: ok }) };
+});
+app.get<Id>('/api/tickets/:id/live', async (req) => engine.liveFeed(req.params.id));
+app.post<Id>('/api/tickets/:id/plan/validate', async (req) => ({ message: engine.validatePlan(req.params.id) }));
+app.post<Id & { Body: { text?: string } }>('/api/tickets/:id/message', async (req) => ({ message: engine.message(req.params.id, req.body?.text ?? '') }));
+// Démonstration tant que les adaptateurs ne sont pas branchés (LBA-6, LBA-7) : joue un déroulé sur un projet d'exemple.
+app.post<Id>('/api/tickets/:id/simulate-run', async (req) => ({ message: simulateRun(engine, req.params.id) }));
 app.post<Id & { Body: { reportId: string } }>('/api/projects/:id/report', async (req) => ({ tickets: engine.report(req.params.id, req.body.reportId) }));
 
 // Flux en direct : l'interface est prévenue à chaque changement et relit les données.

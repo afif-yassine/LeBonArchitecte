@@ -45,7 +45,7 @@
   - `index.ts` : serveur Fastify sur 127.0.0.1:4317, refus expliqués (409), flux en direct.
 - Interface branchée sur le moteur pour les tickets, le pilote, la recette et les comptes rendus. Bandeau clair si le moteur est arrêté.
 - `npm run dev` lance moteur + interface ; `npm test` ; `npm run engine:reset` remet la démo à zéro.
-- `git init` fait. Premier commit en attente : nom et e-mail git non configurés sur ce PC.
+- Premier commit `e87a183` envoyé sur GitHub (`afif-yassine/LeBonArchitecte`, branche `main`). Ce projet envoie avec le compte afif-yassine ; radinave1 reste le compte par défaut du PC.
 
 **Preuves**
 - `npm test` : 10 tests sur 10 verts en 0,1 s.
@@ -57,6 +57,46 @@
 - Exécuteur de commandes (sortie complète au journal, résumé à l'agent).
 - Adaptateur Claude (Claude Agent SDK), puis Codex.
 - Fiche du projet `.lba/projet.yaml` remplie par le scan.
+
+## LBA-3 : déroulé des tickets (2026-11-18)
+
+**Fait**
+- Le Bon Architecte devient son propre premier projet (`lba`, tickets LBA-1 à LBA-8). padel-site, job-hunter et portfolio sont marqués « exemple ».
+- Plan de chaque ticket : étapes avec rôle, agent d'aide, skills et preuve attendue. Proposé par règles, sans token. Validé au lancement. Le pilote refuse un plan non validé.
+- Étape cochée seulement sur preuve vérifiée par le programme. Sans preuve, elle reste « annoncée, pas prouvée » et bloque « À tester ».
+- Ticket : frise de vie (Préparé, Plan validé, En cours, Tests, À tester, Terminé). Nouvel onglet Déroulé avec les étapes et le direct, filtrable : Réflexion, Actions, Bugs, Tests. Le journal brut du moteur est dans l'onglet Journal. Les messages à l'agent passent par le moteur.
+- Fenêtre de lancement : « Ce ticket va faire… » avant de démarrer.
+- Déroulé simulé (`server/simulate.ts`), seulement sur les projets d'exemple. Décision 0005.
+
+**Preuves**
+- `npm test` : 14 tests sur 14 verts. `tsc` et `vite build` passent.
+- Navigateur :
+  - plan affiché au lancement de LBA-6 ;
+  - T-12 simulé : étapes cochées une à une, bug « créneau de 23 h 30 » trouvé puis résolu, T-12 « À tester » avec 7 étapes prouvées sur 7 ;
+  - aucune erreur dans la console.
+
+**Limites connues**
+- Les écrans autres que Travail et Ticket (cahier des charges, Git, Santé…) montrent encore les données d'exemple, même dans le projet `lba`. LBA-8 (fiche du projet par le scan) commencera à les remplir.
+
+## LBA-4 et LBA-5 : file, « Pour vous », exécuteur (2026-11-18)
+
+**Fait**
+- LBA-4 : l'ordre de la file (monter, descendre, tête de file) et les actions « Pour vous » sont dans le journal du moteur. Régler une action qui bloquait un ticket le remet en tête de file. La recette ferme seule son action. Une base existante reçoit les actions sans être effacée.
+- LBA-5 : `server/executor.ts`.
+  - Interdits refusés avant de partir : push, merge, `rm -rf`, `reset --hard`, lecture de `.env` et des clés, `curl | bash`, publication et déploiement.
+  - Sortie complète dans `.lba/logs/`, et seulement un résumé de 3 lignes au plus dans le direct.
+  - Temps limite.
+- Preuve par commande : `POST /api/tickets/:id/steps/:step/prove`. Le moteur lance la commande et ne coche l'étape que si elle réussit. Une étape de tests ou de compilation ne se prouve jamais par une simple déclaration.
+- Dans un ticket, « !npm test » lance une commande par le moteur.
+- LBA-4 et LBA-5 sont passés par le moteur lui-même : chaque étape a été prouvée par `npx tsc --noEmit` ou `npm test`, lancés par l'exécuteur. Les deux tickets sont « À tester ».
+
+**Preuves**
+- `npm test` : 20 tests sur 20 verts. `tsc` passe.
+- Navigateur : le direct de LBA-5 montre chaque commande, son résumé et le chemin de sa sortie complète.
+
+**Limites connues**
+- Les étapes « critère » sont prouvées par la compilation. Les critères eux-mêmes sont couverts par les tests du moteur. Une preuve propre à chaque critère viendra avec la fiche du projet (LBA-8).
+- L'onglet « Réalisé » de LBA-4 et LBA-5 est vide : il sera rempli par le programme à partir des commits (à faire).
 
 ## Ancien plan de J1 (pour mémoire)
 À coller au début de la session neuve :

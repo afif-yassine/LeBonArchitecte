@@ -49,8 +49,8 @@ function Shell() {
   const notify = useNotify();
   const { tickets, actions, online } = useStore();
   const { settings, update, theme } = useSettings();
-  const [view, setView] = useState<View>({ kind: 'projet', projectId: 'padel', space: 'travail' });
-  const [projectId, setProjectId] = useState('padel');
+  const [view, setView] = useState<View>({ kind: 'projet', projectId: 'lba', space: 'travail' });
+  const [projectId, setProjectId] = useState('lba');
   const [panel, setPanel] = useState(true);
   const [mini, setMini] = useState(false);
   const [focus, setFocus] = useState(false);

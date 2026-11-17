@@ -5,22 +5,28 @@ import type {
   AgentContext, ArchItem, FlowStage, GitCommit, HealthCheck, HumanAction, Incident, Intervention, LogEvent, MemoryNote, Project,
   ProjectRule, Proposal, Requirement, Role, SetupStep, Stats, Ticket, ToolUsage, Worktree,
 } from '../shared/contract';
+import { draftPlan, withProgress } from '../shared/plan.ts';
 
 export const projects: Project[] = [
   {
+    id: 'lba', name: 'le-bon-architecte', summary: 'Ce logiciel, construit par lui-même. Node, React, SQLite.',
+    step: 'realiser', gate: 'Faire la recette de LBA-3 (déroulé des tickets)', private: false,
+    repo: 'afif-yassine/LeBonArchitecte', lot: { n: 2, name: 'Moteur réel' }, tokensToday: 0,
+  },
+  {
     id: 'padel', name: 'padel-site', summary: 'Réservation de terrains de padel pour un club. Next.js, Prisma, Stripe.',
     step: 'realiser', gate: 'Faire la recette du lot 2 avant de passer à Vérifier', private: false,
-    repo: 'padel-site', lot: { n: 2, name: 'Réservation' }, tokensToday: 38000,
+    repo: 'padel-site', lot: { n: 2, name: 'Réservation' }, tokensToday: 38000, demo: true,
   },
   {
     id: 'job', name: 'job-hunter', summary: 'Suivi de candidatures, repris d’un autre dépôt. Audit en cours.',
     step: 'comprendre', gate: 'Lire le rapport d’audit et choisir une option', private: true,
-    repo: 'job-hunter', lot: { n: 0, name: 'Audit' }, tokensToday: 12000,
+    repo: 'job-hunter', lot: { n: 0, name: 'Audit' }, tokensToday: 12000, demo: true,
   },
   {
     id: 'portfolio', name: 'portfolio', summary: 'Site personnel. Astro, déployé sur votre accord.',
     step: 'livrer', gate: 'Donner votre accord pour le déploiement', private: false,
-    repo: 'portfolio', lot: { n: 3, name: 'Mise en ligne' }, tokensToday: 0,
+    repo: 'portfolio', lot: { n: 3, name: 'Mise en ligne' }, tokensToday: 0, demo: true,
   },
 ];
 
@@ -37,7 +43,7 @@ const base = {
   criteria: [] as { text: string; done: boolean }[], budget: 40000, used: 0, done: dod([]), priority: 99,
 };
 
-function finished(id: string, title: string, o: { lot?: number; reportedIn?: string; summary: string; added: string[]; files: [string, number, number][]; tests: string; cdc?: string[] }): Ticket {
+function finished(id: string, title: string, o: { lot?: number; reportedIn?: string; summary: string; added: string[]; files: [string, number, number][]; tests: string; cdc?: string[] }): Raw {
   return {
     ...base, id, title, lot: o.lot ?? 1, part: (o.lot ?? 1) === 1 ? 'Socle' : 'Réservation', status: 'termine',
     used: 6000 + (id.charCodeAt(2) % 7) * 1700, done: allOk, reportedIn: o.reportedIn,
@@ -50,7 +56,9 @@ function finished(id: string, title: string, o: { lot?: number; reportedIn?: str
   };
 }
 
-export const tickets: Ticket[] = [
+type Raw = Omit<Ticket, 'steps' | 'planOk'>;
+
+const raw: Raw[] = [
   finished('T-3', 'Initialiser le projet Next.js', { reportedIn: 'CR-12', summary: 'Projet Next.js 14 créé avec TypeScript strict et ESLint.', added: ['Structure du projet', 'Scripts dev, build, test'], files: [['package.json', 38, 0], ['tsconfig.json', 24, 0]], tests: 'Lanceur de tests en place, 1 test.' }),
   finished('T-4', 'Base de données Prisma', { reportedIn: 'CR-12', summary: 'Schéma Prisma : clubs, terrains, joueurs.', added: ['Base PostgreSQL locale', 'Script db:reset'], files: [['prisma/schema.prisma', 64, 0]], tests: '4 tests sur le schéma.', cdc: ['EX-01'] }),
   finished('T-5', 'Mise en page et thème', { reportedIn: 'CR-12', summary: 'Gabarit des pages, couleurs du club, polices.', added: ['En-tête et pied de page', 'Thème clair et sombre'], files: [['src/app/layout.tsx', 72, 4]], tests: 'Contrôle visuel dans l’aperçu.' }),
@@ -125,7 +133,57 @@ export const tickets: Ticket[] = [
     return { ...finished(id, t.join(' '), { lot: 3, reportedIn: 'CR-P2', summary: t.join(' '), added: [t.join(' ')], files: [['src/pages/index.astro', 40, 0]], tests: 'Vérifié dans l’aperçu.' }), projectId: 'portfolio', part: 'Site' };
   }),
   { ...base, id: 'P-6', projectId: 'portfolio', title: 'Note de version 1.0', priority: 1, status: 'a-tester', lot: 3, part: 'Livraison', used: 4000, done: allOk, description: desc('Version prête.', 'Résumer la version pour vos visiteurs.') },
+  ...lbaTickets(),
 ];
+
+// Le Bon Architecte, premier vrai projet : ses propres tickets, tels qu'ils sont dans docs/JOURNAL.md.
+function lbaTickets(): Raw[] {
+  const lba = { ...base, projectId: 'lba', part: 'Moteur', lot: 2, accountId: 'acc-claude-1' };
+  const did = (id: string, title: string, part: string, o: Parameters<typeof finished>[2]) =>
+    ({ ...finished(id, title, { ...o, lot: 1 }), projectId: 'lba', part, realized: { ...finished(id, title, o).realized!, commits: ['e87a183 J0 + J1'], branch: 'main' } });
+  return [
+    did('LBA-1', 'Maquette de l’interface', 'Interface', { summary: 'Maquette complète en 3 ambiances : projets isolés, Architecte, Flux, Travail, Ticket, Documents, Git, Santé, Mémoire, Réglages.', added: ['Design en 3 ambiances, clair et sombre', 'Architecte avec commandes /', 'Recette des tickets'], files: [['src/styles.css', 1100, 0], ['src/screens/TicketView.tsx', 380, 0]], tests: 'tsc et vite build passent ; écrans vérifiés en image.' }),
+    did('LBA-2', 'Socle du moteur', 'Moteur', { summary: 'Journal d’événements SQLite, machine à états des tickets, règles sans IA, serveur local Fastify.', added: ['Pilote automatique dans le moteur', 'Refus expliqués en clair', 'Flux en direct vers l’interface'], files: [['server/engine.ts', 167, 0], ['server/rules.ts', 56, 0]], tests: '10 tests verts en 0,1 s.' }),
+    {
+      ...lba, id: 'LBA-3', title: 'Déroulé des tickets : étapes, preuves et direct', part: 'Interface', priority: 1, status: 'a-tester', used: 0, done: allOk,
+      description: desc('Avant de lancer un ticket, vous voulez savoir ce qu’il va faire, puis voir le travail avancer et être sûr que tout est vraiment fait.',
+        'Les étapes en clair avant le lancement, cochées seulement sur preuve vérifiée, et un direct : réflexion, actions, bugs résolus, tests, agents et skills.',
+        'Les vrais agents (LBA-6, LBA-7) : ici le déroulé est simulé sur les projets d’exemple.'),
+      criteria: [{ text: 'Étapes visibles avant le lancement', done: true }, { text: 'Étape cochée seulement sur preuve', done: true }, { text: 'Direct : réflexion, actions, bugs, tests', done: true }, { text: 'Agent, agents d’aide et skills par étape', done: true }],
+      realized: {
+        summary: 'Chaque ticket a un plan d’étapes avec sa preuve. Le moteur ne coche une étape que si la preuve est vérifiée. Onglet Déroulé : étapes, frise et direct filtrable.',
+        added: ['Plan proposé par règles (0 token), validé au lancement', 'Étapes « annoncées, pas prouvées » signalées', 'Direct : réflexion, actions, bugs et correction, tests, agents d’aide, skills', 'Le Bon Architecte devient son propre projet'],
+        files: [{ path: 'src/shared/plan.ts', plus: 80, minus: 0 }, { path: 'server/simulate.ts', plus: 90, minus: 0 }, { path: 'src/screens/TicketView.tsx', plus: 160, minus: 40 }],
+        tests: 'Nouveaux tests du moteur sur les preuves et le direct.', commits: [], branch: 'main',
+      },
+    },
+    { ...lba, id: 'LBA-4', title: 'File et « Pour vous » dans le moteur', priority: 2, status: 'a-faire',
+      description: desc('L’ordre de la file et vos actions à faire sont encore gardés par l’écran : un rechargement les perd.', 'L’ordre de la file et les actions « Pour vous » enregistrés dans le journal du moteur.'),
+      criteria: [{ text: 'Ordre de la file enregistré', done: false }, { text: 'Actions « Pour vous » enregistrées', done: false }] },
+    { ...lba, id: 'LBA-5', title: 'Exécuteur de commandes', priority: 3, status: 'a-faire',
+      description: desc('Les agents lancent des commandes ; leur sortie complète coûte cher en tokens.', 'Chaque commande est lancée par le moteur : sortie complète au journal, résumé court pour l’agent.', 'Les commandes interdites (push, merge, rm -rf).'),
+      criteria: [{ text: 'Sortie complète au journal', done: false }, { text: 'Résumé court pour l’agent', done: false }, { text: 'Commandes interdites refusées', done: false }] },
+    { ...lba, id: 'LBA-6', title: 'Adaptateur Claude (Agent SDK officiel)', priority: 4, status: 'a-faire', deps: ['LBA-5'], waitingFor: 'Attend LBA-5',
+      description: desc('Pour qu’un vrai agent Claude travaille sur un ticket.', 'Un ticket lancé démarre un agent Claude ; le direct se remplit avec ce qu’il fait.', 'Codex (LBA-7).'),
+      criteria: [{ text: 'Un vrai agent lance un ticket', done: false }, { text: 'Le direct se remplit', done: false }, { text: 'Arrêt propre avec passation', done: false }] },
+    { ...lba, id: 'LBA-7', title: 'Adaptateur Codex', priority: 5, status: 'a-faire', deps: ['LBA-5'], waitingFor: 'Attend LBA-5', tool: 'codex', accountId: 'acc-codex', model: 'gpt-codex',
+      description: desc('Pour qu’un vrai agent Codex travaille sur un ticket.', 'Même chose que LBA-6 avec Codex, par son interface officielle.'),
+      criteria: [{ text: 'Un vrai agent Codex lance un ticket', done: false }] },
+    { ...lba, id: 'LBA-8', title: 'Fiche du projet remplie par le scan', priority: 6, status: 'a-faire', part: 'Mise en place',
+      description: desc('Chaque projet a ses caractéristiques : langage, commandes de test, fichiers sensibles.', 'Le scan gratuit remplit .lba/projet.yaml ; les règles et les skills s’en servent.'),
+      criteria: [{ text: 'Fiche écrite par le scan', done: false }, { text: 'Commandes de test trouvées', done: false }] },
+  ];
+}
+
+// Plans d'exemple : écrits par règles, avancés selon l'état du ticket.
+const NOT_VALIDATED = new Set(['T-19', 'LBA-6', 'LBA-7', 'LBA-8']);
+export const tickets: Ticket[] = raw.map((t) => {
+  const plan = draftPlan(t);
+  const steps = t.status === 'termine' || t.status === 'a-tester' ? withProgress(plan, plan.length)
+    : t.status === 'en-cours' || t.status === 'action' ? withProgress(plan, 1 + t.criteria.filter((c) => c.done).length)
+    : plan;
+  return { ...t, steps, planOk: t.status !== 'a-faire' || !NOT_VALIDATED.has(t.id) };
+});
 
 export const agents: Agent[] = [
   { id: 'agent-12', name: 'agent-12', projectId: 'padel', ticketId: 'T-12', tool: 'claude-code', accountId: 'acc-claude-1', model: 'Sonnet', effort: 'moyen', state: 'travaille', tokens: 12000, lastAction: 'écrit calendar.ts' },

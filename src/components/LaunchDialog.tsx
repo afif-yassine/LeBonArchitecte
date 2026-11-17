@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
+import { StepList } from './Deroule';
 
 // Lancer soi-même un ticket. Si la limite d'agents est atteinte, on choisit quel ticket arrêter
 // (il reprendra plus tard avec sa passation) ou on met le ticket en tête de file.
 export function LaunchDialog({ ticketId, onClose }: { ticketId: string; onClose: () => void }) {
-  const { tickets, running, autopilot, isReady, launch, move } = useStore();
+  const { tickets, running, autopilot, isReady, launch, move, validatePlan } = useStore();
   const t = tickets.find((x) => x.id === ticketId)!;
   const run = running(t.projectId);
   const full = run.length >= autopilot.maxParallel;
@@ -16,7 +17,8 @@ export function LaunchDialog({ ticketId, onClose }: { ticketId: string; onClose:
 
   const confirm = () => {
     if (choice === 'file') {
-      for (let i = 0; i < 20; i++) move(t.id, -1);
+      if (!t.planOk) validatePlan(t.id);
+      move(t.id, 'tete');
     } else {
       launch(t.id, choice === 'now' ? undefined : choice);
     }
@@ -28,6 +30,11 @@ export function LaunchDialog({ ticketId, onClose }: { ticketId: string; onClose:
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="launch-title">
         <h2 id="launch-title">Lancer {t.id} maintenant</h2>
         <p className="muted">{t.title}</p>
+        <div className="launch__plan">
+          <div className="launch__plan-head"><strong>Ce ticket va faire</strong><span className="xsmall faint">{t.steps.length} étapes, chacune cochée sur preuve</span></div>
+          <StepList t={t} compact />
+          {!t.planOk && <p className="xsmall muted" style={{ marginTop: 8 }}>Ce plan n’est pas encore validé : en lançant, vous le validez.</p>}
+        </div>
         {!ready && (
           <p className="flag flag--wait" style={{ marginTop: 10 }}>
             Attention : {missing.join(' et ')} {missing.length > 1 ? 'ne sont pas finis' : 'n’est pas fini'}. L’agent risque de travailler sur une base incomplète.
@@ -56,7 +63,7 @@ export function LaunchDialog({ ticketId, onClose }: { ticketId: string; onClose:
         </div>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn btn--ghost" onClick={onClose}>Annuler</button>
-          <button ref={ref} className="btn btn--primary" onClick={confirm}>{choice === 'file' ? 'Mettre en tête' : 'Lancer'}</button>
+          <button ref={ref} className="btn btn--primary" onClick={confirm}>{choice === 'file' ? 'Mettre en tête' : t.planOk ? 'Lancer' : 'Valider le plan et lancer'}</button>
         </div>
       </div>
     </div>

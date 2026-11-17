@@ -73,7 +73,7 @@ export function Sidebar({ view, go, projectId, mini, toggleMini }: Props) {
                   onClick={() => { setOpen(false); go({ kind: 'projet', projectId: x.id, space: 'travail' }); }}>
                   <span className="pdot" aria-hidden="true">{x.name[0].toUpperCase()}</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="switcher__name">{x.name}{x.private && <Lock size={11} className="faint" />}</span>
+                    <span className="switcher__name">{x.name}{x.private && <Lock size={11} className="faint" />}{x.demo && <span className="tag">exemple</span>}</span>
                     <span className="switcher__sub">{ESN_STEPS.find((s) => s.id === x.step)!.label}{n > 0 ? `, ${n} action${n > 1 ? 's' : ''} pour vous` : ''}</span>
                   </span>
                   {x.id === projectId && <Check size={15} style={{ color: 'var(--accent)' }} />}

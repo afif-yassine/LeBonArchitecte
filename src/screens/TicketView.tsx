@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowLeftRight, Bot, Check, ChevronDown, FileCheck2, FileClock, FilePen, FileText, GitBranch, GitCommitHorizontal,
-  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, Scale, SendHorizontal, Settings2, Square, Terminal, User, X,
+  ArrowLeft, ArrowLeftRight, Check, ChevronDown, FileCheck2, FileClock, GitBranch, GitCommitHorizontal,
+  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, SendHorizontal, Settings2, Square, X,
 } from 'lucide-react';
-import { accounts, agentRoles, agents, conversations, events, requirements, roles } from '../mock/data';
-import { TOOLS, type ConversationItem, type Effort, type LogEvent, type ToolId } from '../shared/contract';
+import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
+import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
+import { Deroule, PhaseFrise } from '../components/Deroule';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
 import type { Go } from '../view';
 
-type Tab = 'description' | 'conversation' | 'realise' | 'journal' | 'diff' | 'tests';
-const EV_ICON: Record<LogEvent['kind'], typeof Info> = { lecture: FileText, modif: FilePen, commande: Terminal, question: Info, regle: Scale, info: Info };
-const now = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+type Tab = 'deroule' | 'description' | 'realise' | 'journal' | 'diff' | 'tests';
+interface RawEvent { id: number; at: string; type: string; actor: string; data: Record<string, unknown> }
+const EV_LABEL: Record<string, string> = {
+  'ticket-cree': 'Ticket créé', 'ticket-lance': 'Lancé', 'ticket-arrete': 'Arrêté', 'agent-termine': 'Fin de l’agent', 'ticket-a-tester': 'Passé à tester',
+  'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
+  'etape-commencee': 'Étape commencée', 'etape-annoncee': 'Étape annoncée', direct: 'Direct',
+};
+const evText = (d: Record<string, unknown>) => String(d.text ?? d.cause ?? d.problem ?? d.evidence ?? d.model ?? d.report ?? d.step ?? '');
 
 function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
   tool0: ToolId; account0: string; model0: string; effort0: Effort; onClose: () => void;
@@ -81,74 +87,43 @@ function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
   );
 }
 
-function Item({ it, onAnswer }: { it: ConversationItem; onAnswer: (choice: string) => void }) {
-  if (it.type === 'cmd') return (
-    <div className="tool">
-      <span className="tool__kind">commande</span>
-      <span className="tool__body">{it.command}</span>
-      <span className={`tool__res ${it.ok ? 'is-ok' : 'is-ko'}`}>{it.ok ? <Check size={14} /> : <X size={14} />}{it.summary}</span>
-    </div>
-  );
-  if (it.type === 'edit') return (
-    <div className="tool">
-      <span className="tool__kind">modifié</span>
-      <span className="tool__body">{it.file}</span>
-      <span className="diffstat"><span className="plus">+{it.plus}</span><span className="minus">−{it.minus}</span></span>
-    </div>
-  );
-  if (it.type === 'question') return (
-    <div className="question">
-      <div className="question__text">Question : « {it.text} »</div>
-      {it.answer
-        ? <div className="answered"><Check size={13} style={{ verticalAlign: '-2px', color: 'var(--ok)' }} /> Répondu : {it.answer}</div>
-        : <div className="row">{it.choices.map((c, i) => <button key={c} className={`btn btn--sm ${i === 0 ? 'btn--primary' : ''}`} onClick={() => onAnswer(c)}>{c}</button>)}</div>}
-    </div>
-  );
-  const k = it.from.kind;
-  return (
-    <div className={`bubble bubble--${k}`}>
-      <div className="bubble__who">
-        <span className={`avatar ${k === 'agent' ? 'avatar--agent' : k === 'vous' ? 'avatar--vous' : ''}`}>{k === 'agent' ? <Bot size={13} /> : k === 'vous' ? <User size={13} /> : <Scale size={13} />}</span>
-        <strong>{k === 'vous' ? 'Vous' : it.from.name}</strong><span className="faint">{it.at}</span>
-      </div>
-      <div className="bubble__text">{it.text}</div>
-    </div>
-  );
-}
-
 export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const notify = useNotify();
-  const { tickets, stop, finish, reports, validate, reject } = useStore();
+  const { tickets, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject } = useStore();
   const [rejecting, setRejecting] = useState(false);
   const [problem, setProblem] = useState('');
   const t = tickets.find((x) => x.id === ticketId)!;
   const agent = t.status === 'en-cours' || t.status === 'action' ? agents.find((a) => a.id === t.agentId) : undefined;
   const role = agent ? roles.find((r) => r.id === agentRoles[agent.id]) : undefined;
   const realizedState = t.status === 'termine' || t.status === 'a-tester';
-  const [tab, setTab] = useState<Tab>(t.status === 'en-cours' ? 'conversation' : realizedState ? 'realise' : 'description');
+  const [tab, setTab] = useState<Tab>(t.status === 'a-tester' ? 'realise' : 'deroule');
   const [conf, setConf] = useState({ tool: t.tool, accountId: t.accountId, model: t.model, effort: t.effort });
   const [menu, setMenu] = useState(false);
   const [paused, setPaused] = useState(false);
   const [launching, setLaunching] = useState(false);
-  const [items, setItems] = useState<ConversationItem[]>(conversations[t.id] ?? []);
+  const [feed, setFeed] = useState<LiveItem[]>([]);
+  const [journal, setJournal] = useState<RawEvent[]>([]);
   const [text, setText] = useState('');
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const demo = Boolean(projects.find((p) => p.id === t.projectId)?.demo);
+  const proven = t.steps.filter((s) => s.state === 'prouve').length;
   const account = accounts.find((a) => a.id === conf.accountId);
   const other: ToolId = conf.tool === 'codex' ? 'claude-code' : 'codex';
   const report = reports.find((r) => r.id === t.reportedIn);
 
-  useEffect(() => { if (tab === 'conversation') bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight }); }, [items, tab]);
+  // Le moteur prévient à chaque changement (rev) : on relit le direct et le journal du ticket.
+  useEffect(() => {
+    let off = false;
+    live(t.id).then((l) => { if (!off) setFeed(l); });
+    if (tab === 'journal') fetch(`/api/tickets/${t.id}/events`).then((r) => r.json()).then((j: RawEvent[]) => { if (!off) setJournal(j); }).catch(() => {});
+    return () => { off = true; };
+  }, [t.id, rev, tab, live]);
 
   const send = () => {
     const v = text.trim();
     if (!v) return;
-    setItems((l) => [...l, { type: 'msg', from: { kind: 'vous', name: 'Vous' }, at: now(), text: v }]);
+    // « !commande » : le moteur l'exécute (interdits refusés), l'agent n'en reçoit que le résumé.
+    if (v.startsWith('!')) runCommand(t.id, v.slice(1).trim()); else sendMessage(t.id, v);
     setText('');
-    notify('Message transmis à l’agent. Il le lira à la fin de son action en cours.');
-  };
-  const answer = (idx: number, choice: string) => {
-    setItems((l) => l.map((x, i) => (i === idx && x.type === 'question' ? { ...x, answer: choice } : x)));
-    notify(`Réponse « ${choice} » envoyée et écrite comme décision.`);
   };
 
   return (
@@ -167,14 +142,16 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
             )}
           </div>
         </div>
+        <div className="tk__phases"><PhaseFrise t={t} /></div>
         <div className="tk__tabs">
           <Tabs<Tab> label="Vues du ticket" value={tab} onChange={setTab} tabs={[
-            { id: 'description', label: 'Description' }, { id: 'conversation', label: 'Conversation' }, { id: 'realise', label: 'Réalisé' },
+            { id: 'deroule', label: 'Déroulé' }, { id: 'description', label: 'Description' }, { id: 'realise', label: 'Réalisé' },
             { id: 'journal', label: 'Journal' }, { id: 'diff', label: 'Diff' }, { id: 'tests', label: 'Tests' },
           ]} />
         </div>
 
-        <div className="tk__body" ref={bodyRef}>
+        <div className="tk__body">
+          {tab === 'deroule' && <Deroule t={t} feed={feed} demo={demo} onValidatePlan={() => validatePlan(t.id)} onSimulate={() => simulate(t.id)} />}
           {tab === 'description' && (
             <div className="descr">
               <div className="descr__block"><h3>Pourquoi</h3><p>{t.description.context}</p></div>
@@ -214,12 +191,6 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                 </ul>
               </div>
             </div>
-          )}
-
-          {tab === 'conversation' && (
-            items.length === 0
-              ? <p className="muted">Aucun échange pour l’instant. La conversation commence quand l’orchestrateur confie le ticket à un agent.</p>
-              : <div className="convo">{items.map((it, i) => <Item key={i} it={it} onAnswer={(c) => answer(i, c)} />)}</div>
           )}
 
           {tab === 'realise' && (
@@ -283,17 +254,14 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
 
           {tab === 'journal' && (
             <ol className="journal">
-              {events.filter((e) => e.ticketId === t.id).map((e) => {
-                const Icon = EV_ICON[e.kind];
-                return (
-                  <li key={e.id} className={`ev ev--${e.kind}`}>
-                    <span className="ev__time">{e.at}</span>
-                    <span className="ev__icon" aria-hidden="true"><Icon size={15} /></span>
-                    <div><span className="ev__actor">{e.actor.name}</span> {e.text}</div>
-                  </li>
-                );
-              })}
-              {events.every((e) => e.ticketId !== t.id) && <p className="muted">Le journal se remplit dès que l’agent démarre.</p>}
+              {journal.map((e) => (
+                <li key={e.id} className="ev">
+                  <span className="ev__time">{new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="ev__icon" aria-hidden="true"><Info size={15} /></span>
+                  <div><span className="ev__actor">{e.actor}</span> <strong style={{ fontWeight: 550 }}>{EV_LABEL[e.type] ?? e.type}</strong> {evText(e.data)}</div>
+                </li>
+              ))}
+              {journal.length === 0 && <p className="muted">Chaque événement du ticket est écrit ici par le moteur, tel quel, pour l’audit.</p>}
             </ol>
           )}
           {tab === 'diff' && (
@@ -314,7 +282,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           )}
         </div>
 
-        {tab === 'conversation' && (
+        {tab === 'deroule' && (t.status === 'en-cours' || t.status === 'action') && (
           <div className="composer">
             <div className="composer__box">
               <label className="sr-only" htmlFor="agent-input">Message à l’agent</label>
@@ -323,7 +291,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <div className="composer__bar">
                 <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre un fichier" title="Joindre un fichier"><Paperclip size={16} /></button>
                 <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre une image" title="Joindre une image"><ImageIcon size={16} /></button>
-                <span className="hint">Entrée pour envoyer</span>
+                <span className="hint">Entrée pour envoyer. « !npm test » lance une commande par le moteur.</span>
                 <button className="btn btn--primary btn--icon btn--sm" aria-label="Envoyer" onClick={send}><SendHorizontal size={15} /></button>
               </div>
             </div>
@@ -335,6 +303,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <h4>Détails</h4>
         <div className="kv"><span>État</span><span>{agent ? <span className={`pill pill--dot pill--${paused ? '' : STATE[agent.state].tone}`}>{paused ? 'En pause' : STATE[agent.state].label}</span> : <span className="pill">{t.status === 'a-faire' ? 'À faire' : t.status === 'a-tester' ? 'À tester' : t.status === 'termine' ? 'Fini' : 'Sans agent'}</span>}</span></div>
         {agent && <div className="kv"><span>Agent</span><span>{agent.name}<span className="faint xsmall"> {role?.name}</span></span></div>}
+        <div className="kv"><span>Étapes</span><span className="num">{proven} sur {t.steps.length} prouvées{!t.planOk && <span className="faint xsmall">, plan à valider</span>}</span></div>
         <div className="kv"><span>Outil</span><span>{TOOLS[conf.tool].label}</span></div>
         <div className="kv"><span>Compte</span><span>{account?.label}<span className="faint xsmall"> 5 h : {account?.quota5h} %</span></span></div>
         <div className="kv"><span>Modèle</span><span>{conf.model}, effort {conf.effort}</span></div>
@@ -371,7 +340,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <ArrowLeftRight size={15} />Passer à {TOOLS[other].short}
             </button>
             <button className="btn btn--danger" onClick={() => stop(t.id)}><Square size={14} />Arrêter</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => finish(t.id)}>Simuler la fin (démo du pilote)</button>
+            {demo && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
           </>)}
         </div>
       </aside>

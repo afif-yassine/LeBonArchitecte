@@ -1,6 +1,6 @@
 // Machine à états des tickets et application des événements (décision 0004).
 // Fonctions pures : aucune base, aucun réseau, aucune IA. Testées dans tickets.test.ts.
-import type { Ticket, TicketStatus } from '../src/shared/contract.ts';
+import type { Ticket, TicketStatus, TicketStep } from '../src/shared/contract.ts';
 
 export const TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   'a-faire': ['en-cours'],
@@ -26,7 +26,9 @@ export function assertMove(t: Ticket, to: TicketStatus): void {
 
 export type EventType =
   | 'ticket-cree' | 'ticket-lance' | 'ticket-arrete' | 'agent-termine' | 'ticket-a-tester'
-  | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte';
+  | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
+  | 'plan-valide' | 'etape-commencee' | 'etape-annoncee' | 'direct'
+  | 'priorite' | 'action-ouverte' | 'action-resolue';
 
 export interface EngineEvent {
   id?: number;
@@ -46,7 +48,10 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
     case 'ticket-lance':
       return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, model: (e.data.model as string) ?? t.model };
     case 'ticket-arrete':
-      return { ...t, status: 'a-faire', priority: 0, waitingFor: 'Arrêté par vous, reprendra avec sa passation' };
+      return {
+        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined,
+        waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'Arrêté par vous, reprendra avec sa passation',
+      };
     case 'agent-termine':
       return {
         ...t,
@@ -63,6 +68,15 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, status: 'en-cours', loops: t.loops + 1 };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
+    case 'priorite':
+      return { ...t, priority: Number(e.data.priority) };
+    case 'plan-valide':
+      return { ...t, planOk: true, steps: (e.data.steps as TicketStep[] | undefined) ?? t.steps };
+    case 'etape-commencee':
+      return { ...t, steps: t.steps.map((s) => (s.id === e.data.step && s.state !== 'prouve' ? { ...s, state: 'en-cours' } : s)) };
+    case 'etape-annoncee':
+      // L'agent annonce ; seule la preuve vérifiée par le programme coche l'étape.
+      return { ...t, steps: t.steps.map((s) => (s.id === e.data.step ? { ...s, state: e.data.proofOk ? 'prouve' : 'annonce', evidence: String(e.data.evidence ?? '') } : s)) };
     default:
       return t;
   }

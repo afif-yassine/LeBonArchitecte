@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, Pause, Play, Plus, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
 import { COLUMNS, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
@@ -9,7 +9,7 @@ import { useStore } from '../store';
 import type { Go } from '../view';
 
 function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) => void }) {
-  const { stop, finish, isReady, validate } = useStore();
+  const { stop, simulate, isReady, validate } = useStore();
   const agent = agents.find((a) => a.id === t.agentId);
   const open = () => go({ kind: 'ticket', ticketId: t.id });
   const realized = t.status === 'termine' || t.status === 'a-tester';
@@ -30,6 +30,9 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
 
   const okCount = t.criteria.filter((c) => c.done).length;
   const ready = isReady(t);
+  const proven = t.steps.filter((s) => s.state === 'prouve').length;
+  const current = t.steps.find((s) => s.state !== 'prouve');
+  const demo = projects.find((p) => p.id === t.projectId)?.demo;
   return (
     <div className={`card ${t.securityBlock ? 'is-sec' : ''} ${t.status === 'en-cours' ? 'is-run' : ''}`}>
       <button className="card__main" onClick={open}>
@@ -42,6 +45,8 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         {t.needAction && <span className="flag flag--wait"><KeyRound size={14} aria-hidden="true" />{t.needAction}</span>}
         {t.status === 'a-faire' && !ready && <span className="flag"><Pause size={14} aria-hidden="true" />Attend {t.deps.join(', ')}</span>}
         {t.status === 'a-faire' && t.waitingFor?.startsWith('Arrêté') && <span className="flag flag--wait"><Square size={13} aria-hidden="true" />Arrêté par vous</span>}
+        {t.status === 'a-faire' && !t.planOk && <span className="flag"><ListChecks size={14} aria-hidden="true" />Plan à valider</span>}
+        {t.status === 'en-cours' && current && <span className="flag"><ListChecks size={14} aria-hidden="true" />Étape {proven + 1} sur {t.steps.length} : {current.label}</span>}
         {t.status === 'a-tester' && <span className="flag flag--ok"><CheckCircle2 size={14} aria-hidden="true" />{okCount}/{t.criteria.length} critères, tests verts</span>}
         {agent && t.status === 'en-cours' && <span className={`flag ${agent.lastAction.includes('sans retour') ? 'flag--danger' : 'flag--accent'}`}>{agent.state === 'attend' ? <Hand size={14} /> : <Clock size={14} />}{agent.lastAction}</span>}
         {(t.used > 0 || realized) && (
@@ -64,7 +69,7 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
       {t.status === 'en-cours' && (
         <div className="card__acts">
           <button className="btn btn--sm" onClick={() => stop(t.id)}><Square size={11} />Arrêter</button>
-          <button className="btn btn--sm btn--ghost" onClick={() => finish(t.id)} title="Démonstration : simuler la fin de ce ticket">Simuler la fin</button>
+          {demo && <button className="btn btn--sm btn--ghost" onClick={() => simulate(t.id)} title="Démonstration : jouer un déroulé complet de ce ticket">Simuler</button>}
         </div>
       )}
     </div>

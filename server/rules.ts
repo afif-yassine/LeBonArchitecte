@@ -3,10 +3,11 @@ import type { Ticket } from '../src/shared/contract.ts';
 
 export interface PilotSettings { on: boolean; maxParallel: number; stopAtLotEnd: boolean; respectBudget: boolean }
 
-// Définition de fini : tous les critères tenus et tous les contrôles verts.
+// Définition de fini : tous les critères tenus, toutes les étapes prouvées, tous les contrôles verts.
 export function checkDone(t: Ticket): { ok: boolean; missing: string[] } {
   const missing = [
     ...t.criteria.filter((c) => !c.done).map((c) => `critère « ${c.text} »`),
+    ...(t.steps ?? []).filter((s) => s.state !== 'prouve').map((s) => `étape « ${s.label} » non prouvée`),
     ...t.done.filter((d) => d.state !== 'ok').map((d) => d.label.toLowerCase()),
   ];
   return { ok: missing.length === 0, missing };
@@ -20,7 +21,7 @@ export const running = (all: Ticket[], project: string) => all.filter((t) => t.p
 export function nextReady(all: Ticket[], project: string, s: PilotSettings, lot?: number): Ticket | undefined {
   if (!s.on || running(all, project).length >= s.maxParallel) return undefined;
   return all
-    .filter((t) => t.projectId === project && t.status === 'a-faire' && isReady(t, all))
+    .filter((t) => t.projectId === project && t.status === 'a-faire' && t.planOk && isReady(t, all))
     .filter((t) => !s.stopAtLotEnd || lot === undefined || t.lot === lot)
     .sort((a, b) => a.priority - b.priority)[0];
 }

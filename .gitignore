@@ -4,3 +4,4 @@ dist/
 .lba/*.db
 .lba/*.db-*
 *.log
+.lba/logs/

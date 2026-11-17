@@ -2,7 +2,7 @@
 // Si le moteur est arrêté, l'interface le dit et reste en lecture seule sur les données de démonstration.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { autopilotDefaults, humanActions, reports as initialReports, tickets as demoTickets } from './mock/data';
-import type { DailyReport, HumanAction, Ticket } from './shared/contract';
+import type { DailyReport, HumanAction, LiveItem, Ticket } from './shared/contract';
 import { useNotify } from './components/notify';
 
 type Autopilot = typeof autopilotDefaults;
@@ -18,8 +18,13 @@ interface Store {
   running: (projectId: string) => Ticket[];
   launch: (id: string, replaceId?: string) => void;
   stop: (id: string) => void;
-  finish: (id: string) => void;
-  move: (id: string, dir: -1 | 1) => void;
+  simulate: (id: string) => void;
+  validatePlan: (id: string) => void;
+  sendMessage: (id: string, text: string) => void;
+  runCommand: (id: string, command: string) => void;
+  live: (id: string) => Promise<LiveItem[]>;
+  rev: number; // augmente à chaque changement du moteur : les écrans relisent ce qu'ils montrent
+  move: (id: string, dir: -1 | 1 | 'tete') => void;
   unreported: (projectId: string) => Ticket[];
   writeReport: (projectId: string) => void;
   validate: (id: string) => void;
@@ -45,13 +50,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [reports, setReports] = useState<DailyReport[]>(initialReports);
   const [autopilot, setAuto] = useState<Autopilot>(autopilotDefaults);
   const [pending, setPending] = useState<HumanAction[]>(humanActions);
+  const [rev, setRev] = useState(0);
 
   const reload = useCallback(async () => {
     try {
-      const [t, p] = await Promise.all([api<Ticket[]>('/tickets'), api<Autopilot>('/pilot')]);
+      const [t, p, a] = await Promise.all([api<Ticket[]>('/tickets'), api<Autopilot>('/pilot'), api<HumanAction[]>('/actions')]);
       setTickets(t);
       setAuto(p);
+      setPending(a);
       setOnline(true);
+      setRev((n) => n + 1);
     } catch {
       setOnline(false);
     }
@@ -87,26 +95,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const launch = useCallback((id: string, replaceId?: string) => { act(`/tickets/${id}/launch`, { replace: replaceId }); }, [act]);
   const stop = useCallback((id: string) => { act(`/tickets/${id}/stop`); }, [act]);
-  const finish = useCallback((id: string) => { act(`/tickets/${id}/simulate-done`, { result: 'ok' }); }, [act]);
+  const simulate = useCallback((id: string) => { act(`/tickets/${id}/simulate-run`); }, [act]);
+  const validatePlan = useCallback((id: string) => { act(`/tickets/${id}/plan/validate`); }, [act]);
+  const runCommand = useCallback((id: string, command: string) => { act(`/tickets/${id}/run`, { command }); }, [act]);
+  const sendMessage = useCallback((id: string, text: string) => { act(`/tickets/${id}/message`, { text }); }, [act]);
+  const live = useCallback((id: string) => api<LiveItem[]>(`/tickets/${id}/live`).catch(() => [] as LiveItem[]), []);
   const validate = useCallback((id: string) => {
     act(`/tickets/${id}/validate`);
-    setPending((l) => l.filter((a) => a.ticketId !== id || a.kind !== 'reunion'));
   }, [act]);
   const reject = useCallback((id: string, problem: string) => {
     act(`/tickets/${id}/reject`, { problem });
-    setPending((l) => l.filter((a) => a.ticketId !== id || a.kind !== 'reunion'));
   }, [act]);
 
-  // Priorité dans la file : encore locale (J2 la mettra dans le moteur).
-  const move = useCallback((id: string, dir: -1 | 1) => {
-    setTickets((l) => {
-      const t = l.find((x) => x.id === id)!;
-      const q = l.filter((x) => x.projectId === t.projectId && x.status === 'a-faire').sort((a, b) => a.priority - b.priority);
-      const other = q[q.findIndex((x) => x.id === id) + dir];
-      if (!other) return l;
-      return l.map((x) => (x.id === id ? { ...x, priority: other.priority } : x.id === other.id ? { ...x, priority: t.priority } : x));
-    });
-  }, []);
+  // Ordre de la file : enregistré par le moteur.
+  const move = useCallback((id: string, dir: -1 | 1 | 'tete') => { act(`/tickets/${id}/priority`, { dir }); }, [act]);
 
   const writeReport = useCallback(async (pid: string) => {
     const list = unreported(pid);
@@ -136,12 +138,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [online, notify]);
 
   const actions = useCallback((pid: string) => pending.filter((a) => a.projectId === pid), [pending]);
-  const resolveAction = useCallback((id: string, label: string) => {
-    setPending((l) => l.filter((a) => a.id !== id));
-    notify(`« ${label} » : c’est fait. Le ticket reprend seul.`);
-  }, [notify]);
+  const resolveAction = useCallback((id: string, label: string) => { act(`/actions/${id}/resolve`, { label }); }, [act]);
 
-  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, finish, move, unreported, writeReport, validate, reject, actions, resolveAction }),
-    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, finish, move, unreported, writeReport, validate, reject, actions, resolveAction]);
+  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction }),
+    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

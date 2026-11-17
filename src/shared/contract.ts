@@ -124,6 +124,7 @@ export interface Project {
   repo: string;
   lot: { n: number; name: string };
   tokensToday: number;
+  demo?: boolean; // projet d'exemple, pour montrer les écrans
 }
 
 export interface DoneCheck {
@@ -157,6 +158,56 @@ export interface Ticket {
   description: TicketDescription;
   realized?: Realized; // ce qui a été fait et ajouté, rempli par le programme à la fin
   reportedIn?: string; // id du compte rendu qui a déjà parlé de ce ticket ; absent = pas encore rapporté
+  steps: TicketStep[]; // le plan du ticket, montré avant le lancement
+  planOk: boolean; // plan validé (par vous, au lancement) : le pilote ne lance jamais un plan non validé
+}
+
+// Une étape du plan. Elle n'est cochée que si le programme a vérifié sa preuve (0 token) :
+// l'agent peut l'annoncer finie, mais sans preuve elle reste « annoncée, pas prouvée ».
+export type ProofKind = 'tests' | 'fichier' | 'commande' | 'capture' | 'relecture';
+export interface TicketStep {
+  id: string;
+  label: string;
+  role: string; // rôle de l'agent qui la fait (id de Role)
+  helper?: string; // agent d'aide appelé pour cette étape (id de Role)
+  skills: string[];
+  proof: { kind: ProofKind; text: string };
+  state: 'a-faire' | 'en-cours' | 'annonce' | 'prouve';
+  evidence?: string; // ce que le programme a vérifié, ou pourquoi la preuve manque
+}
+
+// Ce que l'on voit « en direct » pendant qu'un agent travaille.
+export type LiveKind = 'reflexion' | 'message' | 'action' | 'commande' | 'test' | 'bug' | 'resolu' | 'agent' | 'skill' | 'etape' | 'systeme';
+export interface LiveItem {
+  id: number;
+  at: string; // ISO
+  kind: LiveKind;
+  who: string;
+  text: string;
+  detail?: string;
+  ok?: boolean;
+  step?: string;
+}
+
+// Les étapes de la vie d'un ticket, montrées en frise.
+export const TICKET_PHASES = [
+  { id: 'prepare', label: 'Préparé' },
+  { id: 'plan', label: 'Plan validé' },
+  { id: 'travail', label: 'En cours' },
+  { id: 'tests', label: 'Tests' },
+  { id: 'recette', label: 'À tester' },
+  { id: 'fini', label: 'Terminé' },
+] as const;
+export type TicketPhase = (typeof TICKET_PHASES)[number]['id'];
+
+export function ticketPhase(t: Pick<Ticket, 'status' | 'steps' | 'planOk'>): TicketPhase {
+  if (t.status === 'termine') return 'fini';
+  if (t.status === 'a-tester') return 'recette';
+  if (t.status === 'en-cours' || t.status === 'action') {
+    const cur = t.steps.find((s) => s.state !== 'prouve');
+    return cur?.proof.kind === 'tests' && cur.state !== 'a-faire' ? 'tests' : 'travail';
+  }
+  return t.planOk ? 'plan' : 'prepare';
 }
 
 export interface TicketDescription {
