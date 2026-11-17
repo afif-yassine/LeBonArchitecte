@@ -32,6 +32,10 @@ function promptFor(t: Ticket, complaint?: string): string {
   ].join('\n');
 }
 
+// Une vraie commande de tests, pas n'importe quelle commande qui contient le mot « test ».
+const TEST_CMD = /(^|[;&|]\s*)(npm (run )?test|npx (vitest|jest|playwright)|node --test|vitest|jest|playwright test)\b/;
+const DENIED_MSG = /^Permission to use|was denied|denied by/i;
+
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void): ChildProcess {
@@ -54,15 +58,15 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   let buf = '';
   let outcome: RunOutcome | undefined;
   let err = '';
+  let lastText = '';
 
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init') live('agent', `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket`);
-    else if (m.type === 'system' && m.subtype === 'permission_denied') live('systeme', `Refusé par les règles : ${short(m.tool_name ?? m.message, 120)}`, undefined, false);
     else if (m.type === 'system' && m.subtype === 'api_retry') live('systeme', `Nouvel essai de l’API (${m.error})`, `essai ${m.attempt} sur ${m.max_retries}`);
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
       for (const b of m.message?.content ?? []) {
         if (b.type === 'thinking' && b.thinking) live('reflexion', short(b.thinking, 500));
-        else if (b.type === 'text' && b.text?.trim()) live('message', short(b.text, 600));
+        else if (b.type === 'text' && b.text?.trim()) { lastText = short(b.text, 600); live('message', lastText); }
         else if (b.type === 'tool_use') {
           const i = b.input ?? {};
           const file = i.file_path ? relative(cwd, i.file_path).replaceAll('\\', '/') : '';
@@ -81,7 +85,8 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
         if (b.type !== 'tool_result') continue;
         const tool = tools.get(b.tool_use_id);
         const text = Array.isArray(b.content) ? b.content.map((c: { text?: string }) => c.text ?? '').join(' ') : String(b.content ?? '');
-        if (tool?.name === 'Bash' && /\b(test|vitest|jest|playwright)\b/.test(tool.cmd ?? '')) {
+        if (b.is_error && DENIED_MSG.test(text.trim())) live('systeme', `Refusé par les règles du projet : ${short(tool?.cmd ?? tool?.name, 120)}`, 'L’agent doit passer par un autre moyen autorisé.', false);
+        else if (tool?.name === 'Bash' && TEST_CMD.test(tool.cmd ?? '')) {
           testsGreen = !b.is_error;
           if (b.is_error) { testFailed = true; live('test', `${short(tool.cmd, 80)} : en échec`, short(text, 240), false); live('bug', short(text.split('\n').find((l: string) => /error|fail|✖|not ok/i.test(l)) ?? text, 200), 'Trouvé par les tests', false); }
           else { live('test', `${short(tool.cmd, 80)} : vert`, undefined, true); if (testFailed) { testFailed = false; live('resolu', 'Les tests repassent au vert', 'Corrigé par l’agent', true); } }
@@ -94,7 +99,7 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
       const ok = m.subtype === 'success' && !m.is_error;
       live('systeme', ok ? `Agent fini : ${m.num_turns} tours, ${tokens.toLocaleString('fr-FR')} tokens` : `Agent arrêté : ${m.subtype}`,
         `${(u.cache_read_input_tokens ?? 0).toLocaleString('fr-FR')} tokens relus depuis le cache ; coût estimé ${Number(m.total_cost_usd ?? 0).toFixed(2)} $ (compté sur votre abonnement)`, ok);
-      if (m.result) live('message', short(m.result, 900));
+      if (m.result && short(m.result, 600) !== lastText) live('message', short(m.result, 900));
       outcome = { ok, reason: ok ? 'fini' : String(m.subtype), read: [...read], tokens, testsGreen, summary: short(m.result, 600) };
     }
   };

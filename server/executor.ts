@@ -35,7 +35,8 @@ export interface RunResult {
 
 // Résumé sans IA : chiffres des tests s'ils existent, sinon les lignes d'erreur, sinon la fin.
 export function summarize(output: string, ok: boolean): string {
-  const lines = output.split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
+  // Les lignes d'écho de npm (« > projet@1.0 check ») n'apprennent rien à l'agent.
+  const lines = output.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l && !/^> /.test(l));
   const pick = (re: RegExp) => lines.map((l) => l.match(re)?.[1]).find((x) => x !== undefined);
   const pass = pick(/^ℹ pass (\d+)/) ?? pick(/(\d+) passed/) ?? pick(/Tests:.*?(\d+) passed/);
   const fail = pick(/^ℹ fail (\d+)/) ?? pick(/(\d+) failed/);
