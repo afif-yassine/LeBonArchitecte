@@ -98,6 +98,26 @@
 - Les étapes « critère » sont prouvées par la compilation. Les critères eux-mêmes sont couverts par les tests du moteur. Une preuve propre à chaque critère viendra avec la fiche du projet (LBA-8).
 - L'onglet « Réalisé » de LBA-4 et LBA-5 est vide : il sera rempli par le programme à partir des commits (à faire).
 
+## LBA-8 : fiche du projet par le scan (2026-11-18)
+
+**Fait**
+- `server/scan.ts` : scan gratuit (0 token).
+  - Il trouve les langages, les outils, les commandes (tests, vérification, build, dev), les fichiers sensibles (noms seulement, jamais lus), la branche et le dépôt git (sans nom de compte).
+  - Il écrit `.lba/projet.yaml`.
+- Les preuves des étapes utilisent la fiche : sans commande donnée, une étape « tests » lance `npm test` et une étape « compilation » lance `npm run check`.
+- Paramètres du projet : bloc « Fiche du projet » avec un bouton « Rescanner ».
+- Budget d'un ticket : « non mesuré » au lieu d'un faux 0 quand aucun agent n'a compté.
+- LBA-8 est passé par le moteur avec les commandes de la fiche : il est « À tester ».
+
+**Preuves**
+- 21 tests sur 21 verts. Le scan réel trouve : TypeScript, React, Vite, Fastify, `npm test`, `npm run check`.
+
+**Bloqué : LBA-6 et LBA-7 attendent une décision du propriétaire**
+- La documentation officielle de l'Agent SDK (code.claude.com/docs/en/agent-sdk/overview) dit qu'Anthropic n'autorise pas, sauf accord préalable, la connexion claude.ai ni les limites d'abonnement dans des produits construits avec le SDK. Elle demande une clé API, facturée à part.
+- Deux voies :
+  - une clé API avec l'Agent SDK ;
+  - Claude Code lui-même en mode non interactif (`claude -p --output-format stream-json`), avec votre connexion, pour votre usage personnel.
+
 ## Ancien plan de J1 (pour mémoire)
 À coller au début de la session neuve :
 > Lis `docs/JOURNAL.md` et `docs/decisions/0004-moteur-maison.md`. Fais J1 : socle du moteur.

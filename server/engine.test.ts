@@ -222,3 +222,16 @@ test('preuve par commande : le moteur lance la commande, l’étape ne se coche 
   await e.proveStep('LBA-4', 's1', { evidence: 'Lu : server/engine.ts, src/store.tsx' });
   assert.equal(e.ticket('LBA-4').steps[0].state, 'prouve');
 });
+
+test('LBA-8 : le scan gratuit trouve les commandes et les fichiers sensibles, sans les lire', async () => {
+  const { scanProject, toYaml } = await import('./scan.ts');
+  const p = scanProject(process.cwd());
+  assert.equal(p.commands.test, 'npm test');
+  assert.equal(p.commands.check, 'npm run check');
+  for (const f of ['React', 'Vite', 'Fastify', 'TypeScript']) assert.ok(p.frameworks.includes(f), f);
+  assert.equal(p.languages[0].name, 'TypeScript');
+  assert.ok(!p.sensitive.some((f) => f.startsWith('node_modules')));
+  const y = toYaml(p);
+  assert.match(y, /commandes:\n  test: "npm test"/);
+  assert.ok(!/@github\.com/.test(y), 'pas de nom de compte dans l’adresse du dépôt');
+});

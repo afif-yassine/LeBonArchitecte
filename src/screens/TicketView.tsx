@@ -307,7 +307,9 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <div className="kv"><span>Outil</span><span>{TOOLS[conf.tool].label}</span></div>
         <div className="kv"><span>Compte</span><span>{account?.label}<span className="faint xsmall"> 5 h : {account?.quota5h} %</span></span></div>
         <div className="kv"><span>Modèle</span><span>{conf.model}, effort {conf.effort}</span></div>
-        <div className="kv"><span>Budget</span><span><Bar value={t.used} max={t.budget} label="Budget" thick /><span className="xsmall muted num">{fmtTokens(t.used)} sur {fmtTokens(t.budget)}, boucle {t.loops}</span></span></div>
+        <div className="kv"><span>Budget</span><span><Bar value={t.used} max={t.budget} label="Budget" thick /><span className="xsmall muted num">{t.used === 0 && t.status !== 'a-faire'
+          ? <>non mesuré : aucun agent branché n’a compté (budget {fmtTokens(t.budget)})</>
+          : <>{fmtTokens(t.used)} sur {fmtTokens(t.budget)}, boucle {t.loops}</>}</span></span></div>
         {realizedState && <div className="kv"><span>Rapport</span><span>{t.reportedIn ? <span className="pill pill--ok">{t.reportedIn}</span> : <span className="pill pill--wait">à rapporter</span>}</span></div>}
 
         <h4>Dépend de</h4>

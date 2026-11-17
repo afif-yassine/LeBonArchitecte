@@ -5,6 +5,7 @@ import { openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
+import { writeProfile, type ProjectProfile } from './scan.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -27,6 +28,17 @@ app.setErrorHandler((err, _req, reply) => {
 type Id = { Params: { id: string } };
 
 app.get('/api/health', async () => ({ ok: true }));
+
+// Fiche du projet (LBA-8) : le scan gratuit tourne au besoin, la fiche est écrite dans .lba/projet.yaml.
+const profiles = new Map<string, ProjectProfile>();
+const profileOf = (project: string, fresh = false) => {
+  const dir = PROJECT_DIRS[project];
+  if (!dir) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC : rien à scanner.');
+  if (fresh || !profiles.has(project)) profiles.set(project, writeProfile(dir));
+  return profiles.get(project)!;
+};
+app.get<Id>('/api/projects/:id/profile', async (req) => profileOf(req.params.id));
+app.post<Id>('/api/projects/:id/scan', async (req) => ({ message: 'Scan fait : fiche écrite dans .lba/projet.yaml.', profile: profileOf(req.params.id, true) }));
 app.get('/api/tickets', async () => engine.tickets());
 app.get<Id>('/api/projects/:id/events', async (req) => engine.events({ project: req.params.id }));
 app.get<Id>('/api/tickets/:id/events', async (req) => engine.events({ ticket: req.params.id }));
@@ -50,7 +62,11 @@ app.post<Id & { Body: { command?: string } }>('/api/tickets/:id/run', async (req
 });
 app.post<{ Params: { id: string; step: string }; Body: { command?: string; evidence?: string; who?: string } }>('/api/tickets/:id/steps/:step/prove', async (req) => {
   const t = engine.ticket(req.params.id);
-  return { message: await engine.proveStep(t.id, req.params.step, { ...req.body, cwd: PROJECT_DIRS[t.projectId] }, req.body?.who ?? 'agent') };
+  // Sans commande donnée, la preuve vient de la fiche du projet : tests ou vérification du typage.
+  const step = t.steps.find((s) => s.id === req.params.step);
+  const prof = PROJECT_DIRS[t.projectId] ? profileOf(t.projectId) : undefined;
+  const command = req.body?.command ?? (step?.proof.kind === 'tests' ? prof?.commands.test : step?.proof.kind === 'commande' ? prof?.commands.check : undefined);
+  return { message: await engine.proveStep(t.id, req.params.step, { ...req.body, command, cwd: PROJECT_DIRS[t.projectId] }, req.body?.who ?? 'agent') };
 });
 app.post<Id & { Body: { who?: string } }>('/api/tickets/:id/agent-done', async (req) => {
   const ok = { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } as const;

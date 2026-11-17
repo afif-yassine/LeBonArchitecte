@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FolderGit2, Plus, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { FolderGit2, Plus, RefreshCw, X } from 'lucide-react';
 import { projects } from '../mock/data';
 import { TOOLS, type ToolId } from '../shared/contract';
 import { LocalSwitch, Setting, Switch } from '../components/ui';
@@ -15,6 +15,13 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const [forbids, setForbids] = useState(['git push', 'git merge', 'rm -rf', '.env', '*.pem', '.github/workflows/']);
   const [newForbid, setNewForbid] = useState('');
   const saved = () => notify('Enregistré pour ce projet.');
+  type Profile = { scannedAt: string; files: number; languages: { name: string; files: number }[]; frameworks: string[]; commands: Record<string, string | undefined>; sensitive: string[]; git: { branch?: string; remote?: string } };
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [scanErr, setScanErr] = useState('');
+  const load = (fresh: boolean) => fetch(`/api/projects/${projectId}/${fresh ? 'scan' : 'profile'}`, { method: fresh ? 'POST' : 'GET' })
+    .then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.message); setProfile(fresh ? j.profile : j); setScanErr(''); if (fresh) notify(j.message); })
+    .catch((e: Error) => { setProfile(null); setScanErr(e.message); });
+  useEffect(() => { load(false); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page settings">
@@ -22,6 +29,21 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
       <p className="lead">Ces réglages valent pour ce projet seulement. Les tickets peuvent toujours les changer un par un.</p>
 
       <div className="section setgroup">
+        <h2>Fiche du projet</h2>
+        <p>Écrite par le scan gratuit (0 token) dans <span className="mono">.lba/projet.yaml</span>. Les preuves des étapes utilisent ces commandes.</p>
+        {scanErr ? <p className="muted small">{scanErr.includes('Failed') ? 'Le moteur est arrêté : lancez « npm run dev ».' : scanErr}</p> : !profile ? <p className="faint small">Scan en cours…</p> : (<>
+          <Setting label="Langages">{profile.languages.slice(0, 4).map((l) => `${l.name} (${l.files})`).join(', ')}</Setting>
+          <Setting label="Outils trouvés">{profile.frameworks.join(', ') || 'aucun'}</Setting>
+          <Setting label="Commandes de preuve" desc="Tests et vérification lancés par le moteur pour cocher une étape."><span className="mono small">{profile.commands.test ?? 'pas de tests'} ; {profile.commands.check ?? 'pas de vérification'}</span></Setting>
+          <Setting label="Fichiers sensibles" desc="Leur contenu n’est jamais lu ni envoyé à un agent."><span className="mono small">{profile.sensitive.length ? profile.sensitive.join(', ') : 'aucun trouvé'}</span></Setting>
+          <Setting label="Git"><span className="mono small">{profile.git.branch} {profile.git.remote ? `, ${profile.git.remote}` : ''}</span></Setting>
+          <Setting label="Dernier scan" desc={`${profile.files} fichiers lus (noms seulement pour les sensibles).`}>
+            <button className="btn btn--sm" onClick={() => load(true)}><RefreshCw size={14} />Rescanner</button>
+          </Setting>
+        </>)}
+      </div>
+
+      <div className="setgroup">
         <h2>Général</h2>
         <Setting label="Nom du projet"><input className="input" defaultValue={p.name} onBlur={saved} /></Setting>
         <Setting label="Dossier" desc="Sans espace ni chemin trop long : évite les erreurs Windows."><span className="mono small muted">C:\Projets\{p.repo}</span></Setting>
