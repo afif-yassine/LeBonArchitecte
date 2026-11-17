@@ -135,3 +135,22 @@
 - Pas encore vérifiés en image : Ticket (nouveaux onglets), Cahier des charges, Comptes rendus, Git, Santé, Brume, petits écrans.
 - `npm install` invite à lancer `npm audit` : à vérifier en J1 avec les scans.
 - Aucun code serveur : volontaire.
+
+## LBA-9 : README du projet (2026-11-18)
+
+**Fait**
+- `README.md` réécrit en français simple : ce qu'est le projet, ce qu'il faut avant, comment le lancer (`npm install`, `npm run dev`, `npm run dev:ui`, `npm run engine`), les commandes de test et de vérification (`npm test`, `npm run check`, `npm run build`, `npm run engine:reset`), et liens vers `docs/JOURNAL.md`, `docs/decisions/`, le cahier des charges et les évaluations.
+- Aucun autre fichier modifié, sauf ce journal.
+
+**Étape 1 : fichiers relus (preuve)**
+- `package.json` (scripts), `vite.config.ts` (ports 5173 et 4317), `index.html`, `.gitignore`, `scripts/dev.mjs`, `server/index.ts` (40 premières lignes), `server/engine.test.ts` (noms des tests).
+- `docs/JOURNAL.md`, `docs/decisions/0001` à `0005` (en-têtes et choix), `docs/cahier-des-charges/README.md` et `cahier-des-charges.md` (début), `docs/evaluations/2026-11-moteurs-existants.md` (début), `.lba/projet.yaml`.
+- Non relu en détail : le code de `src/` et les autres fichiers de `server/`. Le README ne décrit leur rôle que de façon générale, d'après les noms de fichiers et le journal.
+
+**Preuves**
+- `npm test` : 23 tests sur 23 verts, avant et après l'écriture du README.
+- `npm run check` (tsc) : passe, sans erreur.
+- `npm run build` (tsc + vite build) : passe.
+
+**Reste à faire**
+- Le README indique Node.js 22.5 ou plus (base `node:sqlite`). Non vérifié : le projet a été lancé ici seulement avec Node 24.11.
