@@ -34,7 +34,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     for (const t of engine.tickets()) {
       if (!dirs[t.projectId] || t.status !== 'en-cours' || runs.has(t.id)) continue;
       const e = startEvent(t.id);
-      if (!e?.id || handled.has(e.id)) continue;
+      if (!e?.id || handled.has(e.id) || e.data.manual) continue;
       handled.add(e.id);
       start(t.id, e.type === 'reclamation' ? String(e.data.problem ?? '') : undefined);
     }

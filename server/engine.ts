@@ -102,7 +102,9 @@ export class Engine {
     return next;
   }
 
-  launch(id: string, opts: { replace?: string; actor?: string } = {}): string {
+  // manual : travail fait hors agent (par vous ou par une session Claude Code) ; aucun agent ne démarre,
+  // mais les étapes restent à prouver par le programme comme pour un agent.
+  launch(id: string, opts: { replace?: string; actor?: string; manual?: boolean } = {}): string {
     const t = this.ticket(id);
     assertMove(t, 'en-cours');
     const all = this.tickets(t.projectId);
@@ -117,7 +119,7 @@ export class Engine {
     if (!t.planOk) { this.record({ project: t.projectId, ticket: id, type: 'plan-valide', actor: opts.actor ?? 'vous', data: {} }); msg = 'Plan validé. '; }
     if (opts.replace) { this.stop(opts.replace, false); msg = `${opts.replace} arrêté proprement, passation écrite. `; }
     const { model, reason } = pickModel(t, t.loops > 1);
-    this.record({ project: t.projectId, ticket: id, type: 'ticket-lance', actor: opts.actor ?? 'vous', data: { model, reason } });
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-lance', actor: opts.actor ?? 'vous', data: { model, reason, ...(opts.manual ? { manual: true } : {}) } });
     this.changed();
     return `${msg}${id} démarre sur ${model}. ${reason}`;
   }
