@@ -28,7 +28,7 @@ export type EventType =
   | 'ticket-cree' | 'ticket-lance' | 'ticket-arrete' | 'agent-termine' | 'ticket-a-tester'
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'etape-commencee' | 'etape-annoncee' | 'direct'
-  | 'priorite' | 'action-ouverte' | 'action-resolue';
+  | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni';
 
 export interface EngineEvent {
   id?: number;
@@ -68,6 +68,10 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, status: 'en-cours', loops: t.loops + 1 };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
+    case 'tokens':
+      return { ...t, used: t.used + Number(e.data.used ?? 0) };
+    case 'reuni':
+      return { ...t, realized: (e.data.realized as Ticket['realized']) ?? t.realized };
     case 'priorite':
       return { ...t, priority: Number(e.data.priority) };
     case 'plan-valide':

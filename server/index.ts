@@ -6,6 +6,7 @@ import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
+import { startSupervisor } from './supervisor.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -50,7 +51,12 @@ app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => engine.s
 
 app.post<Id & { Body: { replace?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
-app.post<Id>('/api/tickets/:id/validate', async (req) => ({ message: engine.validate(req.params.id) }));
+app.post<Id>('/api/tickets/:id/validate', async (req) => ({ message: await supervisor.validate(req.params.id) }));
+app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string } }>('/api/projects/:id/tickets', async (req) => {
+  if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
+  const t = engine.createTicket(req.params.id, { ...req.body, criteria: req.body.criteria ?? [] });
+  return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.`, ticket: t };
+});
 app.post<Id & { Body: { problem?: string } }>('/api/tickets/:id/reject', async (req) => ({ message: engine.reject(req.params.id, req.body?.problem ?? '') }));
 app.post<Id & { Body: { command?: string } }>('/api/tickets/:id/run', async (req) => {
   const t = engine.ticket(req.params.id);
@@ -87,6 +93,9 @@ app.get('/api/stream', (req, reply) => {
   const ping = setInterval(() => reply.raw.write(': ping\n\n'), 25_000);
   req.raw.on('close', () => { off(); clearInterval(ping); });
 });
+
+// Vrais agents : démarrés au lancement d'un ticket d'un vrai projet (Claude Code, abonnement du propriétaire).
+const supervisor = startSupervisor(engine, PROJECT_DIRS, (p) => profileOf(p));
 
 app.listen({ port: PORT, host: '127.0.0.1' })
   .then(() => console.log(`Moteur prêt sur http://127.0.0.1:${PORT}`))

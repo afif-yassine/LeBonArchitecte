@@ -235,3 +235,40 @@ test('LBA-8 : le scan gratuit trouve les commandes et les fichiers sensibles, sa
   assert.match(y, /commandes:\n  test: "npm test"/);
   assert.ok(!/@github\.com/.test(y), 'pas de nom de compte dans l’adresse du dépôt');
 });
+
+test('worktree par ticket : travail isolé, réunion après tests, node_modules d’origine intact', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const g = await import('./git.ts');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-git-'));
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'test'); git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.lba/\n');
+  writeFileSync(join(repo, 'README.md'), '# test\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'init');
+  mkdirSync(join(repo, 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(repo, 'node_modules', 'pkg', 'keep.txt'), 'ne pas effacer');
+
+  const wt = g.ensureWorktree(repo, 'T-1');
+  assert.ok(existsSync(join(wt, 'node_modules', 'pkg', 'keep.txt')), 'node_modules partagé');
+  assert.equal(g.ensureWorktree(repo, 'T-1'), wt, 'retrouvé, pas recréé');
+  writeFileSync(join(wt, 'README.md'), '# test\n\nAjout du ticket.\n');
+  assert.ok(g.commitWorktree(wt, 'T-1 : readme'));
+  assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), '# test\n', 'main pas touché avant la réunion');
+  assert.deepEqual(g.changedFiles(repo, 'T-1').map((f) => f.path), ['README.md']);
+  const m = g.mergeTicket(repo, 'T-1', 'readme');
+  assert.ok(m.before && m.merge && m.before !== m.merge);
+  assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /Ajout du ticket/);
+  g.removeWorktree(repo, 'T-1');
+  assert.ok(!existsSync(wt), 'espace supprimé');
+  assert.ok(existsSync(join(repo, 'node_modules', 'pkg', 'keep.txt')), 'node_modules d’origine intact');
+});
+
+test('création d’un ticket : plan proposé, à valider', () => {
+  const e = fresh();
+  const t = e.createTicket('lba', { title: 'Écrire le README (documentation)', expected: 'Un README clair', criteria: ['Commandes expliquées'] });
+  assert.equal(t.id, 'LBA-9');
+  assert.equal(t.planOk, false);
+  assert.ok(t.steps.length >= 2);
+  assert.throws(() => e.createTicket('lba', { title: '', expected: 'x', criteria: [] }), /titre/);
+});

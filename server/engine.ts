@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { HumanAction, LiveItem, LiveKind, Ticket } from '../src/shared/contract.ts';
 import { Refused, assertMove, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
+import { draftPlan } from '../src/shared/plan.ts';
 import { checkDone, isReady, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
 
 type Listener = () => void;
@@ -248,6 +249,41 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     if (s.proof.kind === 'tests' || s.proof.kind === 'commande') throw new Refused(`L’étape « ${s.label} » se prouve par une commande (${s.proof.text}), pas par une déclaration.`);
     if (!o.evidence?.trim()) throw new Refused('Donnez la preuve : ce qui a été lu, ou la capture.');
     return this.stepDone(id, step, { ok: true, evidence: o.evidence.trim() }, who);
+  }
+
+  // Tokens mesurés par un adaptateur (Claude Code renvoie l'usage à la fin de chaque tour).
+  tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number }): void {
+    const t = this.ticket(id);
+    this.record({ project: t.projectId, ticket: id, type: 'tokens', actor: 'programme', data: { ...d } });
+    this.changed();
+  }
+
+  // Ce qui a été réalisé, écrit par le programme à partir de git (sans IA).
+  realized(id: string, realized: Ticket['realized']): void {
+    const t = this.ticket(id);
+    this.record({ project: t.projectId, ticket: id, type: 'reuni', actor: 'programme', data: { realized } });
+    this.changed();
+  }
+
+  // Nouveau ticket : plan proposé par règles, à valider avant que le pilote le lance.
+  createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number }): Ticket {
+    if (!o.title?.trim() || !o.expected?.trim()) throw new Refused('Un ticket a besoin d’un titre et de ce qui est attendu.');
+    const all = this.tickets(project);
+    const prefix = (all[0]?.id.split('-')[0]) ?? project.toUpperCase();
+    const n = Math.max(0, ...all.map((x) => Number(x.id.split('-')[1]) || 0)) + 1;
+    const base = {
+      id: `${prefix}-${n}`, projectId: project, title: o.title.trim(), deps: o.deps ?? [], status: 'a-faire' as const,
+      part: o.part ?? 'Général', lot: o.lot ?? Math.max(1, ...all.map((x) => x.lot)), tool: 'claude-code' as const, accountId: 'acc-claude-1',
+      model: 'Sonnet', effort: 'moyen' as const, budget: 40000, used: 0, loops: 1, files: [],
+      done: ['Critères tenus', 'Tests verts', 'Périmètre respecté', 'Aucun secret', 'Aucune nouvelle faille', 'Documentation à jour'].map((label) => ({ label, state: 'attente' as const })),
+      priority: Math.max(0, ...all.filter((x) => x.status === 'a-faire').map((x) => x.priority)) + 1,
+      criteria: o.criteria.filter((c) => c.trim()).map((text) => ({ text: text.trim(), done: false })),
+      description: { context: o.context ?? '', expected: o.expected.trim(), outOfScope: 'Rien d’autre que les critères.', cdcRefs: [] },
+    };
+    const t: Ticket = { ...base, steps: draftPlan(base), planOk: false };
+    this.record({ project, ticket: t.id, type: 'ticket-cree', actor: 'vous', data: { ticket: t } });
+    this.changed();
+    return t;
   }
 
   message(id: string, text: string): string {
