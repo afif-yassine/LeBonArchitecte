@@ -1,0 +1,56 @@
+// Règles de l'orchestrateur (décision 0004). Fonctions pures, 0 token, testées dans rules.test.ts.
+import type { Ticket } from '../src/shared/contract.ts';
+
+export interface PilotSettings { on: boolean; maxParallel: number; stopAtLotEnd: boolean; respectBudget: boolean }
+
+// Définition de fini : tous les critères tenus et tous les contrôles verts.
+export function checkDone(t: Ticket): { ok: boolean; missing: string[] } {
+  const missing = [
+    ...t.criteria.filter((c) => !c.done).map((c) => `critère « ${c.text} »`),
+    ...t.done.filter((d) => d.state !== 'ok').map((d) => d.label.toLowerCase()),
+  ];
+  return { ok: missing.length === 0, missing };
+}
+
+export const isReady = (t: Ticket, all: Ticket[]) => t.deps.every((d) => all.find((x) => x.id === d)?.status === 'termine');
+
+export const running = (all: Ticket[], project: string) => all.filter((t) => t.projectId === project && t.status === 'en-cours');
+
+// Prochain ticket à lancer par le pilote : prêt, du même lot si demandé, par priorité.
+export function nextReady(all: Ticket[], project: string, s: PilotSettings, lot?: number): Ticket | undefined {
+  if (!s.on || running(all, project).length >= s.maxParallel) return undefined;
+  return all
+    .filter((t) => t.projectId === project && t.status === 'a-faire' && isReady(t, all))
+    .filter((t) => !s.stopAtLotEnd || lot === undefined || t.lot === lot)
+    .sort((a, b) => a.priority - b.priority)[0];
+}
+
+// Même erreur deux fois de suite : on arrête, jamais de boucle aveugle.
+export function sameErrorTwice(errors: string[]): boolean {
+  const n = errors.length;
+  return n >= 2 && errors[n - 1].trim() === errors[n - 2].trim();
+}
+
+// Choix du modèle par règles. Jamais Fable.
+const RISKY = /sécurité|securite|paiement|stripe|base de données|prisma|migration|architecture|auth|déploiement|deploiement/i;
+const SIMPLE = /texte|traduction|style|couleur|faute|libellé|page à propos|note de version|documentation/i;
+
+export function pickModel(t: Ticket, failedBefore = false): { model: string; reason: string } {
+  const text = `${t.title} ${t.part} ${t.description.expected}`;
+  let level = 1; // 0 Haiku, 1 Sonnet, 2 Opus
+  let reason = 'Fonctionnalité normale.';
+  if (RISKY.test(text) || t.files.length > 8) { level = 2; reason = 'Sujet à risque (sécurité, paiement, données ou architecture) ou plus de 8 fichiers.'; }
+  else if (SIMPLE.test(text) && t.files.length <= 2) { level = 0; reason = 'Tâche simple : texte, style ou petit correctif.'; }
+  if (failedBefore && level < 2) { level += 1; reason += ' Un cran au-dessus après un échec.'; }
+  if (t.tool === 'codex') return { model: level === 0 ? 'gpt-codex-mini' : 'gpt-codex', reason };
+  return { model: ['Haiku', 'Sonnet', 'Opus'][level], reason };
+}
+
+// Bascule d'outil quand le quota 5 h dépasse le seuil de la fiche du projet.
+export const mustSwitch = (quota5h: number, threshold = 90) => quota5h >= threshold;
+
+// Contexte : compactage une seule fois à 85 % du plafond, ensuite session neuve.
+export function contextAction(tokens: number, ceiling: number, alreadyCompacted: boolean): 'rien' | 'compacter' | 'session-neuve' {
+  if (tokens < ceiling * 0.85) return 'rien';
+  return alreadyCompacted ? 'session-neuve' : 'compacter';
+}
