@@ -132,7 +132,7 @@ function Shell() {
     if (!projects.find((p) => p.id === pid)?.demo) {
       switch (space) {
         case 'cdc': return <RealDocs projectId={pid} title="Cahier des charges" prefix="docs/cahier-des-charges/" lead="Les fichiers du dossier docs/cahier-des-charges, tels qu’ils sont sur le disque." />;
-        case 'docs': return <RealDocs projectId={pid} title="Documents" lead="Tout le dossier docs/ : décisions, journal, rapports. Les PDF s’ouvrent sur votre PC." />;
+        case 'docs': return <RealDocs projectId={pid} title="Documents" exclude="docs/cahier-des-charges/" lead="Décisions, rapports, recherches et journal du projet. Un PDF s’ouvre dans un nouvel onglet. Le cahier des charges a son propre onglet." />;
         case 'regles': return <RealRules projectId={pid} />;
         case 'git': return <RealGit projectId={pid} />;
       }

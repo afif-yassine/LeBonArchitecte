@@ -260,6 +260,14 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     this.changed();
   }
 
+  // Session Claude de l'agent d'un ticket : sert à reprendre son travail si le moteur redémarre.
+  setSession(id: string, sessionId: string): void {
+    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`session:${id}`, sessionId);
+  }
+  sessionOf(id: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(`session:${id}`) as { value: string } | undefined)?.value;
+  }
+
   // Tokens réellement mesurés, par ticket et par jour (onglet Quotas). Aucune estimation.
   usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[] } {
     const rows = this.db.prepare(`SELECT at, ticket, data FROM events WHERE type = 'tokens'${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; data: string }[];

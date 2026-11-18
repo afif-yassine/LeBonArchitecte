@@ -106,9 +106,10 @@ function DocPage({ projectId, item, onLink }: { projectId: string; item: Item; o
   );
 }
 
-export function RealDocs({ projectId, title, lead, prefix }: { projectId: string; title: string; lead: string; prefix?: string }) {
+export function RealDocs({ projectId, title, lead, prefix, exclude }: { projectId: string; title: string; lead: string; prefix?: string; exclude?: string }) {
   const { data, error } = useApi<DocEntry[]>(`/projects/${projectId}/docs`);
-  const items = itemsOf((data ?? []).filter((d) => !prefix || d.path.startsWith(prefix)));
+  // Une information = un seul endroit : pas de fichier sommaire (README) ni de doublon d'un autre onglet.
+  const items = itemsOf((data ?? []).filter((d) => (!prefix || d.path.startsWith(prefix)) && (!exclude || !d.path.startsWith(exclude)) && !/\/README\.md$/i.test(d.path)));
   const [open, setOpen] = useState<string | null>(null);
   const cur = items.find((i) => i.key === open) ?? items.find((i) => i.md) ?? items[0];
   // Lien entre documents (ex. « voir la décision 0003 ») : on l'ouvre ici.

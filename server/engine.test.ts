@@ -308,6 +308,17 @@ test('recherche : rôle Éclaireur, mode agent (web), pas d’étape de tests ; 
   assert.ok(!isResearch(e.ticket('LBA-6')));
 });
 
+test('plan : chaque critère reçoit une preuve qui lui correspond, et le bon rôle', () => {
+  const e = fresh();
+  const a = e.createTicket('lba', { title: 'Audit de l’architecture de LBA', expected: 'Un rapport', criteria: ['Tests du projet lancés et résultat noté', 'Un schéma SVG de l’architecture', 'PDF créé avec npm run pdf', 'Points faibles classés par gravité'] });
+  assert.ok(a.steps.every((s) => s.role === 'architecte'));
+  assert.deepEqual(a.steps.slice(1).map((s) => s.proof.check ?? s.proof.kind), ['tests', 'svg', 'pdf', 'md']);
+  assert.ok(!a.steps.some((s) => s.label === 'Écrire et faire passer les tests'), 'un document n’écrit pas de tests en plus');
+  const code = e.createTicket('lba', { title: 'Ajouter le filtre par jour', expected: 'Filtre', criteria: ['Le filtre garde le choix'] });
+  assert.equal(code.steps[1].proof.kind, 'commande');
+  assert.ok(code.steps.some((s) => s.proof.kind === 'tests'));
+});
+
 test('réclamation : toutes les preuves sont à refaire', () => {
   const e = fresh();
   proveAll(e, 'T-12');

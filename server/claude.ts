@@ -39,6 +39,7 @@ function promptFor(t: Ticket, complaint?: string): string {
       'Quota : ouvre au plus 6 pages en entier (WebFetch) ; les résultats de WebSearch suffisent souvent. Ne relis pas une page déjà lue.',
       'Rapport : écris-le en Markdown (.md), jamais en HTML : titre #, résumé en citation >, tableaux |, schémas dans un bloc ```svg. Puis lance npm run pdf -- <ton fichier>.md (le programme fait la mise en page).',
     ] : []),
+    'Annonce ton avancement pour le propriétaire : au début de chaque étape du plan, écris sur une ligne seule « ÉTAPE n : commencée », et quand elle est finie « ÉTAPE n : faite ». Le programme vérifie ensuite chaque preuve lui-même.',
     'Termine par un résumé en français simple : ce qui a été fait, ce qui a été ajouté, les tests.',
   ].join('\n');
 }
@@ -49,7 +50,8 @@ const DENIED_MSG = /^Permission to use|was denied|denied by/i;
 
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void): ChildProcess {
+// resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -65,8 +67,11 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     // Opus = tâche importante (décision 0007) : réflexion poussée.
     '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' || t.model === 'Opus' ? 'high' : 'medium',
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
+  if (resume) args.push('--resume', resume);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
-  child.stdin.end(promptFor(t, complaint));
+  child.stdin.end(resume
+    ? 'Le moteur de Le Bon Architecte a redémarré pendant ton travail. Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : termine les étapes restantes, lance les tests, puis écris ton résumé.'
+    : promptFor(t, complaint));
 
   const live = (kind: Parameters<Engine['live']>[1]['kind'], text: string, detail?: string, ok?: boolean) => {
     try { engine.live(t.id, { kind, text, detail, ok }, who); } catch { /* ticket supprimé ou arrêté : on ignore */ }
@@ -80,13 +85,29 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   let err = '';
   let lastText = '';
 
+  // L'agent annonce ses étapes (« ÉTAPE 2 : commencée » / « ÉTAPE 2 : faite ») : le déroulé avance en direct.
+  // Une étape annoncée reste « annoncée, pas prouvée » : seul le programme la coche, après vérification.
+  const announce = (text: string) => {
+    for (const m of text.matchAll(/ÉTAPE\s+(\d+)\s*:\s*(commencée|faite)/gi)) {
+      const s = engine.ticket(t.id).steps[Number(m[1]) - 1];
+      if (!s || s.state === 'prouve') continue;
+      try {
+        if (/commenc/i.test(m[2])) { if (s.state === 'a-faire') engine.stepStart(t.id, s.id, who); }
+        else if (s.state !== 'annonce') engine.stepDone(t.id, s.id, { ok: false, evidence: 'Annoncé par l’agent ; le programme vérifiera la preuve à la fin.' }, who);
+      } catch { /* ticket arrêté : on ignore */ }
+    }
+  };
+
   const onMsg = (m: Record<string, any>) => {
-    if (m.type === 'system' && m.subtype === 'init') live('agent', `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket`);
+    if (m.type === 'system' && m.subtype === 'init') {
+      if (m.session_id) try { engine.setSession(t.id, String(m.session_id)); } catch { /* ignore */ }
+      live('agent', resume ? `Agent Claude repris sur ${m.model}` : `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket`);
+    }
     else if (m.type === 'system' && m.subtype === 'api_retry') live('systeme', `Nouvel essai de l’API (${m.error})`, `essai ${m.attempt} sur ${m.max_retries}`);
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
       for (const b of m.message?.content ?? []) {
         if (b.type === 'thinking' && b.thinking) live('reflexion', short(b.thinking, 500));
-        else if (b.type === 'text' && b.text?.trim()) { lastText = short(b.text, 600); live('message', lastText); }
+        else if (b.type === 'text' && b.text?.trim()) { lastText = short(b.text, 600); live('message', lastText); announce(b.text); }
         else if (b.type === 'tool_use') {
           const i = b.input ?? {};
           const file = i.file_path ? relative(cwd, i.file_path).replaceAll('\\', '/') : '';
