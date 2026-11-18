@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Mémoire partagée, cache, sessions et économie de tokens</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+  :root { --ink: #1d2433; --soft: #5b6475; --line: #d5d9e0; --accent: #2f5d8a; --ok: #2e7d4f; --ko: #b3412e; --wait: #a66a00; }
+  body { font: 10.5pt/1.55 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fff; margin: 0; }
+  h1 { font: 600 24pt/1.15 Georgia, serif; margin: 0 0 6pt; }
+  h2 { font: 600 14pt/1.25 Georgia, serif; margin: 22pt 0 6pt; padding-top: 6pt; border-top: 1px solid var(--line); break-after: avoid; }
+  h3 { font-size: 11pt; margin: 14pt 0 4pt; break-after: avoid; }
+  p, li { max-width: 165mm; }
+  .meta { color: var(--soft); margin-bottom: 18pt; }
+  .resume { border-left: 3px solid var(--accent); padding: 6pt 12pt; background: #f3f6fa; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9.5pt; break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 5pt 6pt; border-bottom: 1px solid var(--line); }
+  th { background: #f3f6fa; }
+  .ok { color: var(--ok); } .ko { color: var(--ko); } .wait { color: var(--wait); }
+  figure { margin: 10pt 0; break-inside: avoid; } figcaption { color: var(--soft); font-size: 9pt; }
+  svg text { font: 9pt "Segoe UI", sans-serif; fill: var(--ink); }
+  .sources li { font-size: 9pt; color: var(--soft); }
+</style>
+</head>
+<body>
+<h1>Mémoire partagée, cache, sessions et économie de tokens</h1>
+<p class="meta">Le Bon Architecte · ticket LBA-10 · 18 novembre 2026 · écrit par l’agent de recherche</p>
+
+<p class="resume"><strong>En bref :</strong> tous les outils regardés font la même chose : un petit fichier de règles lu à chaque départ, une mémoire à part qu’on ne lit pas en entier, et des sessions courtes qu’on remplace plutôt qu’on prolonge. Pour LBA, la meilleure voie est une mémoire locale triée : chaque agent reçoit 3 à 8 notes utiles (600 tokens au plus), le cache du fournisseur fait le reste. Les chiffres de coût ci-dessous sont des ordres de grandeur, à mesurer avec les vrais tickets.</p>
+
+<h2>1. Ce que font les outils existants</h2>
+<table>
+  <tr><th>Outil</th><th>Mémoire</th><th>Reprise de session</th><th>Économie de tokens</th></tr>
+  <tr><td>Claude Code [1][2]</td><td>Fichiers <code>CLAUDE.md</code> écrits par l’humain, plus « mémoire auto » écrite par Claude. La mémoire auto charge seulement les 200 premières lignes (ou 25 Ko).</td><td>Chaque session démarre vide ; <code>/resume</code> rouvre une ancienne session.</td><td>Garder <code>CLAUDE.md</code> sous 200 lignes ; mettre le reste dans des « skills » chargés à la demande ; <code>/clear</code> entre deux tâches ; sous-agents pour le bruyant.</td></tr>
+  <tr><td>Codex (OpenAI) [5][6]</td><td><code>AGENTS.md</code> lu au départ, limité à 32 Kio. Une couche « Memories » résume en arrière-plan les sessions passées et les range dans <code>~/.codex/memories/</code> ; les secrets sont retirés, les notes inutilisées 30 jours sont supprimées.</td><td><code>codex resume</code> recharge la conversation enregistrée.</td><td>Limite de taille dure ; résumés au lieu de transcriptions entières.</td></tr>
+  <tr><td>Aider [7]</td><td>Pas de mémoire longue : une « carte du dépôt » recalculée.</td><td>—</td><td>Budget fixe (1 000 tokens par défaut) ; les fichiers les plus liés entre eux sont gardés, les autres écartés.</td></tr>
+  <tr><td>Cline [8]</td><td>« Memory Bank » : 6 fichiers texte (objectif, contexte, architecture, technique, travail en cours, avancement).</td><td>La banque est relue au début de chaque tâche.</td><td>Aucun : les consignes imposent de tout lire, donc le coût grandit avec la banque.</td></tr>
+</table>
+<p>Idées communes (guide d’Anthropic [4]) : résumer quand le contexte se remplit, garder des notes hors de la conversation, confier les tâches bruyantes à des sous-agents, charger les données au moment du besoin plutôt qu’au départ.</p>
+
+<h3>Le cache : ce qui change vraiment la facture</h3>
+<p>Chez Anthropic, un texte déjà vu se relit à 0,05 à 0,1 fois le prix normal (0,05 pour Sonnet 5.5 et Opus 5.5), mais l’écriture coûte 1,25 fois (cache de 5 min) ou 2 fois (1 h) [3]. Le cache se garde 5 minutes par défaut, renouvelées à chaque usage. Sous 512 tokens environ (selon le modèle), rien n’est mis en cache [3]. Conséquence : un début de message <strong>stable</strong> (règles) coûte presque rien ; tout ce qui change d’un tour à l’autre casse le cache. Claude Code précise aussi que l’historique entier est renvoyé à chaque requête, et qu’une pause plus longue que la durée du cache oblige à tout retraiter [2].</p>
+
+<h2>2. Schéma de la stratégie recommandée</h2>
+<figure>
+  <svg viewBox="0 0 560 250" width="100%" role="img" aria-label="Schéma : règles et mémoire globale et projet, sélection de 3 à 8 notes par ticket, agent à contexte plafonné, notes proposées puis écrites par le programme">
+    <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2f5d8a"/></marker></defs>
+    <rect x="10" y="15" width="150" height="55" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="85" y="38" text-anchor="middle">Règles (une liste)</text><text x="85" y="55" text-anchor="middle">moins de 1 000 tokens</text>
+    <rect x="10" y="95" width="150" height="55" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="85" y="118" text-anchor="middle">Mémoire globale</text><text x="85" y="135" text-anchor="middle">tous les projets</text>
+    <rect x="10" y="175" width="150" height="55" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="85" y="198" text-anchor="middle">Mémoire du projet</text><text x="85" y="215" text-anchor="middle">1 note = 1 fait court</text>
+    <rect x="215" y="95" width="130" height="55" rx="6" fill="#e8f3ec" stroke="#2e7d4f"/><text x="280" y="118" text-anchor="middle">Le programme choisit</text><text x="280" y="135" text-anchor="middle">3 à 8 notes (≤ 600)</text>
+    <rect x="400" y="15" width="150" height="55" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="475" y="38" text-anchor="middle">Début stable = cache</text><text x="475" y="55" text-anchor="middle">règles, lues à bas prix</text>
+    <rect x="400" y="95" width="150" height="55" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="475" y="118" text-anchor="middle">Agent du ticket</text><text x="475" y="135" text-anchor="middle">contexte plafonné 60 k</text>
+    <rect x="400" y="175" width="150" height="55" rx="6" fill="#fff4e0" stroke="#a66a00"/><text x="475" y="198" text-anchor="middle">Fin : session neuve</text><text x="475" y="215" text-anchor="middle">+ notes proposées</text>
+    <line x1="160" y1="42" x2="213" y2="110" stroke="#2f5d8a" marker-end="url(#f)"/>
+    <line x1="160" y1="122" x2="213" y2="122" stroke="#2f5d8a" marker-end="url(#f)"/>
+    <line x1="160" y1="200" x2="213" y2="135" stroke="#2f5d8a" marker-end="url(#f)"/>
+    <line x1="345" y1="122" x2="398" y2="122" stroke="#2e7d4f" marker-end="url(#f)"/>
+    <line x1="160" y1="35" x2="398" y2="38" stroke="#2f5d8a" stroke-dasharray="4 3" marker-end="url(#f)"/>
+    <line x1="475" y1="150" x2="475" y2="173" stroke="#2f5d8a" marker-end="url(#f)"/>
+    <path d="M400 202 L280 202 L280 152" fill="none" stroke="#a66a00" stroke-dasharray="4 3" marker-end="url(#f)"/>
+    <text x="340" y="196" text-anchor="middle">le programme écrit après recherche de doublon</text>
+  </svg>
+  <figcaption>Figure 1 — Les règles forment le début stable (cache). La mémoire n’entre jamais en entier : le programme en tire 3 à 8 notes. En fin de ticket, l’agent propose des notes, le programme les écrit.</figcaption>
+</figure>
+
+<h2>3. Trois scénarios comparés pour LBA</h2>
+<p>Hypothèse de calcul : un ticket = environ 20 échanges avec l’agent ; la mémoire compte 200 notes d’environ 25 tokens. Ce sont des estimations, pas des mesures.</p>
+<table>
+  <tr><th>Scénario</th><th>Avantages</th><th>Risques</th><th>Coût (tokens)</th><th>Avis</th></tr>
+  <tr><td><strong>A. Tout en fichiers texte relus en entier</strong> (style Cline [8])</td><td>Très simple ; lisible à la main ; rien à installer.</td><td>Grossit sans fin ; l’agent noie l’utile dans le reste ; doublons faciles.</td><td>Environ 5 000 par échange, donc ~100 000 par ticket, et ça monte avec la mémoire.</td><td class="ko">Déconseillé</td></tr>
+  <tr><td><strong>B. Mémoire locale triée par le programme</strong> (règles courtes + 3 à 8 notes choisies + cache + sessions neuves avec passation)</td><td>Coût borné quelle que soit la taille de la mémoire ; mémoire commune à tous les outils (Claude, Codex) ; recherche locale, 0 token ; peu d’oubli grâce à la passation.</td><td>Plus de code à écrire ; le tri peut manquer une note utile (parade : outil de recherche à la demande, 3 notes max) ; modèle de vecteurs à valider sur la machine.</td><td>Environ 1 600 par échange (règles + notes), ~32 000 par ticket, et les règles stables sont relues au tarif cache.</td><td class="ok">Recommandé</td></tr>
+  <tr><td><strong>C. Laisser chaque outil gérer seul</strong> (mémoire auto de Claude [1], « Memories » de Codex [6], longues sessions reprises)</td><td>Rien à construire ; fonctionne tout de suite.</td><td>Mémoires séparées et non partagées entre outils ; on ne voit pas ce qui est retenu ; l’historique entier est renvoyé à chaque requête [2] ; compaction coûteuse en elle-même [2].</td><td>Contexte de 60 000 et plus par échange, soit plus d’1 million par ticket (en grande partie au tarif cache).</td><td class="wait">Possible en secours</td></tr>
+</table>
+
+<h2>4. Meilleure stratégie : le scénario B, en 4 temps</h2>
+<ol>
+  <li><strong>Règles :</strong> une seule liste de moins de 1 000 tokens, recopiée dans <code>CLAUDE.md</code> et <code>AGENTS.md</code>, placée au début du message pour profiter du cache. Elle reste identique d’un tour à l’autre.</li>
+  <li><strong>Notes :</strong> mémoire à deux étages (globale + projet), une note = un fait court, jamais écrite sans recherche de doublon. Les agents proposent, le programme écrit.</li>
+  <li><strong>Tri :</strong> par ticket, 3 à 8 notes (600 tokens au plus) choisies avec une recherche locale (mots du ticket, fichiers touchés). Un outil <code>memoire.chercher</code> renvoie 3 notes au plus si l’agent en veut plus.</li>
+  <li><strong>Sessions :</strong> contexte plafonné à 60 k, un seul compactage, puis session neuve avec une courte passation (comme le conseille Anthropic [4]). On évite les pauses longues en milieu de ticket, car elles vident le cache [2].</li>
+</ol>
+<p><strong>Coût attendu :</strong> environ trois fois moins de tokens que le scénario A, et vingt à trente fois moins que le C, avec un plafond qui ne dépend plus de la taille de la mémoire. À vérifier en mesurant 5 tickets réels avant de généraliser. Cette stratégie reprend la décision interne 0003 (<code>docs/decisions/0003-memoire-et-contexte.md</code>) et la confirme.</p>
+
+<h2>Sources</h2>
+<ol class="sources">
+  <li>[1] Anthropic, « How Claude remembers your project » (CLAUDE.md, mémoire auto) — https://code.claude.com/docs/en/memory — page officielle, consultée le 18/11/2026.</li>
+  <li>[2] Anthropic, « Manage costs effectively » (Claude Code) — https://code.claude.com/docs/en/costs — page officielle, consultée le 18/11/2026.</li>
+  <li>[3] Anthropic, « Prompt caching » — https://platform.claude.com/docs/en/build-with-claude/prompt-caching — page officielle, consultée le 18/11/2026.</li>
+  <li>[4] Anthropic Engineering, « Effective context engineering for AI agents » — https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents — publié le 29/09/2025, consulté le 18/11/2026.</li>
+  <li>[5] OpenAI, « Custom instructions with AGENTS.md » (Codex) — https://developers.openai.com/codex/guides/agents-md — page officielle ; limite de 32 Kio lue dans un extrait de recherche, la page elle-même n’a pas pu être ouverte directement ; consultée le 18/11/2026.</li>
+  <li>[6] Mem0, « How memory works in Codex CLI » — https://mem0.ai/library/coding-agents/how-memory-works-in-codex-cli — article tiers, publié le 17/11/2026 (mis à jour le 31/07/2026), consulté le 18/11/2026.</li>
+  <li>[7] Aider, « Repository map » — https://aider.chat/docs/repomap.html — documentation officielle, consultée le 18/11/2026.</li>
+  <li>[8] Cline, « Memory Bank » — https://docs.cline.bot/features/memory-bank — documentation officielle, consultée le 18/11/2026.</li>
+</ol>
+<p class="meta">Non retenu : Cursor (la page de documentation ouverte ne donnait pas les détails utiles). La date de mise à jour des pages officielles n’est pas affichée ; seule la date de consultation est donnée.</p>
+</body>
+</html>
