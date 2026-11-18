@@ -9,6 +9,7 @@ import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
 import { diffFile, fileAt, fileBytesAt } from './git.ts';
 import { gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
+import { architectBusy, askArchitect, CDC_PATH, readCdc } from './architect.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -142,6 +143,16 @@ app.get<Id & { Querystring: { path?: string } }>('/api/tickets/:id/raw', async (
   return pdf(reply, body, path.split('/').pop() ?? 'document.pdf');
 });
 app.get<Id>('/api/projects/:id/git', async (req) => gitInfo(repoOf(req.params.id)));
+// Cahier des charges (point 2) : exigences lues dans le cahier, liens avec les tickets, discussion avec l'Architecte.
+app.get<Id>('/api/projects/:id/cdc', async (req) => {
+  const c = readCdc(repoOf(req.params.id));
+  return { title: c.title, intro: c.intro, version: c.version, sections: c.sections, requirements: c.requirements, path: CDC_PATH };
+});
+app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
+app.post<Id & { Body: { mode?: string; question?: string } }>('/api/projects/:id/architect', async (req) => ({ message: askArchitect(engine, req.params.id, repoOf(req.params.id), req.body ?? {}) }));
+app.post<Id & { Body: { review: number; index: number; decision: 'acceptee' | 'refusee' } }>('/api/projects/:id/architect/decide', async (req) =>
+  ({ message: engine.decideProposal(req.params.id, Number(req.body.review), Number(req.body.index), req.body.decision === 'acceptee' ? 'acceptee' : 'refusee') }));
+app.post<Id & { Body: { refs: string[] } }>('/api/tickets/:id/requirements', async (req) => ({ message: engine.linkRequirements(req.params.id, req.body?.refs ?? []) }));
 app.get<Id>('/api/projects/:id/usage', async (req) => engine.usage(req.params.id));
 app.post<Id & { Body: { reportId: string } }>('/api/projects/:id/report', async (req) => ({ tickets: engine.report(req.params.id, req.body.reportId) }));
 

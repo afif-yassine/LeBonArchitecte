@@ -19,7 +19,7 @@ interface Usage {
 }
 
 // Relit à chaque changement du moteur (rev) : l'écran suit le travail sans actualiser.
-function useApi<T>(path: string): { data?: T; error?: string } {
+export function useApi<T>(path: string) /* partagé avec le cahier des charges */: { data?: T; error?: string } {
   const { rev } = useStore();
   const [s, setS] = useState<{ data?: T; error?: string }>({});
   useEffect(() => {

@@ -66,12 +66,13 @@ export class Engine {
   }
 
   // ---------- Écriture : un événement = une ligne du journal + la vue à jour ----------
-  private record(e: Omit<EngineEvent, 'at'>): void {
+  private record(e: Omit<EngineEvent, 'at'>): number {
     const ev: EngineEvent = { ...e, at: now() };
     this.db.exec('BEGIN');
+    let id = 0;
     try {
-      this.db.prepare('INSERT INTO events (at, project, ticket, type, actor, data) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(ev.at, ev.project, ev.ticket ?? null, ev.type, ev.actor, JSON.stringify(ev.data));
+      id = Number(this.db.prepare('INSERT INTO events (at, project, ticket, type, actor, data) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(ev.at, ev.project, ev.ticket ?? null, ev.type, ev.actor, JSON.stringify(ev.data)).lastInsertRowid);
       if (ev.ticket) {
         const before = ev.type === 'ticket-cree' ? undefined : this.ticket(ev.ticket);
         const after = reduce(before, ev);
@@ -82,9 +83,12 @@ export class Engine {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    return id;
   }
 
   private changed(): void { this.listeners.forEach((l) => l()); }
+  // Prévenir l'interface d'un changement qui n'est pas un événement (ex. : l'Architecte commence à réfléchir).
+  notify(): void { this.changed(); }
   onChange(l: Listener): () => void { this.listeners.add(l); return () => this.listeners.delete(l); }
 
   // ---------- Commandes ----------
@@ -308,6 +312,51 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Nouveau ticket : plan proposé par règles, à valider avant que le pilote le lance.
+  // Lier un ticket aux exigences du cahier qu'il couvre (« E2 » en entier, « E2~ » en partie).
+  linkRequirements(id: string, refs: string[]): string {
+    const t = this.ticket(id);
+    const clean = [...new Set(refs.map((r) => r.trim().toUpperCase()).filter((r) => /^[EA]\d{1,2}~?$/.test(r)))];
+    this.record({ project: t.projectId, ticket: id, type: 'exigences-liees', actor: 'vous', data: { refs: clean } });
+    this.changed();
+    return `${id} couvre : ${clean.join(', ') || 'aucune exigence'}.`;
+  }
+
+  // Discussions avec l'Architecte sur le cahier des charges : gardées, avec leur coût mesuré.
+  recordReview(project: string, data: { question: string; answer: unknown; tokens: number; model: string }): number {
+    const id = this.record({ project, ticket: undefined, type: 'architecte-revue', actor: 'architecte', data });
+    this.changed();
+    return id;
+  }
+
+  reviews(project: string): { id: number; at: string; question: string; answer: unknown; tokens: number; model: string; decisions: Record<number, { decision: 'acceptee' | 'refusee'; ticket?: string }> }[] {
+    const rows = this.db.prepare("SELECT id, at, type, data FROM events WHERE project = ? AND type IN ('architecte-revue', 'proposition-decidee') ORDER BY id").all(project) as { id: number; at: string; type: string; data: string }[];
+    const out = new Map<number, ReturnType<Engine['reviews']>[number]>();
+    for (const r of rows) {
+      const d = JSON.parse(r.data);
+      if (r.type === 'architecte-revue') out.set(r.id, { id: r.id, at: r.at, question: d.question, answer: d.answer, tokens: d.tokens, model: d.model, decisions: {} });
+      else out.get(d.review)?.decisions && (out.get(d.review)!.decisions[d.index] = { decision: d.decision, ticket: d.ticket });
+    }
+    return [...out.values()].reverse();
+  }
+
+  // Une proposition de l'Architecte n'est jamais appliquée seule : vous l'acceptez (elle devient un ticket
+  // « à faire », plan à valider, sans toucher au travail en cours) ou vous la refusez.
+  decideProposal(project: string, review: number, index: number, decision: 'acceptee' | 'refusee'): string {
+    const r = this.reviews(project).find((x) => x.id === review);
+    const p = (r?.answer as { propositions?: { titre: string; pourquoi: string; attendu?: string; criteres?: string[]; exigences?: string[] }[] } | undefined)?.propositions?.[index];
+    if (!r || !p) throw new Refused('Proposition introuvable.');
+    if (r.decisions[index]) throw new Refused('Cette proposition a déjà été décidée.');
+    let ticket: string | undefined;
+    if (decision === 'acceptee') {
+      const t = this.createTicket(project, { title: p.titre, context: `Proposé par l’Architecte : ${p.pourquoi}`, expected: p.attendu ?? p.titre, criteria: p.criteres?.length ? p.criteres : [p.attendu ?? p.titre], part: 'Cahier des charges' });
+      if (p.exigences?.length) this.linkRequirements(t.id, p.exigences);
+      ticket = t.id;
+    }
+    this.record({ project, ticket, type: 'proposition-decidee', actor: 'vous', data: { review, index, decision, ticket } });
+    this.changed();
+    return decision === 'acceptee' ? `Proposition acceptée : ${ticket} créé, plan à valider. Rien d’autre n’a changé.` : 'Proposition refusée.';
+  }
+
   createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number }): Ticket {
     if (!o.title?.trim() || !o.expected?.trim()) throw new Refused('Un ticket a besoin d’un titre et de ce qui est attendu.');
     const all = this.tickets(project);

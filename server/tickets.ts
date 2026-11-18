@@ -28,7 +28,8 @@ export type EventType =
   | 'ticket-cree' | 'ticket-lance' | 'ticket-arrete' | 'agent-termine' | 'ticket-a-tester'
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
-  | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni';
+  | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee';
 
 export interface EngineEvent {
   id?: number;
@@ -77,6 +78,9 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, priority: Number(e.data.priority) };
     case 'plan-valide':
       return { ...t, planOk: true, steps: (e.data.steps as TicketStep[] | undefined) ?? t.steps };
+    case 'exigences-liees':
+      // Exigences du cahier couvertes par ce ticket : « E2 » en entier, « E2~ » en partie.
+      return { ...t, description: { ...t.description, cdcRefs: e.data.refs as string[] } };
     case 'plan-refait':
       // Nouveau plan écrit par les règles (ou l'Architecte) : la validation déjà donnée reste.
       return { ...t, steps: e.data.steps as TicketStep[] };
