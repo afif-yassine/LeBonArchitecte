@@ -29,7 +29,7 @@ export type EventType =
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
-  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
+  | 'exigences-liees' | 'architecte-revue' | 'architecte-fil' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
   | 'ticket-interrompu' | 'ticket-repris' | 'activite';
 
 export interface EngineEvent {

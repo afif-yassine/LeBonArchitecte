@@ -520,6 +520,20 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Discussions avec l'Architecte sur le cahier des charges : gardées, avec leur coût mesuré.
+  // Fil de l'Architecte (agent autonome, décision 0014) : vos messages, ses réponses, ses actions, ses tokens.
+  architectSay(project: string, who: 'vous' | 'architecte' | 'action' | 'systeme', text: string, extra: Record<string, unknown> = {}): void {
+    this.record({ project, type: 'architecte-fil', actor: who === 'vous' ? 'vous' : 'architecte', data: { who, text, ...extra } });
+    this.changed();
+  }
+  architectThread(project: string, limit = 200): { id: number; at: string; who: string; text: string; [k: string]: unknown }[] {
+    const rows = this.db.prepare("SELECT id, at, data FROM events WHERE project = ? AND type = 'architecte-fil' ORDER BY id DESC LIMIT ?").all(project, limit) as { id: number; at: string; data: string }[];
+    return rows.reverse().map((r) => ({ id: r.id, at: r.at, ...JSON.parse(r.data) }));
+  }
+  // Tokens de l'Architecte : comptés dans le budget du jour comme ceux d'un ticket.
+  architectTokens(project: string, d: { used: number; cacheRead: number; costUsd: number; turns: number; model: string }): void {
+    this.record({ project, type: 'tokens', actor: 'architecte', data: { ...d, architecte: true } });
+  }
+
   recordReview(project: string, data: { question: string; answer: unknown; tokens: number; model: string }): number {
     const id = this.record({ project, ticket: undefined, type: 'architecte-revue', actor: 'architecte', data });
     this.changed();

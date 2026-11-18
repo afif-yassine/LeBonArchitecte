@@ -12,6 +12,7 @@ import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
 import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
+import { architectRunning, askArchitectAgent } from './architectAgent.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -130,7 +131,9 @@ app.get<Id>('/api/tickets/:id/context', async (req) => {
 app.get('/api/busy', async () => {
   const running = supervisor.running();
   const validating = supervisor.validating();
-  return { busy: running.length + validating.length > 0, running, validating };
+  // L'Architecte qui travaille compte aussi : le moteur ne redémarre pas sous lui.
+  const architect = Object.keys(PROJECT_DIRS).filter(architectRunning);
+  return { busy: running.length + validating.length + architect.length > 0, running, validating, architect };
 });
 app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string } }>('/api/projects/:id/tickets', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
@@ -246,6 +249,12 @@ app.get<Id>('/api/projects/:id/cdc', async (req) => {
   return { title: c.title, intro: c.intro, version: c.version, sections: c.sections, requirements: c.requirements, path: CDC_PATH };
 });
 app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
+// Architecte autonome (décision 0014) : vous lui écrivez, il agit avec la commande lba ; son fil garde tout.
+app.get<Id>('/api/projects/:id/architecte', async (req) => ({ busy: architectRunning(req.params.id), thread: engine.architectThread(req.params.id) }));
+app.post<Id & { Body: { text?: string } }>('/api/projects/:id/architecte', async (req) => {
+  if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple n’ont pas d’Architecte branché.');
+  return { message: askArchitectAgent(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '') };
+});
 app.post<Id & { Body: { mode?: string; question?: string } }>('/api/projects/:id/architect', async (req) => ({ message: askArchitect(engine, req.params.id, repoOf(req.params.id), req.body ?? {}) }));
 app.post<Id & { Body: { review: number; index: number; decision: 'acceptee' | 'refusee' } }>('/api/projects/:id/architect/decide', async (req) =>
   ({ message: engine.decideProposal(req.params.id, Number(req.body.review), Number(req.body.index), req.body.decision === 'acceptee' ? 'acceptee' : 'refusee') }));

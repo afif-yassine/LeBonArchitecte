@@ -78,3 +78,22 @@ test('Architecte : ses actions sont écrites à son nom, et les portes du propri
   assert.equal(actor(his.id), 'architecte');
   assert.equal(e.ticket(his.id).model, 'Haiku');
 });
+
+test('Architecte autonome : modèle choisi par règle, état préparé sans token, fil et tokens comptés', async () => {
+  const { pickArchitectModel, projectDigest } = await import('./architectAgent.ts');
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  assert.equal(pickArchitectModel('Crée un ticket pour corriger le titre de la page Git'), 'Sonnet');
+  assert.equal(pickArchitectModel('Fais une revue de l’architecture et des risques'), 'Opus');
+  assert.equal(pickArchitectModel('/opus range le kanban'), 'Opus');
+  const e = new Engine(openDb(':memory:'));
+  const a = e.createTicket('p', { title: 'Socle', expected: 'x', criteria: ['y'] });
+  e.createTicket('p', { title: 'Suite', expected: 'x', criteria: ['y'], deps: [a.id] });
+  const d = projectDigest(e, 'p');
+  assert.match(d, /À faire \(2\)/);
+  assert.ok(d.includes(`Suite (plan à valider) (attend ${a.id})`), d);
+  e.architectSay('p', 'vous', 'Bonjour');
+  e.architectTokens('p', { used: 5000, cacheRead: 9000, costUsd: 0.1, turns: 2, model: 'Sonnet' });
+  assert.equal(e.architectThread('p').length, 1);
+  assert.equal(e.spentToday(), 5000, 'les tokens de l’Architecte comptent dans le budget du jour');
+});

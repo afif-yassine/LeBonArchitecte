@@ -302,3 +302,9 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - `node scripts/lba.mjs` : état du kanban, ticket, déroulé, compte rendu, créer (avec le modèle), valider un plan, lancer, pause, reprendre, résoudre, tester, message, refuser, ordre, documents. Sortie courte (lue par un agent).
 - Le serveur écrit ses actions au nom « architecte » et lui ferme les portes du propriétaire : essayé en vrai, Valider, pilote, git et preuves répondent « Refusé à l'Architecte ». 61 tests verts.
 - Corrigé : le cache des PDF de comptes rendus (.lba/comptes-rendus/) n'était pas ignoré par git ; il aurait pu bloquer une réunion dans main.
+
+## Architecte autonome, lot B : l'agent (18 nov. 2026)
+- server/architectAgent.ts : agent Claude Code sans question de permission, avec la commande lba, lecture seule sur main. Route POST/GET /api/projects/:id/architecte (fil gardé dans le journal : vos messages, ses réponses, ses actions, ses tokens).
+- Économie : consigne fixe en cache, état du kanban préparé par le programme, carnet de ses dernières actions, reprise seulement si moins de 5 min, Sonnet ou Opus selon la demande. Mesuré : 3 936 tokens pour une première question, 1 374 pour la suivante (le reste relu du cache, 10 fois moins cher).
+- Le moteur ne redémarre pas pendant que l'Architecte travaille (/api/busy). 62 tests verts.
+- Reste : lot C (écran Architecte : conversation en direct, actions, coût, PDF) et la construction de l'équipe d'agents par l'Architecte.
