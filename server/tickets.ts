@@ -6,7 +6,7 @@ export const TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   'a-faire': ['en-cours'],
   'en-cours': ['a-faire', 'a-tester', 'action'],
   action: ['en-cours', 'a-faire'],
-  'a-tester': ['termine', 'en-cours'],
+  'a-tester': ['termine', 'en-cours', 'action'], // action : la validation a échoué (conflit, tests rouges)
   termine: [],
 };
 
@@ -30,7 +30,7 @@ export type EventType =
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
   | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
-  | 'ticket-interrompu' | 'ticket-repris';
+  | 'ticket-interrompu' | 'ticket-repris' | 'activite';
 
 export interface EngineEvent {
   id?: number;
@@ -51,7 +51,7 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
   if (!t) return t;
   switch (e.type) {
     case 'ticket-lance':
-      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined, paused: undefined, model: (e.data.model as string) ?? t.model };
+      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined, paused: undefined, activity: undefined, model: (e.data.model as string) ?? t.model };
     case 'ticket-interrompu':
       // Plus aucun agent ne travaille dessus (PC éteint, panne) : il attend votre « Reprendre ».
       return { ...t, status: 'action', needAction: String(e.data.cause ?? 'Travail interrompu'), interrupted: { at: e.at, lastProved: e.data.lastProved as string | undefined } };
@@ -76,11 +76,13 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, status: 'a-tester', needAction: undefined };
     case 'besoin-action':
       return { ...t, status: 'action', needAction: String(e.data.cause ?? 'Cause non précisée') };
+    case 'activite':
+      return { ...t, activity: (e.data.activity as Ticket['activity']) ?? undefined };
     case 'ticket-valide':
       return { ...t, status: 'termine' };
     case 'reclamation':
       // Le travail va changer : toutes les preuves sont à refaire, aucune coche ancienne ne reste.
-      return { ...t, status: 'en-cours', loops: t.loops + 1, interrupted: undefined, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
+      return { ...t, status: 'en-cours', loops: t.loops + 1, interrupted: undefined, needAction: undefined, activity: undefined, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'reparation':
       // Le ticket reste « en cours » ; le code va changer, donc toutes les preuves sont à refaire.
       return { ...t, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };

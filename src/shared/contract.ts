@@ -133,6 +133,14 @@ export interface DoneCheck {
   state: 'ok' | 'echec' | 'attente' | 'non-verifie';
 }
 
+export interface TicketActivity {
+  label: string; // ex. « Validation »
+  steps: { label: string; state: 'attente' | 'en-cours' | 'ok' | 'echec'; detail?: string }[];
+  error?: string;
+  fixable?: boolean; // l'agent peut le résoudre (conflit, test rouge) : bouton « Demander à l'agent »
+  at: string;
+}
+
 export interface Ticket {
   id: string;
   projectId: string;
@@ -145,6 +153,9 @@ export interface Ticket {
   interrupted?: { at: string; lastProved?: string }; // coupé par un redémarrage ou une panne : à reprendre
   waitingFor?: string; // ce que la carte attend, en mots simples
   paused?: boolean; // mis en pause par vous : le pilote ne le lance pas
+  // Ce que le programme fait en ce moment sur le ticket (valider, tester…), étape par étape, avec l'erreur s'il y en a.
+  // Affiché en haut de la fiche : on voit toujours ce qui se passe, même après coup.
+  activity?: TicketActivity;
   part: string;
   lot: number;
   tool: ToolId;

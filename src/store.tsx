@@ -29,6 +29,7 @@ interface Store {
   writeReport: (projectId: string) => void;
   validate: (id: string) => Promise<void>;
   test: (id: string) => Promise<void>;
+  fix: (id: string) => Promise<void>;
   pause: (id: string) => void;
   resume: (id: string) => void;
   reject: (id: string, problem: string) => void;
@@ -123,6 +124,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Valider et Tester durent plusieurs secondes (tests, réunion) : l'écran attend la réponse pour l'afficher.
   const validate = useCallback((id: string) => act(`/tickets/${id}/validate`), [act]);
   const test = useCallback((id: string) => act(`/tickets/${id}/test`), [act]);
+  const fix = useCallback((id: string) => act(`/tickets/${id}/fix`), [act]); // « Demander à l'agent de résoudre »
   const pause = useCallback((id: string) => { act(`/tickets/${id}/pause`); }, [act]);
   const resume = useCallback((id: string) => { act(`/tickets/${id}/resume`); }, [act]);
   const reject = useCallback((id: string, problem: string) => {
@@ -162,7 +164,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const actions = useCallback((pid: string) => pending.filter((a) => a.projectId === pid), [pending]);
   const resolveAction = useCallback((id: string, label: string) => { act(`/actions/${id}/resolve`, { label }); }, [act]);
 
-  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, test, pause, resume, reject, actions, resolveAction }),
-    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, test, pause, resume, reject, actions, resolveAction]);
+  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, test, fix, pause, resume, reject, actions, resolveAction }),
+    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, test, fix, pause, resume, reject, actions, resolveAction]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

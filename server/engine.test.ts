@@ -592,3 +592,42 @@ test('parler à l’agent : à tester = demande de modification (il reprend), en
   assert.equal(e.ticket(t.id).status, 'en-cours');
   assert.equal(e.events({ ticket: t.id, limit: 5 }).find((x) => x.type === 'reclamation')?.data.problem, 'Le titre est trop long');
 });
+
+test('validation visible : étapes et erreur gardées sur le ticket ; échec réparable = « Besoin d’action », jamais bloqué', () => {
+  const e = fresh();
+  const t = e.createTicket('vv', { title: 'Correctif visible', expected: 'x', criteria: ['y'] });
+  e.launch(t.id); proveAll(e, t.id); e.agentDone(t.id, OK);
+  e.setActivity(t.id, { label: 'Validation', steps: [{ label: 'Tests dans sa branche', state: 'echec' }], error: 'Tests rouges', fixable: true, at: new Date().toISOString() });
+  e.needsAction(t.id, 'Tests rouges dans la branche');
+  const k = e.ticket(t.id);
+  assert.equal(k.status, 'action');
+  assert.equal(k.needAction, 'Tests rouges dans la branche');
+  assert.equal(k.activity?.error, 'Tests rouges');
+  e.reject(t.id, 'Résous les tests rouges'); // ce que fait « Demander à l’agent de résoudre »
+  assert.equal(e.ticket(t.id).status, 'en-cours');
+  assert.equal(e.ticket(t.id).activity, undefined, 'bandeau remis à zéro quand l’agent repart');
+  assert.equal(e.ticket(t.id).needAction, undefined);
+});
+
+test('mise à jour de la branche avec main : conflit laissé marqué pour l’agent, main jamais touché', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync } = await import('node:fs');
+  const g = await import('./git.ts');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-fix-'));
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'test'); git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.lba/\n');
+  writeFileSync(join(repo, 'a.txt'), 'un\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'init');
+  const wt = g.ensureWorktree(repo, 'T-9');
+  writeFileSync(join(wt, 'a.txt'), 'deux (ticket)\n');
+  g.commitWorktree(wt, 'ticket');
+  writeFileSync(join(repo, 'a.txt'), 'trois (main)\n');
+  git('commit', '-q', '-am', 'main avance');
+  const main = String(git('rev-parse', 'HEAD')).trim();
+  const r = g.mergeMainInto(wt);
+  assert.deepEqual(r, { ok: false, conflicts: ['a.txt'] });
+  assert.match(readFileSync(join(wt, 'a.txt'), 'utf8'), /<<<<<<<[\s\S]*=======[\s\S]*>>>>>>>/);
+  assert.equal(String(git('rev-parse', 'HEAD')).trim(), main, 'main pas touché');
+  assert.equal(readFileSync(join(repo, 'a.txt'), 'utf8'), 'trois (main)\n');
+});

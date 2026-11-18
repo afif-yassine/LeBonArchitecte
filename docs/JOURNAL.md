@@ -244,3 +244,10 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Pause réelle (avant : simple affichage) : un ticket en cours est arrêté, son travail et sa conversation sont gardés ; le pilote ne relance pas un ticket en pause. Reprendre relance dans sa session.
 - Parler à l'agent : à tester ou en besoin d'action, un message est une demande de modification, et l'agent qui a fait le travail reprend sa propre conversation. En cours, le message lui arrive à la fin de son tour. Une fois réuni dans main, la conversation reste lisible et une modification devient un nouveau ticket.
 - LBA-16 en conflit avec main (il avait aussi un « Reprendre », après panne) : fusionné, un seul bouton pour les deux cas. 50 tests verts dans sa branche ; LBA-12 et 15 sans conflit.
+
+## Fiche ticket, lot 1 : tout voir, ne jamais bloquer (18 nov. 2026)
+- Bandeau d'état en haut de la fiche : ce qui se passe et ce qu'on attend de vous (prêt à tester, l'agent travaille étape n/m, en pause, besoin de vous…), avec les bons boutons.
+- Validation visible étape par étape (tests dans la branche, réunion, tests dans main), aussi sur la carte du kanban ; l'erreur reste écrite sur le ticket.
+- Échec que l'agent peut résoudre (conflit, tests rouges) : le ticket passe en « Besoin d'action », jamais bloqué « à tester ». Bouton « Demander à l'agent de résoudre » : le programme met la branche à jour avec main (conflits laissés marqués), puis l'agent reprend sa conversation, résout, repasse les tests. main pas prêt : reste à vous, dit clairement.
+- Onglets Diff et Tests : c'étaient des exemples écrits en dur ; maintenant les vrais fichiers changés et les vrais passages de tests. Résumé de l'agent mis en forme et gardé entier (avant : coupé à 600 caractères).
+- 52 tests verts (dont mise à jour de branche avec conflit sur un dépôt jetable). Vérifié dans le navigateur.

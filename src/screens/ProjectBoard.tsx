@@ -102,6 +102,8 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         <span className="card__title">{t.title}</span>
         {t.securityBlock && <span className="flag flag--sec"><ShieldAlert size={14} aria-hidden="true" />Bloqué par sécurité</span>}
         {t.needAction && <span className="flag flag--wait"><KeyRound size={14} aria-hidden="true" />{t.needAction}</span>}
+        {t.activity?.steps.some((s) => s.state === 'en-cours') && <span className="flag flag--accent"><Clock size={14} aria-hidden="true" />{t.activity.label} : {t.activity.steps.find((s) => s.state === 'en-cours')?.label}…</span>}
+        {t.status === 'a-tester' && t.activity?.error && <span className="flag flag--danger"><ShieldAlert size={14} aria-hidden="true" />{t.activity.error}</span>}
         {t.status === 'a-faire' && !ready && <span className="flag"><Pause size={14} aria-hidden="true" />Attend {t.deps.join(', ')}</span>}
         {t.status === 'a-faire' && t.paused && <span className="flag flag--wait"><Pause size={13} aria-hidden="true" />En pause</span>}
         {t.status === 'a-faire' && !t.paused && t.waitingFor?.startsWith('Reprend') && <span className="flag flag--accent"><Clock size={13} aria-hidden="true" />{t.waitingFor}</span>}

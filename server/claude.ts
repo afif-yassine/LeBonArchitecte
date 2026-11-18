@@ -212,7 +212,8 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
       live('systeme', ok ? `Agent fini : ${m.num_turns} tours, ${tokens.toLocaleString('fr-FR')} tokens` : `Agent arrêté : ${m.subtype}`,
         `${(u.cache_read_input_tokens ?? 0).toLocaleString('fr-FR')} tokens relus depuis le cache ; coût estimé ${Number(m.total_cost_usd ?? 0).toFixed(2)} $ (compté sur votre abonnement)`, ok);
       if (m.result && short(m.result, 600) !== lastText) live('message', short(m.result, 900));
-      outcome = { ok, reason: ok ? 'fini' : String(m.subtype), read: [...read], tokens, testsGreen, summary: short(m.result, 600) };
+      // Résumé gardé entier (avec ses retours à la ligne) : la fiche l'affiche mis en forme, plus coupé à 600 caractères.
+      outcome = { ok, reason: ok ? 'fini' : String(m.subtype), read: [...read], tokens, testsGreen, summary: String(m.result ?? '').slice(0, 6000) };
     }
   };
 

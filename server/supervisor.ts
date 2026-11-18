@@ -10,7 +10,8 @@ import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { canAutoRepair, pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
-import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, pendingFiles, removeWorktree, revertMerge, worktreeOf } from './git.ts';
+import { assertMainReady, branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeMainInto, mergeTicket, pendingFiles, removeWorktree, revertMerge, worktreeOf } from './git.ts';
+import type { TicketActivity } from '../src/shared/contract.ts';
 import { handoffText, writeHandoff } from './recovery.ts';
 import { Refused } from './tickets.ts';
 
@@ -264,20 +265,54 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     if (!repo || !existsSync(worktreeOf(repo, id))) return engine.validate(id);
     if (t.status !== 'a-tester') throw new Refused(`${id} n’est pas « à tester ».`);
     const test = profileOf(t.projectId).commands.test;
-    if (test) {
-      const r = await runCommand(test, { cwd: worktreeOf(repo, id), ticket: id });
-      if (!r.ok) throw new Refused(`Tests rouges dans l’espace de ${id} : pas de réunion dans main. ${r.summary.split('\n')[0]}`);
+    // Chaque étape est affichée en haut de la fiche pendant qu'elle se fait ; l'erreur y reste écrite.
+    const steps: TicketActivity['steps'] = [
+      ...(test ? [{ label: 'Tests dans sa branche', state: 'attente' as const }] : []),
+      { label: 'Réunion dans main', state: 'attente' },
+      ...(test ? [{ label: 'Tests dans main', state: 'attente' as const }] : []),
+    ];
+    const show = (i: number, state: TicketActivity['steps'][number]['state'], detail?: string, error?: string, fixable?: boolean) => {
+      steps[i] = { ...steps[i], state, ...(detail ? { detail } : {}) };
+      engine.setActivity(id, { label: 'Validation', steps: [...steps], at: new Date().toISOString(), ...(error ? { error, fixable } : {}) });
+    };
+    // L'agent peut le résoudre : le ticket passe en « Besoin d'action », jamais bloqué.
+    const fail = (i: number, detail: string, cause: string): never => {
+      show(i, 'echec', detail, cause, true);
+      engine.needsAction(id, cause);
+      throw new Refused(cause);
+    };
+
+    // main pas prêt (pas sur main, fichiers non enregistrés) : c'est à vous de le régler, pas à l'agent.
+    try { assertMainReady(repo); } catch (err) {
+      engine.setActivity(id, { label: 'Validation', steps, at: new Date().toISOString(), error: (err as Error).message, fixable: false });
+      throw err;
     }
-    const m = mergeTicket(repo, id, t.title);
+    let i = 0;
+    if (test) {
+      show(i, 'en-cours');
+      const r = await runCommand(test, { cwd: worktreeOf(repo, id), ticket: id });
+      if (!r.ok) fail(i, r.summary.split('\n').slice(0, 2).join(' '), `Tests rouges dans la branche de ${id} : rien n’est réuni dans main. ${r.summary.split('\n')[0]}`);
+      show(i++, 'ok', r.summary.split('\n')[0]);
+    }
+    show(i, 'en-cours');
+    let m: { before: string; merge: string };
+    try { m = mergeTicket(repo, id, t.title); } catch (err) {
+      const msg = (err as Error).message;
+      const files = [...msg.matchAll(/conflict in (\S+)/gi)].map((x) => x[1]);
+      return fail(i, msg, files.length ? `Conflit avec main dans ${files.join(', ')} : un autre ticket a changé les mêmes lignes. Rien n’a changé dans main.` : `Réunion impossible : ${msg}`);
+    }
+    show(i++, 'ok', `commit ${m.merge}`);
     // Audit LBA-11, point 2 : les tests sont relancés dans main APRÈS la réunion.
     // Deux tickets verts chacun peuvent donner un main rouge : dans ce cas on annule la réunion.
     if (test) {
+      show(i, 'en-cours');
       const after = await runCommand(test, { cwd: repo, ticket: id });
       if (!after.ok) {
         const rev = revertMerge(repo, m.merge);
         engine.live(id, { kind: 'bug', ok: false, text: 'Tests rouges dans main après la réunion : réunion annulée.', detail: `${after.summary.split('\n')[0]} ; annulée par le commit ${rev}, rien n’est effacé.` }, 'programme');
-        throw new Refused(`Tests rouges dans main après la réunion de ${id} : la réunion est annulée (commit ${rev}). Le ticket reste à tester ; son espace de travail est gardé.`);
+        fail(i, after.summary.split('\n').slice(0, 2).join(' '), `Tests rouges dans main après la réunion de ${id} : réunion annulée (commit ${rev}), rien n’est effacé. ${after.summary.split('\n')[0]}`);
       }
+      show(i, 'ok', after.summary.split('\n')[0]);
     }
     const msg = engine.validate(id);
     engine.live(id, { kind: 'systeme', ok: true, text: `Réuni dans main (${m.merge})`, detail: `Point de retour : ${m.before}. Pour annuler : git revert -m 1 ${m.merge}` }, 'programme');
@@ -285,5 +320,26 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     return `${msg} Réuni dans main (${m.merge}), point de retour ${m.before}.`;
   }
 
-  return { validate, resume, running: () => [...runs.keys()], validating: () => [...validating] };
+  // « Demander à l'agent de résoudre » : pour tout ticket en « Besoin d'action ». Le programme met d'abord
+  // la branche à jour avec main (conflits laissés marqués dans les fichiers), puis l'agent qui a fait le
+  // travail reprend sa conversation avec la cause exacte, résout, et repasse les tests.
+  function fix(id: string): string {
+    const t = engine.ticket(id);
+    if (t.status !== 'action') throw new Refused(`${id} n’est pas en « Besoin d’action » : rien à résoudre.`);
+    const repo = dirs[t.projectId];
+    const wt = repo ? worktreeOf(repo, id) : '';
+    let conflicts: string[] = [];
+    if (wt && existsSync(wt)) conflicts = mergeMainInto(wt).conflicts;
+    const test = repo ? profileOf(t.projectId).commands.test : undefined;
+    const problem = [
+      `Problème à résoudre : ${t.needAction ?? 'voir le direct'}.`,
+      conflicts.length ? `Ta branche a été mise à jour avec main. Conflits à résoudre dans : ${conflicts.join(', ')} (marqueurs <<<<<<<, =======, >>>>>>>). Garde les deux changements quand c’est possible, puis « git add » et « git commit ».` : '',
+      test ? `Relance « ${test} » jusqu’à ce que tout soit vert.` : '',
+    ].filter(Boolean).join(' ');
+    engine.setActivity(id, null);
+    engine.reject(id, problem);
+    return `L’agent de ${id} reprend sa conversation pour résoudre : ${conflicts.length ? `${conflicts.length} conflit(s) à régler` : 'le problème indiqué'}.`;
+  }
+
+  return { validate, resume, fix, running: () => [...runs.keys()], validating: () => [...validating] };
 }

@@ -94,9 +94,15 @@ app.post<Id>('/api/tickets/:id/test', async (req) => {
   const test = profileOf(t.projectId).commands.test;
   if (!test) throw new Refused('Aucune commande de tests dans la fiche du projet.');
   const wt = worktreeOf(repo, t.id);
+  const where = existsSync(wt) ? `Tests dans la branche de ${t.id}` : 'Tests dans main';
+  const at = () => new Date().toISOString();
+  engine.setActivity(t.id, { label: 'Tests', steps: [{ label: where, state: 'en-cours' }], at: at() });
   const r = await engine.run(t.id, test, existsSync(wt) ? wt : repo, 'vous');
-  return { message: `${r.ok ? 'Tests verts' : 'Tests rouges'} dans ${existsSync(wt) ? `la branche de ${t.id}` : 'main'} : ${r.summary.split('\n')[0]}`, result: r };
+  const first = r.summary.split('\n')[0];
+  engine.setActivity(t.id, { label: 'Tests', steps: [{ label: where, state: r.ok ? 'ok' : 'echec', detail: first }], at: at(), ...(r.ok ? {} : { error: `Tests rouges : ${first}`, fixable: false }) });
+  return { message: `${r.ok ? 'Tests verts' : 'Tests rouges'} : ${where.toLowerCase()} : ${first}`, result: r };
 });
+app.post<Id>('/api/tickets/:id/fix', async (req) => ({ message: supervisor.fix(req.params.id) }));
 // Pour le lanceur : le moteur ne redémarre (mise à jour de son code) que s'il est libre.
 app.get('/api/busy', async () => {
   const running = supervisor.running();

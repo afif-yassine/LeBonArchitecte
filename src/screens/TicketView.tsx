@@ -6,6 +6,8 @@ import {
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
 import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
 import { Deroule, PhaseFrise } from '../components/Deroule';
+import { TicketStatus } from '../components/TicketStatus';
+import { Markdown } from '../components/Markdown';
 import { FileViewer } from '../components/FileViewer';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
@@ -91,8 +93,11 @@ function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
 
 export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const notify = useNotify();
-  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject, pause, resume } = useStore();
+  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject, pause, resume, fix, isReady } = useStore();
   const [rejecting, setRejecting] = useState(false);
+  // Valider dure (tests, réunion, tests dans main) : le bouton se bloque et le bandeau montre chaque étape.
+  const [busy, setBusy] = useState(false);
+  const doValidate = () => { if (busy) return; setBusy(true); validate(ticketId).finally(() => setBusy(false)); };
   const [problem, setProblem] = useState('');
   const t = tickets.find((x) => x.id === ticketId)!;
   const agent = t.status === 'en-cours' || t.status === 'action' ? agents.find((a) => a.id === t.agentId) : undefined;
@@ -144,6 +149,9 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
             )}
           </div>
         </div>
+        <TicketStatus t={t} busy={busy} ready={isReady(t)}
+          onValidate={doValidate} onReject={() => { setTab('realise'); setRejecting(true); }} onFix={() => { fix(t.id); }}
+          onPause={() => pause(t.id)} onResume={() => resume(t.id)} onLaunch={() => setLaunching(true)} onLook={() => setTab('deroule')} />
         <div className="tk__phases"><PhaseFrise t={t} /></div>
         <div className="tk__tabs">
           <Tabs<Tab> label="Vues du ticket" value={tab} onChange={setTab} tabs={[
@@ -206,13 +214,12 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                     <h3>Recette : à vous de tester</h3>
                     <p className="small muted">Le programme a déjà vérifié les tests, les critères, les secrets et les failles. Il reste à essayer comme un vrai utilisateur.</p>
                     <ol className="steps" style={{ margin: '10px 0 14px' }}>
-                      <li>Ouvrez l’aperçu : rien à compiler, les changements s’affichent tout de suite.</li>
-                      <li>Essayez chaque critère d’acceptation.</li>
+                      <li>Lisez le résumé et les fichiers ci-dessous.</li>
+                      <li>Vérifiez chaque critère d’acceptation.</li>
                       <li>Validez, ou décrivez ce qui ne va pas : le même agent corrige.</li>
                     </ol>
                     <div className="row">
-                      <button className="btn" onClick={() => notify('Maquette : l’aperçu du projet s’ouvre dans un onglet (J5).')}>Ouvrir l’aperçu</button>
-                      <button className="btn btn--primary" onClick={() => validate(t.id)}>Tout marche : valider</button>
+                      <button className="btn btn--primary" disabled={busy} onClick={doValidate}>{busy ? 'Validation… voir les étapes en haut' : 'Tout marche : valider'}</button>
                       <button className="btn" onClick={() => setRejecting(true)}>Ça ne marche pas</button>
                     </div>
                     {rejecting && (
@@ -234,7 +241,11 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                     : <span><strong>Pas encore rapporté.</strong> Il sera dans le prochain compte rendu.</span>}
                   <button className="link" style={{ marginLeft: 'auto' }} onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'docs' })}>Comptes rendus</button>
                 </div>
-                <div className="descr__block"><h3>Résumé</h3><p className="realized__summary">{t.realized.summary}</p></div>
+                <div className="descr__block">
+                  <h3>Résumé de l’agent</h3>
+                  {/* Les annonces « ÉTAPE n : faite » servent au programme, pas à la lecture. */}
+                  <div className="realized__summary"><Markdown text={t.realized.summary.replace(/ÉTAPE \d+ : (faite|commencée)\s*/g, '').replace(/ (#{2,3} )/g, '\n\n$1').replace(/ - \*\*/g, '\n- **')} /></div>
+                </div>
                 <div className="descr__block" hidden={t.realized.added.length === 0}>
                   <h3>Ajouté</h3>
                   <ul className="ulist">{t.realized.added.map((a) => <li key={a}><Plus size={13} />{a}</li>)}</ul>
@@ -269,22 +280,33 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               {journal.length === 0 && <p className="muted">Chaque événement du ticket est écrit ici par le moteur, tel quel, pour l’audit.</p>}
             </ol>
           )}
+          {/* Avant : des exemples écrits en dur. Maintenant : les vrais changements et les vrais tests du ticket. */}
           {tab === 'diff' && (
-            <div className="box mono" style={{ fontSize: '.84rem', lineHeight: 1.7, whiteSpace: 'pre', overflowX: 'auto' }}>
-              <div className="faint">src/calendar.ts</div>
-              <div style={{ color: 'var(--ok)' }}>{'+ export const SLOT_MINUTES = 90;\n+ export function freeSlots(day: Date, taken: Slot[]): Slot[] {\n+   return allSlots(day, SLOT_MINUTES).filter((s) => !overlaps(s, taken));\n+ }'}</div>
-            </div>
+            !t.realized || t.realized.files.length === 0
+              ? <div className="empty"><h3>Aucun changement pour l’instant</h3><p>Les fichiers modifiés par l’agent s’affichent ici, avec leurs lignes ajoutées et retirées.</p></div>
+              : demo
+                ? <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
+                : <FileViewer ticketId={t.id} files={t.realized.files} />
           )}
-          {tab === 'tests' && (
-            <div className="box">
-              <div className="figures">
-                <div><div className="figure__value" style={{ color: 'var(--ok)' }}>42</div><div className="figure__label">passés</div></div>
-                <div><div className="figure__value">0</div><div className="figure__label">échec</div></div>
-                <div><div className="figure__value">1,8 s</div><div className="figure__label">durée</div></div>
-              </div>
-              <p className="xsmall faint" style={{ marginTop: 12 }}>La sortie complète (312 lignes) est gardée dans le journal. L’agent n’a reçu que ce résumé.</p>
-            </div>
-          )}
+          {tab === 'tests' && (() => {
+            // Seulement les vrais passages de tests (pas les recherches de l'agent qui contiennent le mot « test »).
+            const runs = (feed ?? []).filter((i) => (i.kind === 'test' || i.kind === 'commande') && /^(npm (test|run (check|build))|npx tsc)\b/.test(i.text.trim()));
+            return runs.length === 0
+              ? <div className="empty"><h3>Aucun test lancé pour l’instant</h3><p>Chaque passage des tests (par l’agent, par le programme, ou par vous avec « Tester ») s’affiche ici.</p></div>
+              : (
+                <ol className="testruns">
+                  {runs.slice().reverse().map((i) => (
+                    <li key={i.id} className={`testrun ${i.ok === false ? 'is-ko' : i.ok ? 'is-ok' : ''}`}>
+                      <span className="testrun__mark" aria-hidden="true">{i.ok === false ? <X size={12} strokeWidth={3} /> : <Check size={12} strokeWidth={3} />}</span>
+                      <span className="testrun__what">{i.text}<span className="sr-only">{i.ok === false ? ', en échec' : ', vert'}</span></span>
+                      <span className="testrun__who">{i.who === 'programme' ? 'le programme' : i.who === 'vous' ? 'vous' : 'l’agent'}</span>
+                      <span className="testrun__at">{new Date(i.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      {i.detail && <span className="testrun__detail">{i.detail.split('\n')[0]}</span>}
+                    </li>
+                  ))}
+                </ol>
+              );
+          })()}
         </div>
 
         {tab === 'deroule' && t.status !== 'termine' && (
@@ -343,7 +365,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
             : <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>)}
           {t.status === 'action' && t.interrupted && <button className="btn btn--primary" onClick={() => resume(t.id)}><RotateCcw size={15} />Reprendre</button>}
           {t.status === 'a-tester' && (<>
-            <button className="btn btn--primary" onClick={() => validate(t.id)}><Check size={15} />Valider</button>
+            <button className="btn btn--primary" disabled={busy} onClick={doValidate}><Check size={15} />{busy ? 'Validation…' : 'Valider'}</button>
             <button className="btn" onClick={() => { setTab('realise'); setRejecting(true); }}><X size={15} />Ça ne marche pas</button>
           </>)}
           {t.status === 'en-cours' && (<>

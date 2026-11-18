@@ -45,6 +45,18 @@ export function commitWorktree(dir: string, message: string): string | undefined
 // Toujours comparer à main (audit LBA-11, point 1) : jamais à la branche ouverte, qui peut être une autre.
 export const MAIN = 'main';
 
+// Met la branche du ticket à jour avec main, dans son propre dossier (main n'est jamais touché).
+// En cas de conflit, les fichiers gardent les marqueurs <<<<<<< pour que l'agent les résolve,
+// puis il termine par « git add » et « git commit » (droits qu'il a déjà).
+export function mergeMainInto(dir: string): { ok: boolean; conflicts: string[] } {
+  commitWorktree(dir, 'Travail en cours avant mise à jour avec main');
+  const r = tryRun(dir, ['merge', MAIN, '--no-edit']);
+  if (r.ok) return { ok: true, conflicts: [] };
+  const conflicts = tryRun(dir, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean);
+  if (!conflicts.length) { tryRun(dir, ['merge', '--abort']); throw new Refused(`Mise à jour avec main impossible : ${r.out.split('\n')[0]}`); }
+  return { ok: false, conflicts };
+}
+
 export function diffOf(repo: string, id: string): string {
   return tryRun(repo, ['diff', `${MAIN}...${branchOf(id)}`]).out.slice(0, 2_000_000);
 }

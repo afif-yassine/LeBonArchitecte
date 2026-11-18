@@ -1,7 +1,7 @@
 // Le moteur : il écrit chaque événement dans le journal, met à jour la vue des tickets dans la même
 // transaction, puis applique les règles (0 token). Aucune IA ici.
 import type { DatabaseSync } from 'node:sqlite';
-import type { HumanAction, LiveItem, LiveKind, Ticket } from '../src/shared/contract.ts';
+import type { HumanAction, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
 import { Refused, assertMove, lastProvedStep, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
@@ -147,6 +147,23 @@ export class Engine {
   }
 
   // Sans raison : mis en pause par vous (le pilote ne le relance pas). Avec raison : repart seul en tête de file.
+  // Ce que le programme fait sur le ticket (valider, tester), affiché en haut de la fiche, avec l'erreur.
+  setActivity(id: string, activity: TicketActivity | null): void {
+    const t = this.ticket(id);
+    this.record({ project: t.projectId, ticket: id, type: 'activite', actor: 'programme', data: { activity } });
+    this.changed();
+  }
+
+  // Un problème que l'agent peut résoudre (conflit, tests rouges) : le ticket ne reste jamais bloqué
+  // « à tester », il passe en « Besoin d'action » avec la cause et le bouton « Demander à l'agent ».
+  needsAction(id: string, cause: string): void {
+    const t = this.ticket(id);
+    if (t.status === 'action') return;
+    assertMove(t, 'action');
+    this.record({ project: t.projectId, ticket: id, type: 'besoin-action', actor: 'programme', data: { cause } });
+    this.changed();
+  }
+
   stop(id: string, notify = true, reason?: string): string {
     const t = this.ticket(id);
     assertMove(t, 'a-faire');
