@@ -433,3 +433,25 @@ test('valider les plans d’un coup : places remplies, le reste attend, rien hor
   assert.ok(e.ticket(d.id).planOk);
   assert.throws(() => e.validatePlans('ww', [a.id]), /Aucun plan/);
 });
+
+test('limite d’abonnement : pas un échec, le ticket attend en tête, le pilote ne lance rien avant l’heure', async () => {
+  const { quotaReset } = await import('./claude.ts');
+  const now = new Date(2026, 10, 18, 3, 39);
+  const r = new Date(quotaReset('You\'ve hit your 5-hour limit · resets 5:50am (Europe/Paris)', now)!);
+  assert.deepEqual([r.getDate(), r.getHours(), r.getMinutes()], [18, 5, 51]);
+  const late = new Date(quotaReset('You\'ve hit your limit · resets 2am', new Date(2026, 10, 18, 3, 0))!);
+  assert.deepEqual([late.getDate(), late.getHours()], [19, 2]);
+  assert.equal(quotaReset('Tests verts', now), undefined);
+
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false });
+  const a = e.createTicket('qq', { title: 'Correctif A', expected: 'x', criteria: ['y'] });
+  const b = e.createTicket('qq', { title: 'Correctif B', expected: 'x', criteria: ['y'] });
+  e.validatePlans('qq', [a.id, b.id]);
+  const running = [a, b].find((t) => e.ticket(t.id).status === 'en-cours')!;
+  e.quotaPause(running.id, new Date(Date.now() + 3600_000).toISOString(), 'limit');
+  assert.equal(e.ticket(running.id).status, 'a-faire');
+  assert.equal(e.ticket(running.id).priority, 0);
+  assert.equal(e.kickPilot('qq'), '');
+  assert.ok([a, b].every((t) => e.ticket(t.id).status === 'a-faire'));
+});

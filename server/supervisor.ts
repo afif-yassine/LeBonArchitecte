@@ -74,11 +74,28 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       const e = startEvent(t.id);
       if (!e?.id || handled.has(e.id) || e.data.manual) continue;
       handled.add(e.id);
-      start(t.id, e.type === 'reclamation' ? String(e.data.problem ?? '') : undefined);
+      if (e.type === 'reclamation') { start(t.id, String(e.data.problem ?? '')); continue; }
+      // Relancé après un arrêt (limite d'abonnement, arrêt par vous, « Pas fini ») : il reprend sa
+      // propre session au lieu de tout relire et refaire. Sans session ni dossier : départ normal.
+      const session = engine.sessionOf(t.id);
+      const again = session && pickMode(t) === 'agent' && existsSync(worktreeOf(dirs[t.projectId], t.id));
+      if (again) engine.live(t.id, { kind: 'systeme', text: 'Reprise de sa session Claude : l’agent continue où il en était.' }, 'programme');
+      start(t.id, undefined, again ? session : undefined, 'reprise');
     }
   }
 
-  function start(id: string, complaint?: string, resume?: string) {
+  // Limite d'abonnement : réveil du pilote à l'heure de retour (aussi après un redémarrage du moteur).
+  let wake: NodeJS.Timeout | undefined;
+  function wakeAt(until: string) {
+    clearTimeout(wake);
+    wake = setTimeout(() => {
+      for (const p of Object.keys(dirs)) engine.kickPilot(p);
+    }, Math.max(1000, new Date(until).getTime() - Date.now()));
+  }
+  const held = engine.quotaUntil();
+  if (held) wakeAt(held);
+
+  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage') {
     const t = engine.ticket(id);
     let wt: string;
     try { wt = ensureWorktree(dirs[t.projectId], id); } catch (err) {
@@ -89,6 +106,13 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const onEnd = (o: RunOutcome) => {
       runs.delete(id);
       if (engine.ticket(id).status !== 'en-cours') return;
+      if (o.quotaUntil) {
+        // Pas un échec : le travail fait est gardé dans la branche, le ticket attend en tête de file.
+        commitWorktree(wt, `${id} : travail en cours (limite de l’abonnement)`);
+        engine.quotaPause(id, o.quotaUntil, o.summary ?? '');
+        wakeAt(o.quotaUntil);
+        return;
+      }
       // Audit LBA-11, point 5 : si la fin plante, le ticket ne reste pas « en cours » pour toujours :
       // il passe en « Besoin d'action » avec la raison, et libère sa place.
       finish(id, wt, o).catch((err) => {
@@ -103,7 +127,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     // Tâche simple de texte : un seul appel sans outils ; sinon un agent complet.
     runs.set(id, pickMode(t) === 'direct'
       ? runDirect(engine, t, wt, profileOf(t.projectId), complaint, onEnd)
-      : runClaude(engine, t, wt, complaint, onEnd, resume));
+      : runClaude(engine, t, wt, complaint, onEnd, resume, why));
   }
 
   async function finish(id: string, wt: string, o: RunOutcome) {

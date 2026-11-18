@@ -136,6 +136,26 @@ export class Engine {
     return `${id} arrêté proprement. Il reprendra avec sa passation.`;
   }
 
+  // Limite d'abonnement atteinte (ex. « 5-hour limit ») : ce n'est pas un échec du ticket.
+  // Il repart en tête de file (sa session est gardée pour reprendre sans tout refaire) et le pilote
+  // ne lance plus rien avant l'heure de retour : sinon chaque ticket lancé s'arrête aussitôt.
+  quotaPause(id: string, until: string, message: string): string {
+    const t = this.ticket(id);
+    this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('quota-until', ?)").run(until);
+    if (t.status === 'en-cours' || t.status === 'action') {
+      this.record({ project: t.projectId, ticket: id, type: 'ticket-arrete', actor: 'programme', data: { reason: 'limite de l’abonnement, sa session reprendra' } });
+    }
+    const at = new Date(until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    this.live(id, { kind: 'systeme', ok: false, text: `Limite de l’abonnement atteinte : ${id} attend en tête de file. Reprise de sa session à ${at}.`, detail: message }, 'programme');
+    this.changed();
+    return at;
+  }
+
+  quotaUntil(): string | undefined {
+    const r = this.db.prepare("SELECT value FROM settings WHERE key = 'quota-until'").get() as { value: string } | undefined;
+    return r && new Date(r.value).getTime() > Date.now() ? r.value : undefined;
+  }
+
   // Fin d'un agent. « result » vient de l'adaptateur (plus tard) ou d'une simulation (maquette).
   agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }): string {
     const t = this.ticket(id);
@@ -481,6 +501,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   // Pilote automatique : remplit les places libres avec les tickets prêts.
   private runPilot(project: string, lot: number): string {
     const launched: string[] = [];
+    if (this.quotaUntil()) return ''; // limite d'abonnement : rien ne part avant l'heure de retour
     for (let i = 0; i < 4; i++) {
       const next = nextReady(this.tickets(project), project, this.pilot(), lot);
       if (!next) break;

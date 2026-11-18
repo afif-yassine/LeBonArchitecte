@@ -28,7 +28,21 @@ export const isResearch = (t: Ticket) => t.steps.some((s) => s.role === 'eclaire
 
 const MODEL: Record<string, string> = { Haiku: 'haiku', Sonnet: 'sonnet', Opus: 'opus' }; // jamais Fable
 
-export interface RunOutcome { ok: boolean; reason: string; read: string[]; tokens: number; testsGreen?: boolean; summary?: string }
+export interface RunOutcome { ok: boolean; reason: string; read: string[]; tokens: number; testsGreen?: boolean; summary?: string; quotaUntil?: string }
+
+// « You've hit your 5-hour limit · resets 5:50am (Europe/Paris) » : limite d'abonnement, pas un échec.
+// Renvoie l'heure de retour (heure locale du PC ; demain si elle est passée), ou dans 1 h si illisible.
+export function quotaReset(text: string, now = new Date()): string | undefined {
+  if (!/hit your .*limit|usage limit reached|limit reached/i.test(text)) return undefined;
+  const m = text.match(/resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (!m) return new Date(now.getTime() + 3600_000).toISOString();
+  let h = Number(m[1]);
+  if (m[3]) h = (h % 12) + (m[3].toLowerCase() === 'pm' ? 12 : 0);
+  const at = new Date(now);
+  at.setHours(h, Number(m[2] ?? 0) + 1, 0, 0); // une minute de marge
+  if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1);
+  return at.toISOString();
+}
 
 function promptFor(t: Ticket, complaint?: string): string {
   return [
@@ -87,7 +101,9 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
 }
 
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string): ChildProcess {
+// resume : session Claude à reprendre. why = 'redemarrage' (moteur coupé en route : tokens pas encore comptés)
+// ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés).
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage'): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -106,7 +122,7 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   if (resume) args.push('--resume', resume);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
   child.stdin.end(resume
-    ? 'Le moteur de Le Bon Architecte a redémarré pendant ton travail. Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : termine les étapes restantes, lance les tests, puis écris ton résumé.'
+    ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
     : promptFor(t, complaint));
 
   const live = (kind: Parameters<Engine['live']>[1]['kind'], text: string, detail?: string, ok?: boolean) => {
@@ -117,7 +133,7 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   // et on compte les tokens de la partie coupée, qui n'avaient pas été enregistrés.
   const before = resume ? sessionSoFar(cwd, resume) : undefined;
   const read = new Set<string>(before?.read ?? []);
-  if (before && before.used) {
+  if (before && before.used && why === 'redemarrage') {
     try { engine.tokens(t.id, { used: before.used, cacheRead: before.cacheRead, costUsd: 0, turns: before.turns }); } catch { /* ignore */ }
     live('systeme', `Partie coupée comptée : ${before.used.toLocaleString('fr-FR')} tokens en ${before.turns} tours`, `${before.read.length} fichiers lus avant la coupure ; ${before.cacheRead.toLocaleString('fr-FR')} relus depuis le cache`);
   }
@@ -181,6 +197,8 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
       const tokens = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
       try { engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0 }); } catch { /* ignore */ }
       const ok = m.subtype === 'success' && !m.is_error;
+      const quotaUntil = m.is_error ? quotaReset(String(m.result ?? '')) : undefined;
+      if (quotaUntil) { outcome = { ok: false, reason: 'quota', read: [...read], tokens, summary: short(m.result, 300), quotaUntil }; return; }
       live('systeme', ok ? `Agent fini : ${m.num_turns} tours, ${tokens.toLocaleString('fr-FR')} tokens` : `Agent arrêté : ${m.subtype}`,
         `${(u.cache_read_input_tokens ?? 0).toLocaleString('fr-FR')} tokens relus depuis le cache ; coût estimé ${Number(m.total_cost_usd ?? 0).toFixed(2)} $ (compté sur votre abonnement)`, ok);
       if (m.result && short(m.result, 600) !== lastText) live('message', short(m.result, 900));
