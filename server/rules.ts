@@ -47,6 +47,14 @@ export function pickModel(t: Ticket, failedBefore = false): { model: string; rea
   return { model: ['Haiku', 'Sonnet', 'Opus'][level], reason };
 }
 
+// Mode de travail : « direct » (un seul appel sans outils, contexte préparé par le programme)
+// pour les tâches simples de texte ; « agent » (explore, code, teste) pour le reste.
+// Mesuré : un agent pour un README = 71 770 tokens ; le plancher d'un appel direct ≈ 4 300.
+export function pickMode(t: Ticket): 'direct' | 'agent' {
+  const text = `${t.title} ${t.part} ${t.description.expected}`;
+  return SIMPLE.test(text) && !RISKY.test(text) && t.files.length <= 2 ? 'direct' : 'agent';
+}
+
 // Bascule d'outil quand le quota 5 h dépasse le seuil de la fiche du projet.
 export const mustSwitch = (quota5h: number, threshold = 90) => quota5h >= threshold;
 

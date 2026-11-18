@@ -6,6 +6,8 @@ import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
 import { runClaude, type RunOutcome } from './claude.ts';
+import { runDirect } from './direct.ts';
+import { pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
 import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, removeWorktree, worktreeOf } from './git.ts';
 import { Refused } from './tickets.ts';
@@ -48,11 +50,15 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       return;
     }
     engine.live(id, { kind: 'etape', text: `Espace de travail prêt : .lba/worktrees/${id}`, detail: `Branche ${branchOf(id)} ; main n’est pas touché avant les tests verts` }, 'programme');
-    runs.set(id, runClaude(engine, t, wt, complaint, (o) => {
+    const onEnd = (o: RunOutcome) => {
       runs.delete(id);
       if (engine.ticket(id).status !== 'en-cours') return;
       finish(id, wt, o).catch((err) => engine.live(id, { kind: 'systeme', ok: false, text: `Fin de l’agent mal terminée : ${(err as Error).message}` }, 'programme'));
-    }));
+    };
+    // Tâche simple de texte : un seul appel sans outils ; sinon un agent complet.
+    runs.set(id, pickMode(t) === 'direct'
+      ? runDirect(engine, t, wt, profileOf(t.projectId), complaint, onEnd)
+      : runClaude(engine, t, wt, complaint, onEnd));
   }
 
   async function finish(id: string, wt: string, o: RunOutcome) {

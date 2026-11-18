@@ -65,7 +65,8 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
     case 'ticket-valide':
       return { ...t, status: 'termine' };
     case 'reclamation':
-      return { ...t, status: 'en-cours', loops: t.loops + 1 };
+      // Le travail va changer : toutes les preuves sont à refaire, aucune coche ancienne ne reste.
+      return { ...t, status: 'en-cours', loops: t.loops + 1, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
     case 'tokens':

@@ -272,3 +272,30 @@ test('création d’un ticket : plan proposé, à valider', () => {
   assert.ok(t.steps.length >= 2);
   assert.throws(() => e.createTicket('lba', { title: '', expected: 'x', criteria: [] }), /titre/);
 });
+
+test('mode direct : choisi pour le texte simple, contexte préparé, fichiers écrits seulement dans le dossier', async () => {
+  const { pickMode } = await import('./rules.ts');
+  const { buildContext, parseFiles } = await import('./direct.ts');
+  const e = fresh();
+  const doc = e.createTicket('lba', { title: 'Écrire le README du projet (documentation)', expected: 'Un README.md clair', criteria: ['Commandes expliquées'] });
+  assert.equal(pickMode(doc), 'direct');
+  assert.equal(pickMode(e.ticket('LBA-6')), 'agent');
+  const dir = mkdtempSync(join(tmpdir(), 'lba-direct-'));
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(dir, 'README.md'), '# Ancien\n');
+  const prof = { scannedAt: '', name: 'demo', languages: [{ name: 'TypeScript', files: 3 }], frameworks: ['Vite'], commands: { test: 'npm test' }, sensitive: [], git: {}, files: 3 };
+  const ctx = buildContext(doc, dir, prof);
+  assert.deepEqual(ctx.files, ['README.md']);
+  assert.match(ctx.prompt, /test = npm test/);
+  assert.ok(ctx.prompt.length < 3000, 'contexte court');
+  const files = parseFiles('=== FICHIER: README.md ===\n# Nouveau\n=== FIN ===\n=== FICHIER: ../hors.txt ===\nx\n=== FIN ===\n=== FICHIER: .env ===\nX=1\n=== FIN ===', dir);
+  assert.deepEqual(files.map((f) => f.path), ['README.md']);
+});
+
+test('réclamation : toutes les preuves sont à refaire', () => {
+  const e = fresh();
+  proveAll(e, 'T-12');
+  e.agentDone('T-12', OK);
+  e.reject('T-12', 'Le calendrier saute un jour.');
+  assert.ok(e.ticket('T-12').steps.every((s) => s.state === 'a-faire'));
+});
