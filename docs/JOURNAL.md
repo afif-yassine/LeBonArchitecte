@@ -287,3 +287,8 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 ## Points non vérifiés signalés avant « Valider » (18 nov. 2026)
 - Constat (LBA-17) : l'agent avait écrit dans son résumé que 2 choses n'étaient pas vérifiées (écrans, réparation avec un vrai agent), mais rien ne le montrait avant « Valider ». Vérifié après coup : l'écran Quotas et budgets est bon ; la réparation automatique n'a encore jamais eu lieu en vrai (0 dans le journal), risque faible (une seule tentative, puis « Besoin d'action »).
 - Le programme repère dans le résumé les phrases « pas vérifié / pas pu / pas essayé / pas regardé » (src/shared/claims.ts, sans IA). À tester : bandeau orange avec la liste, « Valider » demande « Valider quand même » ; sur le kanban, « Voir avant de valider » ouvre la fiche. Les points vont aussi dans « Limites et suite » du compte rendu. 59 tests verts. Vérifié dans le navigateur (compte rendu de LBA-17).
+
+## Comptes rendus en PDF avec schémas, lecture courte (18 nov. 2026)
+- Chaque compte rendu (ticket lourd, lot, jour) commence par l'essentiel : feu vert/orange/rouge avec sa raison, « En bref », tableau des chiffres clés et un schéma ; puis le détail ; les preuves en annexe. Décision 0013.
+- Schémas dessinés par le programme (0 token) : frise du ticket ; barres de tokens par ticket pour un lot ou un jour.
+- « Ouvrir le PDF » dans Documents : créé au clic (outil existant scripts/pdf.mjs, mode compte rendu sans sommaire), environ 1 s, rangé dans .lba/ (main reste propre). LBA-15 : 3 pages ; lot 1 : 2 pages. 60 tests verts. Vérifié dans le navigateur (PDF et appli, thème sombre).

@@ -93,7 +93,7 @@ function DocPage({ projectId, item, onLink }: { projectId: string; item: Item; o
         </div>
         {item.pdf && (
           <a className="btn btn--sm doc__pdf" href={pdfUrl(projectId, item.pdf.path)} target="_blank" rel="noopener">
-            <FileText size={14} aria-hidden="true" /> Ouvrir le PDF <span className="faint">{size(item.pdf.size)}</span>
+            <FileText size={14} aria-hidden="true" /> Ouvrir le PDF {item.pdf.size > 0 && <span className="faint">{size(item.pdf.size)}</span>}
           </a>
         )}
       </header>

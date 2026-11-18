@@ -10,6 +10,7 @@ import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
 import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
+import { reportPdf } from './reportPdf.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -180,7 +181,8 @@ app.get<Id>('/api/projects/:id/docs', async (req) => {
   const docs = listDocs(repoOf(req.params.id));
   const c = choicesDoc(engine, req.params.id);
   if (c) { const { content: _, ...entry } = c; docs.push(entry); }
-  for (const { content: _, ...entry } of reportDocs(engine, req.params.id)) docs.push(entry);
+  // Chaque compte rendu a aussi son PDF (créé au premier clic) : size 0 = pas encore créé.
+  for (const { content: _, ...entry } of reportDocs(engine, req.params.id)) docs.push(entry, { ...entry, path: entry.path.replace(/\.md$/, '.pdf'), size: 0 });
   return docs;
 });
 app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => {
@@ -196,6 +198,12 @@ const pdf = (reply: { header: (k: string, v: string) => unknown; type: (t: strin
 };
 app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/raw', async (req, reply) => {
   const path = req.query.path ?? '';
+  // Compte rendu : PDF créé à la demande depuis la page calculée (décision 0013).
+  if (path.startsWith(REPORTS_DIR) && path.endsWith('.pdf')) {
+    const doc = reportDocs(engine, req.params.id).find((d) => d.path === path.replace(/\.pdf$/, '.md'));
+    if (!doc) throw new Refused('Ce compte rendu n’existe pas (ou plus).');
+    return pdf(reply, await reportPdf(repoOf(req.params.id), path, doc.content), path.split('/').pop() ?? 'compte-rendu.pdf');
+  }
   return pdf(reply, readPdf(repoOf(req.params.id), path), path.split('/').pop() ?? 'document.pdf');
 });
 app.get<Id & { Querystring: { path?: string } }>('/api/tickets/:id/raw', async (req, reply) => {

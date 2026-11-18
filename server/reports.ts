@@ -7,6 +7,7 @@
 import type { Ticket } from '../src/shared/contract.ts';
 import { TEST_KINDS, isTestCommand, testKinds } from '../src/shared/tests.ts';
 import { unverifiedClaims } from '../src/shared/claims.ts';
+import { timelineSvg, tokenBarsSvg, type Moment } from './reportCharts.ts';
 import type { Engine } from './engine.ts';
 
 export const REPORTS_DIR = 'lba/comptes-rendus/';
@@ -21,6 +22,7 @@ export interface TicketReport {
   validatedAt?: string;
   heavy: string[]; // raisons ; vide = ticket léger
   unverified: string[]; // ce que l'agent dit ne pas avoir vérifié
+  moments: Moment[]; // frise du ticket
   problem: string;
   solution: string;
   why?: string;
@@ -57,6 +59,7 @@ export function ticketReport(engine: Engine, t: Ticket): TicketReport {
   const problems: string[] = []; const yourMessages: string[] = [];
   const summaries: { text: string; fix: boolean }[] = []; let pass: 'work' | 'fix' = 'work';
   let validatedAt: string | undefined;
+  const moments: Moment[] = [];
   for (const e of events) {
     const at = Date.parse(e.at);
     if (['ticket-lance', 'reclamation', 'reparation', 'ticket-repris'].includes(e.type)) { open ??= at; passes++; }
@@ -71,6 +74,13 @@ export function ticketReport(engine: Engine, t: Ticket): TicketReport {
     if (e.type === 'reuni') { const s = String((e.data.realized as { summary?: string } | undefined)?.summary ?? ''); if (s && s !== 'Voir le direct.' && !/hit your .*limit/i.test(s)) summaries.push({ text: s, fix: pass === 'fix' }); }
     if (e.type === 'direct' && e.actor === 'vous' && e.data.kind === 'message') yourMessages.push(String(e.data.text ?? ''));
     if (e.type === 'ticket-valide') validatedAt = e.at;
+    // Moments clés pour la frise du PDF.
+    const mo: Record<string, [string, Moment['tone']]> = {
+      'ticket-lance': ['Lancé', 'accent'], 'ticket-repris': ['Repris', 'accent'], 'ticket-arrete': ['Arrêté', 'wait'],
+      'besoin-action': ['Problème', 'danger'], reparation: ['Réparation', 'wait'], 'ticket-a-tester': ['À tester', 'ok'], 'ticket-valide': ['Validé', 'ok'],
+    };
+    if (mo[e.type]) moments.push({ at: e.at, label: mo[e.type][0], tone: mo[e.type][1] });
+    if (e.type === 'reclamation') moments.push({ at: e.at, label: fix ? 'Résolution' : 'Votre demande', tone: 'wait' });
   }
   if (open !== undefined) ms += Date.now() - open;
 
@@ -103,7 +113,7 @@ export function ticketReport(engine: Engine, t: Ticket): TicketReport {
 
   return {
     id: t.id, title: t.title, lot: t.lot, status: t.status, validatedAt, heavy,
-    unverified: unverifiedClaims(main),
+    unverified: unverifiedClaims(main), moments,
     problem: s.problem ?? t.description.context,
     solution: s.solution ?? '', why: s.why, limits: s.limits,
     how: { branch: r?.branch, commits: r?.commits ?? [], files, decisions },
@@ -120,51 +130,78 @@ const frDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR
 const firstLine = (s: string) => s.replace(/[#*`>]/g, '').split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 200) ?? '';
 const testsLine = (r: TicketReport) => r.tests.length ? r.tests.map((x) => `${x.kind.toLowerCase()} ${x.ok ? '✓' : '✗'} ${x.result}`).join(' ; ') : 'aucun test lancé';
 
+// Méthode de lecture courte (décision 0013) : la conclusion d'abord (feu + 5 lignes + 3 chiffres + un schéma),
+// le détail ensuite, les preuves en annexe. On peut s'arrêter après « L'essentiel ».
+type Light = 'vert' | 'orange' | 'rouge';
+export function verdictOf(r: TicketReport): { light: Light; why: string } {
+  if (r.tests.some((x) => !x.ok)) return { light: 'rouge', why: 'des tests sont en échec' };
+  if (r.status !== 'termine') return { light: 'rouge', why: 'pas encore validé ni réuni dans main' };
+  if (r.unverified.length) return { light: 'orange', why: `l’agent signale ${r.unverified.length} point(s) non vérifié(s)` };
+  if (r.calls.problems.length) return { light: 'orange', why: `${r.calls.problems.length} problème(s) réglé(s) en route` };
+  return { light: 'vert', why: 'validé, tests verts, rien à signaler' };
+}
+const LIGHT = { vert: '🟢 Vert', orange: '🟠 Orange', rouge: '🔴 Rouge' } as const;
+const svgBlock = (svg: string) => (svg ? ['```svg', svg, '```', ''] : []);
+const cell = (s: string) => s.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+
 export function ticketMarkdown(r: TicketReport): string {
+  const v = verdictOf(r);
+  const tests = r.tests.length ? r.tests.map((x) => `${x.kind.toLowerCase()} ${x.ok ? 'verts' : 'en échec'}`).join(', ') : 'aucun test lancé';
   return [
-    `# Compte rendu de ${r.id} : ${r.title}`, '',
-    `> Ticket lourd : ${r.heavy.join(', ')}. ${r.validatedAt ? `Validé le ${new Date(r.validatedAt).toLocaleString('fr-FR')}.` : 'Pas encore validé.'}`, '',
+    `# Compte rendu de ${r.id} : ${r.title}`,
+    `${r.validatedAt ? `Validé le ${new Date(r.validatedAt).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}` : 'Pas encore validé'}, ticket lourd`, '',
+    `> ${LIGHT[v.light]} : ${v.why}. ${firstLine(r.solution)} Tests : ${tests}. ${k(r.calls.tokens)} tokens, ${r.calls.minutes} min.`, '',
+    '## L’essentiel',
+    '| Feu | Tokens | Durée | Fichiers | Tests |', '|---|---|---|---|---|',
+    `| ${LIGHT[v.light]} | ${k(r.calls.tokens)} | ${r.calls.minutes} min | ${r.how.files.length} | ${cell(tests)} |`, '',
+    `Pourquoi c’est un ticket lourd : ${r.heavy.join(', ')}.`, '',
+    '### La vie du ticket', ...svgBlock(timelineSvg(r.moments)),
+    ...(r.unverified.length ? ['### À regarder vous-même', ...r.unverified.map((u) => `- ${u}`), ''] : []),
     '## 1. Le problème', r.problem, '',
     '## 2. La solution', r.solution || '_Pas de résumé de l’agent._', '',
     '## 3. Pourquoi cette solution', r.why ?? '_L’agent ne l’a pas écrit (ticket fait avant la nouvelle consigne)._', '',
-    '## 4. Comment', `Branche \`${r.how.branch ?? '?'}\`, ${r.how.commits.length} commit(s), ${r.how.files.length} fichier(s).`, '',
-    '| Fichier | + | − |', '|---|---|---|', ...r.how.files.map((f) => `| \`${f.path}\` | ${f.plus} | ${f.minus} |`), '',
+    '## 4. Comment', `Branche \`${r.how.branch ?? '?'}\`, ${r.how.commits.length} commit(s), ${r.how.files.length} fichier(s) (liste en annexe).`, '',
     '## 5. Tests',
-    ...(r.tests.length ? ['| Type | Résultat | Commande |', '|---|---|---|', ...r.tests.map((x) => `| ${x.kind} | ${x.ok ? '✓' : '✗'} ${x.result} | \`${x.command.replace(/\|/g, '/')}\` |`)] : ['Aucun test lancé.']),
+    ...(r.tests.length ? ['| Type | Résultat |', '|---|---|', ...r.tests.map((x) => `| ${x.kind} | ${x.ok ? '✓' : '✗'} ${x.result} |`)] : ['Aucun test lancé.']),
     ...r.tests.flatMap((x) => x.failures.map((f) => `- ✖ ${f}`)), '',
     '## 6. Appels',
-    `- Agent : Claude ${r.calls.model}, effort ${r.calls.effort}, ${r.calls.passes} passage(s), ${r.calls.turns} échanges, ${r.calls.minutes} min.`,
-    `- Consommation : ${k(r.calls.tokens)} tokens, environ ${r.calls.costUsd.toFixed(2)} $ d’équivalent (sur votre abonnement).`,
-    ...(r.calls.yourMessages.length ? ['- Vos messages et réclamations :', ...r.calls.yourMessages.map((m) => `  - « ${m.slice(0, 300)} »`)] : ['- Aucun message de votre part.']),
-    ...(r.calls.problems.length ? ['- Problèmes en route :', ...r.calls.problems.map((p) => `  - ${p.slice(0, 300)}`)] : []), '',
-    '## 7. Limites et suite', r.limits ?? '_Rien de signalé._',
-    ...(r.unverified.length ? ['', '**Non vérifié, d’après l’agent :**', ...r.unverified.map((u) => `- ${u}`)] : []),
-    ...(r.how.decisions.length ? ['', `Décisions liées : ${r.how.decisions.map((d) => `\`${d}\``).join(', ')}.`] : []),
+    '| Agent | Passages | Échanges | Durée | Tokens | Coût équivalent |', '|---|---|---|---|---|---|',
+    `| Claude ${r.calls.model}, effort ${r.calls.effort} | ${r.calls.passes} | ${r.calls.turns} | ${r.calls.minutes} min | ${k(r.calls.tokens)} | ${r.calls.costUsd.toFixed(2)} $ |`, '',
+    ...(r.calls.yourMessages.length ? ['Vos messages :', ...r.calls.yourMessages.map((m) => `- « ${cell(m).slice(0, 240)} »`), ''] : ['Aucun message de votre part.', '']),
+    ...(r.calls.problems.length ? ['Problèmes réglés en route :', ...r.calls.problems.map((p) => `- ${cell(p).slice(0, 240)}`), ''] : []),
+    '## 7. Limites et suite', r.limits ?? '_Rien de signalé par l’agent._',
+    ...(r.how.decisions.length ? ['', `Décisions liées : ${r.how.decisions.map((d) => `\`${d.split('/').pop()}\``).join(', ')}.`] : []), '',
+    '## Annexes : les preuves',
+    '| Fichier | + | − |', '|---|---|---|', ...r.how.files.map((f) => `| \`${f.path}\` | ${f.plus} | ${f.minus} |`), '',
+    ...(r.tests.length ? ['Commandes de test exactes :', ...r.tests.map((x) => `- ${x.kind} : \`${cell(x.command)}\``)] : []),
   ].join('\n');
 }
 
-function lotMarkdown(lot: number, rs: TicketReport[]): string {
+// Lot ou jour : même méthode. Feu global = le pire des tickets.
+function groupMarkdown(title: string, meta: string, rs: TicketReport[], note: string): string {
+  const tokens = rs.reduce((n, r) => n + r.calls.tokens, 0);
+  const lights = rs.map((r) => verdictOf(r).light);
+  const worst: Light = lights.includes('rouge') ? 'rouge' : lights.includes('orange') ? 'orange' : 'vert';
+  const clean = lights.filter((l) => l === 'vert').length;
   const light = rs.filter((r) => !r.heavy.length); const heavy = rs.filter((r) => r.heavy.length);
-  const tokens = rs.reduce((n, r) => n + r.calls.tokens, 0);
-  const firstTry = rs.filter((r) => !r.calls.problems.length && !r.calls.yourMessages.length).length;
   return [
-    `# Compte rendu du lot ${lot}`, '',
-    `> ${rs.length} tickets finis, ${firstTry} sans aucun problème en route, ${k(tokens)} tokens au total. Les tickets légers sont résumés ici ; les tickets lourds ont leur propre compte rendu.`, '',
-    ...(light.length ? ['## Tickets légers', '', '| Ticket | Ce qui a été fait | Tests | Tokens |', '|---|---|---|---|',
-      ...light.map((r) => `| ${r.id} : ${r.title.replace(/\|/g, '/')} | ${firstLine(r.solution).replace(/\|/g, '/')} | ${testsLine(r)} | ${k(r.calls.tokens)} |`), ''] : []),
-    ...(heavy.length ? ['## Tickets lourds (compte rendu à part)', '', ...heavy.map((r) => `- **${r.id}** : ${r.title} (${r.heavy.join(', ')})`)] : []),
+    `# ${title}`, meta, '',
+    `> ${LIGHT[worst]} : ${rs.length} ticket(s), ${clean} sans rien à signaler, ${k(tokens)} tokens au total. ${note}`, '',
+    '## L’essentiel',
+    '| Feu | Tickets | Sans rien à signaler | Tokens | Lourds |', '|---|---|---|---|---|',
+    `| ${LIGHT[worst]} | ${rs.length} | ${clean} | ${k(tokens)} | ${heavy.length} |`, '',
+    '### Tokens par ticket', ...svgBlock(tokenBarsSvg(rs.map((r) => ({ id: r.id, tokens: r.calls.tokens, testsOk: r.tests.length ? r.tests.every((x) => x.ok) : undefined, heavy: r.heavy.length > 0 })))),
+    '## Les tickets', '',
+    '| Ticket | Feu | Ce qui a été fait | Tokens |', '|---|---|---|---|',
+    ...rs.map((r) => `| ${r.id} : ${cell(r.title)} | ${LIGHT[verdictOf(r).light]} | ${cell(firstLine(r.solution))} | ${k(r.calls.tokens)} |`), '',
+    ...(heavy.length ? ['## Tickets lourds : compte rendu à part', ...heavy.map((r) => `- **${r.id}** : ${r.heavy.join(', ')}`), ''] : []),
+    ...(light.length ? ['## Annexes : tests des tickets légers', '| Ticket | Tests |', '|---|---|', ...light.map((r) => `| ${r.id} | ${cell(testsLine(r))} |`)] : []),
   ].join('\n');
 }
-
-function dayMarkdown(d: string, rs: TicketReport[]): string {
-  const tokens = rs.reduce((n, r) => n + r.calls.tokens, 0);
-  return [
-    `# Compte rendu du ${frDay(d)}`, '',
-    `> ${rs.length} ticket(s) validé(s) ce jour-là, ${k(tokens)} tokens.`, '',
-    '| Ticket | Ce qui a été fait | Tests | Tokens | Compte rendu |', '|---|---|---|---|---|',
-    ...rs.map((r) => `| ${r.id} : ${r.title.replace(/\|/g, '/')} | ${firstLine(r.solution).replace(/\|/g, '/')} | ${testsLine(r)} | ${k(r.calls.tokens)} | ${r.heavy.length ? 'à part (lourd)' : `lot ${r.lot}`} |`),
-  ].join('\n');
-}
+const lotMarkdown = (lot: number, rs: TicketReport[]) =>
+  groupMarkdown(`Compte rendu du lot ${lot}`, 'Lot fini : tous ses tickets sont validés', rs, 'Les tickets légers sont résumés ici ; les lourds ont leur propre compte rendu.');
+const dayMarkdown = (d: string, rs: TicketReport[]) =>
+  groupMarkdown(`Compte rendu du ${frDay(d)}`, 'Tickets validés ce jour-là', rs, '');
 
 export interface ReportDoc { path: string; title: string; size: number; at: string; content: string }
 

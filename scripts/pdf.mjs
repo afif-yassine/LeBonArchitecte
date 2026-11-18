@@ -9,6 +9,9 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const src = process.argv[2];
+// --compte-rendu : page de garde courte (l'essentiel tient en page 1), pas de sommaire.
+const CR = process.argv.includes('--compte-rendu');
+const CR_STYLE = '<style>.cover.is-cr{page:auto;height:auto;break-after:auto;grid-template-columns:6mm 1fr;margin-bottom:6mm}.cover.is-cr .cover__in{padding:10mm 4mm 4mm 10mm}.cover.is-cr .cover__title{font-size:20pt;margin:8mm 0 6pt}.cover.is-cr .cover__sum{margin-top:6mm}</style>';
 if (!src || !/\.(html|md)$/.test(src) || !existsSync(src)) {
   console.error('Usage : npm run pdf -- <fichier>.md ou <fichier>.html (le fichier doit exister)');
   process.exit(1);
@@ -68,12 +71,12 @@ export function mdToHtml(md) {
     }
   }
   const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  const cover = `<section class="cover"><div class="cover__band"></div><div class="cover__in">
-    <p class="cover__brand">Le Bon Architecte</p><p class="cover__kind">Rapport</p>
+  const cover = `<section class="cover${CR ? ' is-cr' : ''}"><div class="cover__band"></div><div class="cover__in">
+    <p class="cover__brand">Le Bon Architecte</p><p class="cover__kind">${CR ? 'Compte rendu' : 'Rapport'}</p>
     <h1 class="cover__title">${inline(title)}</h1><p class="cover__meta">${meta || date}</p>
     ${summary ? `<div class="cover__sum"><b>En bref</b>${summary}</div>` : ''}</div></section>`;
-  const sommaire = toc.length >= 3 ? `<nav class="toc"><h2>Sommaire</h2><ol>${toc.map((t) => `<li><a href="#${slug(t)}">${inline(t)}</a></li>`).join('')}</ol></nav>` : '';
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title>${STYLE}</head><body>${cover}${sommaire}${out.join('\n')}</body></html>`;
+  const sommaire = !CR && toc.length >= 3 ? `<nav class="toc"><h2>Sommaire</h2><ol>${toc.map((t) => `<li><a href="#${slug(t)}">${inline(t)}</a></li>`).join('')}</ol></nav>` : '';
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title>${STYLE}${CR ? CR_STYLE : ''}</head><body>${cover}${sommaire}${out.join('\n')}</body></html>`;
 }
 
 // Page à imprimer, écrite dans le dossier temporaire (rien d'ajouté au projet).

@@ -50,3 +50,11 @@ test('points que l’agent dit ne pas avoir vérifiés (cas LBA-17), sans fausse
   assert.match(c[2], /réparation automatique/);
   assert.deepEqual(unverifiedClaims('Les tests passent. Je n’ai pas cassé les tests existants. Tout est vérifié dans le navigateur.'), []);
 });
+
+test('schémas des comptes rendus : frise et barres en SVG, rien si pas assez de données', async () => {
+  const { timelineSvg, tokenBarsSvg } = await import('./reportCharts.ts');
+  assert.equal(timelineSvg([{ at: '2026-11-18T10:00:00Z', label: 'Lancé', tone: 'accent' }]), '');
+  const t = timelineSvg([{ at: '2026-11-18T10:00:00Z', label: 'Lancé', tone: 'accent' }, { at: '2026-11-18T11:00:00Z', label: 'Validé', tone: 'ok' }]);
+  assert.match(t, /^<svg[\s\S]*Validé[\s\S]*<\/svg>$/);
+  assert.match(tokenBarsSvg([{ id: 'LBA-1', tokens: 9000, testsOk: true, heavy: false }]), /LBA-1[\s\S]*9 k/);
+});
