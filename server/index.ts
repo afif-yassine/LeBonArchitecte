@@ -12,7 +12,7 @@ import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
 import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
-import { architectRunning, askArchitectAgent } from './architectAgent.ts';
+import { adviceMarkdown, architectRunning, askArchitectAgent } from './architectAgent.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -251,6 +251,11 @@ app.get<Id>('/api/projects/:id/cdc', async (req) => {
 app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
 // Architecte autonome (décision 0014) : vous lui écrivez, il agit avec la commande lba ; son fil garde tout.
 app.get<Id>('/api/projects/:id/architecte', async (req) => ({ busy: architectRunning(req.params.id), thread: engine.architectThread(req.params.id) }));
+app.get<{ Params: { id: string; msg: string } }>('/api/projects/:id/architecte/avis/:msg', async (req, reply) => {
+  const md = adviceMarkdown(engine, req.params.id, Number(req.params.msg));
+  if (!md) throw new Refused('Cette réponse de l’Architecte n’existe pas.');
+  return pdf(reply, await reportPdf(repoOf(req.params.id), `avis-architecte-${req.params.msg}.pdf`, md), `avis-architecte-${req.params.msg}.pdf`);
+});
 app.post<Id & { Body: { text?: string } }>('/api/projects/:id/architecte', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple n’ont pas d’Architecte branché.');
   return { message: askArchitectAgent(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '') };

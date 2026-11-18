@@ -310,3 +310,7 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Reste : lot C (écran Architecte : conversation en direct, actions, coût, PDF) et la construction de l'équipe d'agents par l'Architecte.
 - Ajout : l'Architecte repère une demande qui contredit vos consignes, une décision ou un travail commencé, s'arrête et propose garder / remplacer / combiner (essayé en vrai sur la décision 0012 : 5 443 tokens). Conversation limitée à 60 k de contexte, sinon nouvelle conversation avec son carnet. 63 tests verts.
 - Ajout : l'Architecte est un conseiller critique. Une grosse demande (agents, équipe, architecture…) reçoit d'abord son avis, les problèmes, ce qui existe déjà, les coûts comparés et une meilleure proposition, puis il attend « oui ». Essayé en vrai sur « agents dev → test → devops en chaîne » : déconseillé avec explications, rien fait (Opus, 23 s, 7 503 tokens). 63 tests verts.
+
+## Architecte autonome, lot C : l'écran (18 nov. 2026)
+- Écran Architecte branché (src/screens/ArchitectLive.tsx) : conversation en direct, actions visibles, modèle / tokens / cache / contexte / durée sous chaque réponse, coût annoncé avant l'envoi, PDF « Avis de l'Architecte » (vérifié : 100 Ko, généré en environ 1 s).
+- Interface construite sans erreur, 63 tests verts. Pas encore vérifié dans le navigateur : l'extension Chrome s'est déconnectée.

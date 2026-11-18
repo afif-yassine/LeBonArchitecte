@@ -1,0 +1,44 @@
+/* Écran Architecte : une conversation, comme Claude Code. Vos messages à droite, les siens à gauche,
+   ses actions en lignes fines, le coût sous chaque réponse. */
+.ar { display: flex; flex-direction: column; height: 100%; min-height: 0; max-width: 920px; margin: 0 auto; padding: 18px 24px 0; }
+.ar__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.ar__title { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: -.015em; color: var(--text-strong); }
+.ar__sub { margin: 4px 0 0; font-size: .84rem; color: var(--muted); max-width: 60ch; line-height: 1.45; }
+.ar__today { margin: 0; font-size: .8rem; color: var(--faint); white-space: nowrap; }
+.ar__today b { color: var(--text-strong); font-weight: 600; }
+.ar__fil { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 2px; display: flex; flex-direction: column; gap: 10px; }
+.ar__empty { margin: auto 0; text-align: center; color: var(--muted); font-size: .9rem; }
+.ar__empty p { max-width: 52ch; margin: 0 auto 14px; line-height: 1.5; }
+.ar__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.ar__chip { font: inherit; font-size: .84rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.ar__chip:hover { border-color: var(--accent); color: var(--accent); }
+.ar__me { align-self: flex-end; max-width: 75%; padding: 9px 13px; border-radius: 14px 14px 4px 14px; background: var(--accent-soft); color: var(--text-strong); }
+.ar__me p { margin: 0; font-size: .92rem; line-height: 1.5; white-space: pre-wrap; }
+.ar__time { display: block; margin-top: 3px; font-size: .7rem; color: var(--faint); text-align: right; }
+.ar__him { align-self: stretch; padding: 12px 15px; border-radius: 14px 14px 14px 4px; background: var(--surface); border: 1px solid var(--line); }
+.ar__md { font-size: .92rem; line-height: 1.58; color: var(--text); }
+.ar__md > :first-child { margin-top: 0; }
+.ar__md > :last-child { margin-bottom: 0; }
+.ar__md table { font-size: .84rem; }
+.ar__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: .74rem; color: var(--faint); }
+.ar__chipm { font-weight: 600; color: var(--muted); padding: 0 7px; border-radius: 999px; background: var(--sunken); }
+.ar__pdf { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--accent); text-decoration: none; font-weight: 550; }
+.ar__pdf:hover { text-decoration: underline; }
+.ar__act { display: flex; align-items: center; gap: 7px; padding: 0 4px; font-size: .78rem; color: var(--muted); }
+.ar__act svg { color: var(--ok); flex: none; }
+.ar__act code { font-family: var(--mono); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ar__act .ar__time { margin: 0 0 0 auto; }
+.ar__sys { padding: 0 4px; font-size: .74rem; color: var(--faint); }
+.ar__sys.is-ko { color: var(--danger); }
+.ar__busy { display: flex; align-items: center; gap: 8px; padding: 4px; font-size: .84rem; color: var(--accent); }
+.ar__compose { padding: 10px 0 16px; border-top: 1px solid var(--line); background: var(--bg); }
+.ar__compose textarea { width: 100%; resize: vertical; min-height: 54px; max-height: 220px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: .92rem; line-height: 1.5; }
+.ar__compose textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ar__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.ar__cost { font-size: .78rem; color: var(--faint); }
+.ar__cost b { color: var(--text-strong); font-weight: 600; }
+@media (max-width: 640px) {
+  .ar { padding: 12px 16px 0; }
+  .ar__head { flex-direction: column; align-items: flex-start; }
+  .ar__me { max-width: 90%; }
+}

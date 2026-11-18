@@ -8,7 +8,6 @@ import { Soon } from './components/ui';
 
 // Onglets pas encore branchés sur les vraies données : ce qu'il manque, en clair (au lieu de faux contenu).
 const NOT_PLUGGED: Record<string, string> = {
-  architecte: 'Discuter avec l’Architecte coûte des tokens à chaque message : ce sera branché après le cadrage (LBA-10 à LBA-14).',
   flux: 'Le schéma du flux de travail sera tiré des vrais tickets et de leurs dépendances (lot 2).',
   backlog: 'Le backlog viendra des vrais tickets « à faire » et de docs/backlog.md, écrit par LBA-13 (lot 2).',
   equipe: 'L’équipe montrera les rôles configurés et les agents qui tournent vraiment (lot 2).',
@@ -33,6 +32,7 @@ import { Flow } from './screens/Flow';
 import { Cdc, Git, Health } from './screens/ProjectWork';
 import { Backlog, Documents, Team } from './screens/ProjectSpaces';
 import { Architect } from './screens/Architect';
+import { ArchitectLive } from './screens/ArchitectLive';
 import { MemoryContext, Rules } from './screens/Knowledge';
 import { ProjectSettings } from './screens/ProjectSettings';
 import { SettingsScreen } from './screens/Settings';
@@ -137,6 +137,7 @@ function Shell() {
         case 'docs': return <RealDocs projectId={pid} title="Documents" exclude="docs/cahier-des-charges/" lead="Décisions, rapports, recherches et journal du projet. Un PDF s’ouvre dans un nouvel onglet. Le cahier des charges a son propre onglet." />;
         case 'regles': return <RealRules projectId={pid} />;
         case 'git': return <GitGraphScreen projectId={pid} go={go} />;
+        case 'architecte': return <ArchitectLive key={`${pid}-${view.kind === 'projet' ? view.ask ?? '' : ''}`} projectId={pid} go={go} ask={view.kind === 'projet' ? view.ask : undefined} />;
       }
       const later = NOT_PLUGGED[space];
       if (later) return <div className="page"><Soon title="Pas encore branché sur ce projet" text={later} /></div>;

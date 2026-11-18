@@ -1,6 +1,6 @@
 # Décision 0014 : l'Architecte devient un agent autonome, avec des garde-fous
 
-Date : 18 nov. 2026. Statut : lots A et B appliqués ; lot C (écran) et l’équipe à faire. Demandé par le propriétaire : « l'architecte peut avoir la main sur tout le projet… comme Claude Code ici… il peut appeler les agents… sans permission, avec les garde-fous et les règles ».
+Date : 18 nov. 2026. Statut : lots A, B et C appliqués ; la construction de l’équipe d’agents reste à faire. Demandé par le propriétaire : « l'architecte peut avoir la main sur tout le projet… comme Claude Code ici… il peut appeler les agents… sans permission, avec les garde-fous et les règles ».
 
 ## Ce que l'Architecte fait seul
 Kanban (créer un ticket, plan, ordre, pause, reprise, lancement), agents (lancer, écrire, demander de résoudre, lire le déroulé), documents (cahier, décisions, rapports : dans sa branche), équipe et agents (lot B), réponses et propositions. Sans question de permission.
@@ -33,3 +33,9 @@ Réunir dans main (Valider), git (revenir, brancher), pilote et budget du jour, 
 - Principes d'architecture dans sa consigne fixe : un agent par ticket ; tests, réunion et mise en ligne par le programme ; pas de relais entre agents ; réutiliser l'existant ; le plus simple qui marche.
 - Son carnet garde sa dernière réponse (un « oui » plus tard sait à quoi il répond). Créer ou changer des agents ou l'équipe part sur Opus.
 - Essai réel (Opus, 23 s, 7 503 tokens + 4 768 relus du cache) avec « fais les agents dev, test et devops en chaîne » : « je déconseille », explique le relais payé 2 à 2,5 fois, que tests et réunion existent déjà à 0 token, le risque d'un agent qui pousse seul dans git ; propose à la place une mise en ligne automatique après Valider ; n'a rien fait.
+
+## Lot C : l'écran
+- Architecte (vrai projet) : conversation comme Claude Code ; vos messages, ses réponses (Markdown), ses actions sur une ligne chacune, chrono pendant qu'il travaille. Sous chaque réponse : modèle, tokens comptés, cache relu, taille de sa conversation, durée, PDF.
+- Avant l'envoi, l'écran annonce le modèle choisi et l'ordre de grandeur du coût (même règle que le moteur : src/shared/architect.ts).
+- « Avis de l'Architecte » en PDF (style des comptes rendus) : état, l'essentiel, sa réponse, en annexe votre demande exacte, ses actions et sa consommation. 0 token.
+- La barre « Écrire à l'Architecte… » du bas de chaque page envoie la demande à ce vrai Architecte.

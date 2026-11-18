@@ -12,6 +12,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { contextOf } from './claude.ts';
+import { pickArchitectModel } from '../src/shared/architect.ts';
 import type { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { cacheWarm } from './supervisor.ts';
@@ -43,14 +44,8 @@ const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pe
   'Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git -C *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npx *)', 'Bash(npm *)',
   'WebFetch', 'WebSearch'];
 
-// Opus pour ce qui touche à l'architecture ou aux décisions ; Sonnet pour une consigne. « /opus » ou « /sonnet » au début force le choix.
-export function pickArchitectModel(text: string): 'Opus' | 'Sonnet' {
-  if (/^\/opus\b/i.test(text)) return 'Opus';
-  if (/^\/sonnet\b/i.test(text)) return 'Sonnet';
-  // Créer ou changer des agents, des rôles ou l'équipe = architecture (mais « lance un agent sur LBA-13 » reste une consigne).
-  const team = /(cré|construi|fai|ajout|organis|chang|défini|defini)\w*[^.?!]{0,40}\b(agents?|rôles?|roles?|équipe|equipe|devops)\b/i.test(text);
-  return team || /architect|revue|cahier des charges|décision|decision|stratégi|risque|sécurit|audit|pourquoi|priorit|plan du projet|équipe|equipe/i.test(text) || text.length > 500 ? 'Opus' : 'Sonnet';
-}
+// Choix du modèle : règle partagée avec l'écran (src/shared/architect.ts).
+export { pickArchitectModel };
 
 // État du projet préparé par le programme (0 token) : ce que l'Architecte demanderait sinon avec un outil.
 export function projectDigest(engine: Engine, project: string): string {
@@ -98,6 +93,40 @@ export function notebook(engine: Engine, project: string, repo?: string): string
 // Au-delà de cette taille, reprendre la conversation coûte plus que repartir avec le carnet (mesuré sur LBA-15).
 const MAX_RESUME_CONTEXT = 60_000;
 
+// « Avis de l'Architecte » en PDF (style des comptes rendus, décision 0013) : l'essentiel d'abord, sa réponse, puis
+// en annexe votre demande exacte, ses actions et ce que ça a coûté. Construit depuis son fil : 0 token.
+export function adviceMarkdown(engine: Engine, project: string, id: number): string | undefined {
+  const fil = engine.architectThread(project, 500);
+  const i = fil.findIndex((m) => m.id === id && m.who === 'architecte');
+  if (i < 0) return undefined;
+  const a = fil[i];
+  let j = i - 1; while (j >= 0 && fil[j].who !== 'vous') j--;
+  const q = j >= 0 ? fil[j] : undefined;
+  const acts = fil.slice(j + 1, i).filter((m) => m.who === 'action');
+  const text = String(a.text);
+  const verdict = text.match(/Avis\s*:\s*\**\s*([^.\n*]+)/i)?.[1]?.trim();
+  const light = /contradiction/i.test(text) || /déconseille/i.test(verdict ?? '') ? '🟠 À décider' : /^Fait\s*:/m.test(text) && acts.length ? '🟢 Fait' : '🔵 Avis';
+  const k = (n: unknown) => `${Math.round(Number(n ?? 0) / 1000 * 10) / 10} k`;
+  const first = text.replace(/[*#>`]/g, '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  return [
+    `# Avis de l’Architecte`,
+    `${new Date(a.at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}, Claude ${a.model ?? ''}`,
+    '',
+    `> ${light} : ${first.slice(0, 300)}`,
+    '',
+    '## L’essentiel',
+    '| État | Votre demande | Actions faites | Tokens | Durée |', '|---|---|---|---|---|',
+    `| ${light} | ${String(q?.text ?? '').replace(/\|/g, '/').slice(0, 120)} | ${acts.length} | ${k(a.tokens)} | ${a.ms ? `${Math.round(Number(a.ms) / 1000)} s` : 'non mesurée'} |`,
+    '',
+    '## Sa réponse', text.replace(/^#\s/gm, '### '),
+    '',
+    '## Annexes : les preuves',
+    `Votre demande exacte : « ${String(q?.text ?? '').replace(/\n/g, ' ')} »`, '',
+    ...(acts.length ? ['Actions faites (au nom de l’Architecte, dans le journal) :', ...acts.map((x) => `- \`${String(x.text).replace(/`/g, '')}\``), ''] : ['Aucune action faite.', '']),
+    `Consommation : ${k(a.tokens)} tokens comptés, ${k(a.cacheRead)} relus du cache, ${a.turns ?? 0} échanges, contexte de ${k(a.context)} à la fin.`,
+  ].join('\n');
+}
+
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const running = new Map<string, ChildProcess>();
 export const architectRunning = (project: string) => running.has(project);
@@ -136,6 +165,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
 
   const tools = new Map<string, string>();
   let buf = ''; let err = ''; let done = false;
+  const started = Date.now(); // durée affichée sous chaque réponse
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init' && m.session_id) engine.setSession(key, String(m.session_id));
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
@@ -161,6 +191,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
       engine.architectSay(project, 'architecte', String(m.result ?? (m.is_error ? 'Erreur sans message.' : '')).slice(0, 6000), {
         model, tokens: used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, ok: m.subtype === 'success' && !m.is_error,
         context: m.session_id ? contextOf(cwd, String(m.session_id)).end : undefined, // taille de sa conversation après ce tour
+        ms: Date.now() - started,
       });
     }
   };
