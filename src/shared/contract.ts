@@ -133,6 +133,19 @@ export interface DoneCheck {
   state: 'ok' | 'echec' | 'attente' | 'non-verifie';
 }
 
+// Prévu réaliste par modèle (mesuré sur LBA-10 à 17 : un ticket Opus prend 150 à 260 k tokens).
+// L'ancien budget fixe de 40 k rendait chaque ticket rouge sans raison.
+const BUDGET_REF: Record<string, number> = { Opus: 250_000, Sonnet: 120_000, Haiku: 40_000 };
+export const budgetFor = (t: { budget: number; model: string }) => Math.max(t.budget, BUDGET_REF[t.model] ?? t.budget);
+
+export interface TicketActivity {
+  label: string; // ex. « Validation »
+  steps: { label: string; state: 'attente' | 'en-cours' | 'ok' | 'echec'; detail?: string }[];
+  error?: string;
+  fixable?: boolean; // l'agent peut le résoudre (conflit, test rouge) : bouton « Demander à l'agent »
+  at: string;
+}
+
 export interface Ticket {
   id: string;
   projectId: string;
@@ -142,7 +155,14 @@ export interface Ticket {
   status: TicketStatus;
   securityBlock?: string;
   needAction?: string;
+  interrupted?: { at: string; lastProved?: string }; // coupé par un redémarrage ou une panne : à reprendre
   waitingFor?: string; // ce que la carte attend, en mots simples
+  paused?: boolean; // mis en pause par vous : le pilote ne le lance pas
+  // Ce que le programme fait en ce moment sur le ticket (valider, tester…), étape par étape, avec l'erreur s'il y en a.
+  // Affiché en haut de la fiche : on voit toujours ce qui se passe, même après coup.
+  activity?: TicketActivity;
+  // Détail des tokens, additionné sur tous les tours. split = faux si un ancien tour n'avait que le total.
+  usage?: { input: number; output: number; cacheWrite: number; cacheRead: number; costUsd: number; turns: number; split: boolean };
   part: string;
   lot: number;
   tool: ToolId;

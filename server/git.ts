@@ -45,6 +45,18 @@ export function commitWorktree(dir: string, message: string): string | undefined
 // Toujours comparer à main (audit LBA-11, point 1) : jamais à la branche ouverte, qui peut être une autre.
 export const MAIN = 'main';
 
+// Met la branche du ticket à jour avec main, dans son propre dossier (main n'est jamais touché).
+// En cas de conflit, les fichiers gardent les marqueurs <<<<<<< pour que l'agent les résolve,
+// puis il termine par « git add » et « git commit » (droits qu'il a déjà).
+export function mergeMainInto(dir: string): { ok: boolean; conflicts: string[] } {
+  commitWorktree(dir, 'Travail en cours avant mise à jour avec main');
+  const r = tryRun(dir, ['merge', MAIN, '--no-edit']);
+  if (r.ok) return { ok: true, conflicts: [] };
+  const conflicts = tryRun(dir, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean);
+  if (!conflicts.length) { tryRun(dir, ['merge', '--abort']); throw new Refused(`Mise à jour avec main impossible : ${r.out.split('\n')[0]}`); }
+  return { ok: false, conflicts };
+}
+
 export function diffOf(repo: string, id: string): string {
   return tryRun(repo, ['diff', `${MAIN}...${branchOf(id)}`]).out.slice(0, 2_000_000);
 }
@@ -88,6 +100,14 @@ export function diffFile(repo: string, id: string, path: string): string {
   // Après réunion, la base commune est la branche elle-même : on compare alors à son premier parent.
   const from = base === tryRun(repo, ['rev-parse', branchOf(id)]).out ? `${branchOf(id)}~1` : base;
   return tryRun(repo, ['diff', from, branchOf(id), '--', path]).out.slice(0, 300_000);
+}
+
+// Travail pas encore enregistré dans la branche (un agent coupé n'a pas eu le temps de le faire).
+export function pendingFiles(dir: string): string[] {
+  if (!existsSync(join(dir, '.git'))) return [];
+  const r = tryRun(dir, ['-c', 'core.quotepath=off', 'status', '--porcelain', '--untracked-files=all']);
+  if (!r.ok) return [];
+  return statusPaths(r.out).map((p) => p.replace(/^"|"$/g, '')).filter((p) => p !== 'node_modules' && !p.startsWith('node_modules/'));
 }
 
 export function changedFiles(repo: string, id: string): { path: string; plus: number; minus: number }[] {

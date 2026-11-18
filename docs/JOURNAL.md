@@ -208,6 +208,22 @@
 - Clic sur un point : message, fichiers changés (pour une réunion : ce que le ticket a apporté). « Repartir d'ici » crée une branche reprise/<commit> sans toucher main. « Annuler ce ticket dans main » ajoute un commit d'annulation (main propre exigé), puis relance les tests. Confirmation dans la page, jamais de boîte du navigateur.
 - Tests : 30 verts (dont un dépôt jetable : schéma, reprise, annulation). Écran vérifié dans le navigateur.
 
+## Objectifs par jalon et budget du pilote, LBA-17 (18 nov. 2026)
+La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles, par ticket fait par un agent :
+
+| Jalon | Tokens par ticket (au plus) | Validé du premier coup (au moins) | Temps par ticket (au plus) |
+|---|---|---|---|
+| J2 Moteur | 60 000 | 60 % | 45 min |
+| J3 Agents | 50 000 | 70 % | 30 min |
+| J4 Orchestrateur et démarche | 40 000 | 80 % | 20 min |
+
+- D'où viennent ces chiffres : les tokens partent des mesures déjà faites (LBA-9 : 71 770, LBA-10 : 52 782, LBA-11 : 68 711). Le premier coup et le temps n'avaient aucune mesure : ce sont des cibles de départ, à corriger après le premier bilan.
+- Comment c'est mesuré : moyenne des tickets arrivés « à tester ». « Premier coup » veut dire validé sans réclamation ni réparation automatique. Le temps ne compte que les moments où l'agent travaille.
+- Où les voir : Réglages › Quotas et budgets, avec « tenue » ou « pas encore » en face de chaque cible.
+- **Budget du jour du pilote : 200 000 tokens par défaut**, tous projets, de minuit à minuit, réglable dans les réglages du projet. Une fois atteint, le pilote ne lance plus rien et une alerte arrive dans « Pour vous ». Les agents déjà au travail finissent leur ticket, et vous pouvez toujours lancer un ticket vous-même. Le pilote ne repart pas seul à minuit : il reprend à la prochaine validation ou fin de ticket.
+- **Réparation automatique : une seule tentative.** Si le programme trouve un manque qu'il sait revérifier (tests rouges, compilation, document absent), l'agent reprend sa session une fois, et toutes les preuves sont refaites. Encore raté : « Besoin d'action » avec la cause. Pas de réparation si l'agent s'est arrêté sur une erreur, si un secret est écrit, si le périmètre est dépassé ou si le budget du jour est atteint.
+- Tests : 42 verts.
+
 ## Corrections signalées par le propriétaire (18 nov. 2026)
 - Valider LBA-11 échouait : « git status » est rogné, la 1re ligne perdait son espace et « .lba/projet.yaml » devenait « lba/projet.yaml », pris pour un vrai fichier modifié. Lecture corrigée (statusPaths), aussi dans le schéma Git.
 - Après correction, un conflit (deux tests ajoutés en fin du même fichier) : la garde a refusé sans rien changer ; branche du ticket mise à jour avec main, 33 tests verts, puis LBA-11 réuni (83e6994).
@@ -218,3 +234,27 @@
 - Tableau : bouton « Valider les plans et lancer ». On coche les tickets, on choisit le nombre d'agents en même temps ; un ticket qui attend un ticket non coché est signalé « bloqué ». Le bandeau du pilote dit pourquoi il attend (plans à valider). 34 tests verts.
 - Lancé depuis l'écran : LBA-12, 15, 16 sur Opus (3 en même temps), chacun sur sa branche et son dossier ; LBA-17 attend une place. Gardés de côté : LBA-7 (Codex), LBA-13 (à fusionner avec LBA-12), LBA-14 (attend LBA-13).
 - Pendant que les agents travaillent, aucune modification du moteur (elle le redémarrerait).
+- Incident : 2 à 3 minutes après le départ, la limite de 5 h de l'abonnement est atteinte (« resets 5:50am »). Le moteur l'a pris pour une fin normale : les 4 tickets en « Pas fini », et le pilote a lancé LBA-17 qui s'est arrêté aussitôt.
+- Corrigé : la limite est reconnue. Le travail est gardé dans la branche, le ticket attend en tête de file avec sa session, le pilote se met en pause jusqu'à l'heure de retour (gardée même si le moteur redémarre), puis reprend. Un ticket relancé reprend sa session Claude au lieu de tout relire. 35 tests verts.
+- Relancés à 12 h : LBA-12, 15, 16 reprennent leur session (branches mises à jour avec la correction) ; LBA-17 attend une place.
+
+## Pause, Reprendre, Valider, Tester et parler à l'agent (18 nov. 2026)
+- Cause du « Valider ne marche pas » : réunir LBA-17 a changé le code du moteur, et node --watch l'a redémarré au milieu de la validation (réponse coupée). Trois anciens surveillants --watch tournaient encore en même temps. Nouveau lanceur (scripts/dev.mjs) : le moteur redémarre seulement quand il est libre (/api/busy : aucun agent, aucune validation).
+- Valider et Tester affichent leur progression. Tester lance les tests dans la branche du ticket (avant : dans main).
+- Pause réelle (avant : simple affichage) : un ticket en cours est arrêté, son travail et sa conversation sont gardés ; le pilote ne relance pas un ticket en pause. Reprendre relance dans sa session.
+- Parler à l'agent : à tester ou en besoin d'action, un message est une demande de modification, et l'agent qui a fait le travail reprend sa propre conversation. En cours, le message lui arrive à la fin de son tour. Une fois réuni dans main, la conversation reste lisible et une modification devient un nouveau ticket.
+- LBA-16 en conflit avec main (il avait aussi un « Reprendre », après panne) : fusionné, un seul bouton pour les deux cas. 50 tests verts dans sa branche ; LBA-12 et 15 sans conflit.
+
+## Fiche ticket, lot 1 : tout voir, ne jamais bloquer (18 nov. 2026)
+- Bandeau d'état en haut de la fiche : ce qui se passe et ce qu'on attend de vous (prêt à tester, l'agent travaille étape n/m, en pause, besoin de vous…), avec les bons boutons.
+- Validation visible étape par étape (tests dans la branche, réunion, tests dans main), aussi sur la carte du kanban ; l'erreur reste écrite sur le ticket.
+- Échec que l'agent peut résoudre (conflit, tests rouges) : le ticket passe en « Besoin d'action », jamais bloqué « à tester ». Bouton « Demander à l'agent de résoudre » : le programme met la branche à jour avec main (conflits laissés marqués), puis l'agent reprend sa conversation, résout, repasse les tests. main pas prêt : reste à vous, dit clairement.
+- Onglets Diff et Tests : c'étaient des exemples écrits en dur ; maintenant les vrais fichiers changés et les vrais passages de tests. Résumé de l'agent mis en forme et gardé entier (avant : coupé à 600 caractères).
+- 52 tests verts (dont mise à jour de branche avec conflit sur un dépôt jetable). Vérifié dans le navigateur.
+
+## Fiche ticket : design du Déroulé et du panneau, plus compact (18 nov. 2026)
+- Déroulé : « Le plan » en barre (une étape = un segment, clic = sa preuve) ; « Le récit » par tours (lancement, relance, votre demande, reprise) avec seulement les moments utiles (ce que dit l'agent, vos messages, étapes prouvées, vrais tests, bugs, alertes). Lectures, recherches et commandes regroupées en une ligne qui s'ouvre ; « Tout le détail » remet la liste complète.
+- Panneau de droite en trois blocs courts : qui travaille (modèle, effort réel), consommation (total, coût équivalent, prévu réaliste par modèle, cache relu à part), relié à (partie, dépendances, exigences, rapport). Retirés car faux : quota « 42 % » de démonstration, « effort moyen » sur Opus, « Passer à Codex », menu « Outil et modèle » (sauf projets d'exemple), pièces jointes. Plus de doublon des boutons (ils sont dans le bandeau).
+- Budget : prévu réaliste par modèle (Opus ~250 k, Sonnet ~120 k, Haiku ~40 k) au lieu de 40 k fixe ; plus de rouge sans raison, aussi sur les cartes du kanban. Entrée, sortie et cache écrit enregistrés séparément à partir de maintenant.
+- Au démarrage, chaque ticket est recalculé depuis son journal (vérifié sur une copie de la base : 42 tickets, 0 différence). Bandeau d'état sur une ligne ; gros cadre « Recette » retiré (doublon). 53 tests verts.
+- Bloc « Contexte de l'agent » (lu dans le journal de sa session, sans token) : taille au départ et à la fin avec un petit graphique par échange, compactages, conversation gardée ou non, fichiers du projet lus et fichiers de mémoire lus. Constat : les agents lisent aussi la mémoire du propriétaire (owner-working-rules.md, project-le-bon-architecte.md), hors du projet.

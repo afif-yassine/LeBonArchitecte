@@ -92,15 +92,13 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         <Setting label="Sous-agents par ticket" desc="Interdits pour un travail que l’agent peut faire seul.">
           <select defaultValue="1" onChange={saved} aria-label="Sous-agents"><option value="0">Aucun</option><option value="1">1 au plus</option><option value="2">2 au plus</option></select>
         </Setting>
-        <Setting label="Relances sur une même erreur" desc="Au-delà, le ticket passe en « Besoin d’action » avec la cause. Jamais de boucle aveugle.">
-          <select defaultValue="1" onChange={saved} aria-label="Relances"><option value="0">Aucune</option><option value="1">1</option><option value="2">2</option></select>
-        </Setting>
+        <Setting label="Réparation automatique" desc="Une seule tentative, puis « Besoin d’action » avec la cause. Jamais de boucle aveugle."><span className="pill pill--accent">1 au plus</span></Setting>
       </div>
 
       <div className="setgroup">
         <h2>Budgets</h2>
         <Setting label="Par ticket" desc="Dépassement : arrêt propre et « Besoin d’action »."><select defaultValue="40" onChange={saved} aria-label="Budget par ticket"><option value="20">20 k tokens</option><option value="40">40 k tokens</option><option value="100">100 k tokens</option></select></Setting>
-        <Setting label="Par jour pour ce projet"><select defaultValue="200" onChange={saved} aria-label="Budget par jour"><option value="100">100 k tokens</option><option value="200">200 k tokens</option><option value="500">500 k tokens</option></select></Setting>
+        <Setting label="Par jour, tous projets" desc="Atteint : le pilote s’arrête et vous prévient. Vous pouvez toujours lancer un ticket vous-même."><select value={autopilot.dayBudget} onChange={(e) => setAutopilot({ dayBudget: Number(e.target.value) })} aria-label="Budget par jour">{[...new Set([100_000, 200_000, 500_000, autopilot.dayBudget])].sort((a, b) => a - b).map((v) => <option key={v} value={v}>{v / 1000} k tokens</option>)}</select></Setting>
       </div>
 
       <div className="setgroup">

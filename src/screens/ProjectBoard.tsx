@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
-import { COLUMNS, type Ticket } from '../shared/contract';
+import { COLUMNS, budgetFor, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
@@ -65,7 +65,10 @@ function PlansPanel({ projectId, todo, onClose }: { projectId: string; todo: Tic
 }
 
 function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) => void }) {
-  const { stop, simulate, isReady, validate } = useStore();
+  const { simulate, isReady, validate, test, pause, resume } = useStore();
+  // Valider (tests, réunion, tests dans main) et Tester durent : le bouton dit ce qui se passe.
+  const [busy, setBusy] = useState<'valider' | 'tester' | null>(null);
+  const doing = (what: 'valider' | 'tester') => { setBusy(what); (what === 'valider' ? validate : test)(t.id).finally(() => setBusy(null)); };
   const agent = agents.find((a) => a.id === t.agentId);
   const open = () => go({ kind: 'ticket', ticketId: t.id });
   const realized = t.status === 'termine' || t.status === 'a-tester';
@@ -99,32 +102,49 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         <span className="card__title">{t.title}</span>
         {t.securityBlock && <span className="flag flag--sec"><ShieldAlert size={14} aria-hidden="true" />Bloqué par sécurité</span>}
         {t.needAction && <span className="flag flag--wait"><KeyRound size={14} aria-hidden="true" />{t.needAction}</span>}
+        {t.activity?.steps.some((s) => s.state === 'en-cours') && <span className="flag flag--accent"><Clock size={14} aria-hidden="true" />{t.activity.label} : {t.activity.steps.find((s) => s.state === 'en-cours')?.label}…</span>}
+        {t.status === 'a-tester' && t.activity?.error && <span className="flag flag--danger"><ShieldAlert size={14} aria-hidden="true" />{t.activity.error}</span>}
         {t.status === 'a-faire' && !ready && <span className="flag"><Pause size={14} aria-hidden="true" />Attend {t.deps.join(', ')}</span>}
-        {t.status === 'a-faire' && t.waitingFor?.startsWith('Arrêté') && <span className="flag flag--wait"><Square size={13} aria-hidden="true" />Arrêté par vous</span>}
+        {t.status === 'a-faire' && t.paused && <span className="flag flag--wait"><Pause size={13} aria-hidden="true" />En pause</span>}
+        {t.status === 'a-faire' && !t.paused && t.waitingFor?.startsWith('Reprend') && <span className="flag flag--accent"><Clock size={13} aria-hidden="true" />{t.waitingFor}</span>}
         {t.status === 'a-faire' && !t.planOk && <span className="flag"><ListChecks size={14} aria-hidden="true" />Plan à valider</span>}
         {t.status === 'en-cours' && current && <span className="flag"><ListChecks size={14} aria-hidden="true" />Étape {proven + 1} sur {t.steps.length} : {current.label}</span>}
         {t.status === 'a-tester' && <span className="flag flag--ok"><CheckCircle2 size={14} aria-hidden="true" />{okCount}/{t.criteria.length} critères, tests verts</span>}
         {agent && t.status === 'en-cours' && <span className={`flag ${agent.lastAction.includes('sans retour') ? 'flag--danger' : 'flag--accent'}`}>{agent.state === 'attend' ? <Hand size={14} /> : <Clock size={14} />}{agent.lastAction}</span>}
         {(t.used > 0 || realized) && (
           <span className="card__foot">
-            {t.used > 0 && <span style={{ flex: 1 }}><Bar value={t.used} max={t.budget} label={`Budget de ${t.id}`} /></span>}
+            {t.used > 0 && <span style={{ flex: 1 }}><Bar value={t.used} max={budgetFor(t)} label={`Budget de ${t.id}`} /></span>}
             {t.used > 0 && <span className="num">{fmtTokens(t.used)}</span>}
             {realized && <span style={{ marginLeft: 'auto' }}>{reported}</span>}
           </span>
         )}
       </button>
       {t.status === 'a-faire' && (
-        <div className="card__acts"><button className="btn btn--sm" onClick={() => onLaunch(t.id)}><Play size={12} />Lancer</button></div>
+        <div className="card__acts">
+          {t.paused
+            ? <button className="btn btn--sm" onClick={() => resume(t.id)}><Play size={12} />Reprendre</button>
+            : <>
+                <button className="btn btn--sm" onClick={() => onLaunch(t.id)}><Play size={12} />Lancer</button>
+                <button className="btn btn--sm btn--ghost" onClick={() => pause(t.id)} title="Le pilote ne le lancera pas avant « Reprendre »"><Pause size={12} />Pause</button>
+              </>}
+        </div>
+      )}
+      {t.status === 'action' && t.interrupted && (
+        <div className="card__acts"><button className="btn btn--sm" onClick={() => resume(t.id)}><RotateCcw size={12} />Reprendre</button></div>
       )}
       {t.status === 'a-tester' && (
         <div className="card__acts">
-          <button className="btn btn--sm" onClick={() => validate(t.id)}><Check size={12} />Valider</button>
-          <button className="btn btn--sm btn--ghost" onClick={open}>Tester</button>
+          <button className="btn btn--sm" disabled={busy !== null} onClick={() => doing('valider')} title="Tests dans sa branche, réunion dans main, puis tests dans main">
+            <Check size={12} />{busy === 'valider' ? 'Validation… tests puis réunion' : 'Valider'}
+          </button>
+          <button className="btn btn--sm btn--ghost" disabled={busy !== null} onClick={() => doing('tester')} title="Lance les tests du projet dans la branche de ce ticket">
+            {busy === 'tester' ? 'Tests en cours…' : 'Tester'}
+          </button>
         </div>
       )}
       {t.status === 'en-cours' && (
         <div className="card__acts">
-          <button className="btn btn--sm" onClick={() => stop(t.id)}><Square size={11} />Arrêter</button>
+          <button className="btn btn--sm" onClick={() => pause(t.id)} title="Arrête l’agent ; son travail et sa conversation sont gardés"><Pause size={11} />Pause</button>
           {demo && <button className="btn btn--sm btn--ghost" onClick={() => simulate(t.id)} title="Démonstration : jouer un déroulé complet de ce ticket">Simuler</button>}
         </div>
       )}
@@ -153,7 +173,9 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
             <Switch checked={autopilot.on} label="Pilote automatique" onChange={(v) => setAutopilot({ on: v })} />
             <div>
               <div className="pilot__title">Pilote automatique</div>
-              <div className="pilot__sub">{autopilot.on
+              <div className="pilot__sub">{autopilot.on && autopilot.budgetHit
+                ? `Arrêté : budget du jour atteint (${fmtTokens(autopilot.spentToday)} sur ${fmtTokens(autopilot.dayBudget)}). Aucun nouveau ticket ne part.`
+                : autopilot.on
                 ? `${run.length} sur ${autopilot.maxParallel} en cours.${unplanned.length ? ` ${unplanned.length} plan${unplanned.length > 1 ? 's' : ''} à valider : le pilote ne lance que les plans validés.` : ' Un ticket fini lance le suivant prêt.'}`
                 : 'Coupé : vous lancez les tickets vous-même.'}</div>
             </div>

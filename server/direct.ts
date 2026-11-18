@@ -89,7 +89,7 @@ export function runDirect(engine: Engine, t: Ticket, dir: string, prof: ProjectP
     }
     const u = j.usage ?? {};
     const tokens = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: j.total_cost_usd ?? 0, turns: j.num_turns ?? 1 });
+    engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: j.total_cost_usd ?? 0, turns: j.num_turns ?? 1, input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 });
     const files = j.is_error ? [] : parseFiles(String(j.result ?? ''), dir);
     for (const f of files) {
       mkdirSync(dirname(join(dir, f.path)), { recursive: true });

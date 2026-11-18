@@ -5,3 +5,5 @@ dist/
 .lba/*.db-*
 *.log
 .lba/logs/
+.lba/sauvegardes/
+.lba/passations/

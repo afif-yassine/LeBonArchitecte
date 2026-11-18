@@ -100,10 +100,46 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
   return { read: [...out.read], used: out.used, cacheRead: out.cacheRead, turns: out.turns };
 }
 
+// Contexte de l'agent, lu dans le journal de sa session (aucun token) : sa taille à chaque échange
+// (entrée + cache lu + cache écrit), les fichiers lus, la mémoire et les règles chargées, les compactages.
+export function contextOf(cwd: string, session: string): { exists: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number } {
+  let lines: string[] = [];
+  try { lines = readFileSync(transcriptOf(cwd, session), 'utf8').split('\n'); } catch { return { exists: false, series: [], start: 0, end: 0, peak: 0, read: [], memory: [], compactions: 0 }; }
+  const series: number[] = [];
+  const seen = new Set<string>();
+  const read = new Set<string>();
+  const memory = new Set<string>();
+  let compactions = 0;
+  for (const l of lines) {
+    let m: Record<string, any>;
+    try { m = JSON.parse(l); } catch { continue; }
+    if (m.type === 'system' && m.subtype === 'compact_boundary') compactions++;
+    if (m.type !== 'assistant' || !m.message) continue;
+    for (const b of m.message.content ?? []) {
+      if (b.type !== 'tool_use' || b.name !== 'Read' || !b.input?.file_path) continue;
+      const p = relative(cwd, b.input.file_path).replaceAll('\\', '/');
+      if (/(^|\/)(\.claude\/|memory\/|CLAUDE\.md$)/.test(p)) memory.add(p.split('/').pop()!); else read.add(p);
+    }
+    const u = m.message.usage;
+    if (u && m.message.id && !seen.has(m.message.id)) {
+      seen.add(m.message.id);
+      series.push((u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0));
+    }
+  }
+  // Au plus 48 points pour le petit graphique : on garde le maximum de chaque tranche.
+  const step = Math.ceil(series.length / 48) || 1;
+  const small = Array.from({ length: Math.ceil(series.length / step) }, (_, i) => Math.max(...series.slice(i * step, i * step + step)));
+  return { exists: true, series: small, start: series[0] ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions };
+}
+
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
 // resume : session Claude à reprendre. why = 'redemarrage' (moteur coupé en route : tokens pas encore comptés)
-// ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés).
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage'): ChildProcess {
+// ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés)
+// ou 'reparation' (le programme a trouvé ce qui manque, dans complaint : tokens déjà comptés).
+// why = 'message' : le propriétaire parle à l'agent (« Pas bon », demande de modification, message pendant
+// le travail) ; l'agent reprend sa propre conversation, il sait déjà ce qu'il a fait.
+// handoff : passation écrite par le programme (reprise après panne), jointe à la consigne.
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' | 'message' = 'redemarrage', handoff?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -121,9 +157,15 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   if (resume) args.push('--resume', resume);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
-  child.stdin.end(resume
-    ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
-    : promptFor(t, complaint));
+  const brief = resume && why === 'reparation'
+    ? `Le programme a vérifié ton travail. ${complaint} Corrige seulement cela : c’est ta seule tentative de réparation. Lance les tests, annonce les étapes reprises (« ÉTAPE n : faite »), puis écris ton résumé.`
+    : resume && why === 'message'
+    ? `Le propriétaire t’écrit : « ${complaint} ». Fais ce qu’il demande dans ton travail, sans refaire ce qui est déjà bon. Toutes les étapes sont à prouver de nouveau : annonce-les (« ÉTAPE n : faite »), lance les tests, puis résume en français simple ce que tu as changé.`
+    : resume
+    ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le PC ou le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
+    : promptFor(t, complaint);
+  // Passation (reprise après panne) : ce que le programme a constaté, jointe à la consigne.
+  child.stdin.end(handoff ? `${brief}\n\n${handoff}` : brief);
 
   const live = (kind: Parameters<Engine['live']>[1]['kind'], text: string, detail?: string, ok?: boolean) => {
     try { engine.live(t.id, { kind, text, detail, ok }, who); } catch { /* ticket supprimé ou arrêté : on ignore */ }
@@ -195,14 +237,15 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     } else if (m.type === 'result') {
       const u = m.usage ?? {};
       const tokens = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-      try { engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0 }); } catch { /* ignore */ }
+      try { engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 }); } catch { /* ignore */ }
       const ok = m.subtype === 'success' && !m.is_error;
       const quotaUntil = m.is_error ? quotaReset(String(m.result ?? '')) : undefined;
       if (quotaUntil) { outcome = { ok: false, reason: 'quota', read: [...read], tokens, summary: short(m.result, 300), quotaUntil }; return; }
       live('systeme', ok ? `Agent fini : ${m.num_turns} tours, ${tokens.toLocaleString('fr-FR')} tokens` : `Agent arrêté : ${m.subtype}`,
         `${(u.cache_read_input_tokens ?? 0).toLocaleString('fr-FR')} tokens relus depuis le cache ; coût estimé ${Number(m.total_cost_usd ?? 0).toFixed(2)} $ (compté sur votre abonnement)`, ok);
       if (m.result && short(m.result, 600) !== lastText) live('message', short(m.result, 900));
-      outcome = { ok, reason: ok ? 'fini' : String(m.subtype), read: [...read], tokens, testsGreen, summary: short(m.result, 600) };
+      // Résumé gardé entier (avec ses retours à la ligne) : la fiche l'affiche mis en forme, plus coupé à 600 caractères.
+      outcome = { ok, reason: ok ? 'fini' : String(m.subtype), read: [...read], tokens, testsGreen, summary: String(m.result ?? '').slice(0, 6000) };
     }
   };
 

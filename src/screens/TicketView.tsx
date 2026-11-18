@@ -1,24 +1,71 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowLeftRight, Check, ChevronDown, FileCheck2, FileClock, GitBranch, GitCommitHorizontal,
-  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, SendHorizontal, Settings2, Square, X,
+  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, RotateCcw, SendHorizontal, Settings2, Square, X,
 } from 'lucide-react';
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
-import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
+import { TOOLS, budgetFor, type Effort, type LiveItem, type Ticket, type ToolId } from '../shared/contract';
+import '../ticket-side.css';
 import { Deroule, PhaseFrise } from '../components/Deroule';
+import { TicketStatus } from '../components/TicketStatus';
+import { Markdown } from '../components/Markdown';
 import { FileViewer } from '../components/FileViewer';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
+import { useApi } from './RealSpaces';
 import type { Go } from '../view';
+
+// Effort réel donné à l'agent (même règle que server/claude.ts : Opus = haut, Haiku = bas).
+const effortOf = (t: Ticket) => (t.model === 'Haiku' || t.effort === 'bas' ? 'bas' : t.effort === 'haut' || t.model === 'Opus' ? 'haut' : 'moyen');
+
+// Contexte de l'agent : ce qu'il avait en tête, lu dans le journal de sa session (aucun token).
+interface Ctx { exists: boolean; kept: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number }
+function ContextCard({ id, running }: { id: string; running: boolean }) {
+  const { data } = useApi<Ctx>(`/tickets/${id}/context`);
+  const [open, setOpen] = useState(false);
+  if (!data) return null;
+  if (!data.exists) return (
+    <section className="sd-card"><h4 className="sd-label">Contexte de l’agent</h4><p className="sd-line">Pas encore de conversation : elle commence au lancement.</p></section>
+  );
+  const max = Math.max(1, ...data.series);
+  const pts = data.series.map((v, i) => `${(i / Math.max(1, data.series.length - 1)) * 100},${28 - (v / max) * 26}`).join(' ');
+  return (
+    <section className="sd-card">
+      <h4 className="sd-label">Contexte de l’agent</h4>
+      <div className="sd-ctx">
+        <span><span className="num">{fmtTokens(data.start)}</span> au départ</span>
+        <span className="sd-ctx__arrow" aria-hidden="true">→</span>
+        <span><span className="num">{fmtTokens(data.end)}</span> {running ? 'maintenant' : 'à la fin'}</span>
+      </div>
+      {data.series.length > 1 && (
+        <svg className="sd-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label={`Taille du contexte à chaque échange, de ${fmtTokens(data.start)} à ${fmtTokens(data.end)}, au plus ${fmtTokens(data.peak)}`}>
+          <polyline points={`0,30 ${pts} 100,30`} className="sd-spark__area" />
+          <polyline points={pts} className="sd-spark__line" />
+        </svg>
+      )}
+      <p className="sd-line">{data.compactions ? `Compacté ${data.compactions} fois. ` : ''}Conversation {data.kept ? 'gardée : il peut reprendre où il en était.' : 'non gardée.'}</p>
+      <button className="sd-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {data.read.length} fichier{data.read.length > 1 ? 's' : ''} du projet lu{data.read.length > 1 ? 's' : ''}{data.memory.length ? `, ${data.memory.length} de mémoire` : ''} {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <ul className="sd-files">
+          {data.memory.map((f) => <li key={`m${f}`} className="is-mem" title="Mémoire et règles du propriétaire">{f}</li>)}
+          {data.read.map((f) => <li key={f} title={f}>{f}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 type Tab = 'deroule' | 'description' | 'realise' | 'journal' | 'diff' | 'tests';
 interface RawEvent { id: number; at: string; type: string; actor: string; data: Record<string, unknown> }
 const EV_LABEL: Record<string, string> = {
   'ticket-cree': 'Ticket créé', 'ticket-lance': 'Lancé', 'ticket-arrete': 'Arrêté', 'agent-termine': 'Fin de l’agent', 'ticket-a-tester': 'Passé à tester',
-  'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
+  'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', reparation: 'Réparation automatique', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
   'etape-commencee': 'Étape commencée', 'etape-annoncee': 'Étape annoncée', direct: 'Direct',
+  'ticket-interrompu': 'Interrompu', 'ticket-repris': 'Repris',
 };
 const evText = (d: Record<string, unknown>) => String(d.text ?? d.cause ?? d.problem ?? d.evidence ?? d.model ?? d.report ?? d.step ?? '');
 
@@ -90,8 +137,11 @@ function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
 
 export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const notify = useNotify();
-  const { tickets, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject } = useStore();
+  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject, pause, resume, fix, isReady } = useStore();
   const [rejecting, setRejecting] = useState(false);
+  // Valider dure (tests, réunion, tests dans main) : le bouton se bloque et le bandeau montre chaque étape.
+  const [busy, setBusy] = useState(false);
+  const doValidate = () => { if (busy) return; setBusy(true); validate(ticketId).finally(() => setBusy(false)); };
   const [problem, setProblem] = useState('');
   const t = tickets.find((x) => x.id === ticketId)!;
   const agent = t.status === 'en-cours' || t.status === 'action' ? agents.find((a) => a.id === t.agentId) : undefined;
@@ -100,7 +150,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const [tab, setTab] = useState<Tab>(t.status === 'a-tester' ? 'realise' : 'deroule');
   const [conf, setConf] = useState({ tool: t.tool, accountId: t.accountId, model: t.model, effort: t.effort });
   const [menu, setMenu] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const paused = t.status === 'a-faire' && !!t.paused;
   const [launching, setLaunching] = useState(false);
   const [feed, setFeed] = useState<LiveItem[] | null>(null); // null = pas encore lu
   const [journal, setJournal] = useState<RawEvent[]>([]);
@@ -133,7 +183,8 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <div className="tk__head">
           <button className="btn btn--ghost btn--sm" onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'travail' })}><ArrowLeft size={15} />Travail</button>
           <div className="tk__title"><span className="card__id">{t.id}</span>{t.title}</div>
-          <div style={{ marginLeft: 'auto', position: 'relative', flex: 'none' }}>
+          {/* Changer d'outil en cours de route n'est pas encore branché au moteur : seulement sur les projets d'exemple. */}
+          {demo && <div style={{ marginLeft: 'auto', position: 'relative', flex: 'none' }}>
             <button className="btn btn--sm" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
               <Settings2 size={14} />Outil et modèle<ChevronDown size={14} />
             </button>
@@ -141,8 +192,11 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <ToolMenu tool0={conf.tool} account0={conf.accountId} model0={conf.model} effort0={conf.effort} onClose={() => setMenu(false)}
                 onApply={(v) => { setConf(v); setMenu(false); notify(`Passera sur ${TOOLS[v.tool].label}, ${v.model}, à la fin du tour. Même dossier, même branche.`); }} />
             )}
-          </div>
+          </div>}
         </div>
+        <TicketStatus t={t} busy={busy} ready={isReady(t)}
+          onValidate={doValidate} onReject={() => { setTab('realise'); setRejecting(true); }} onFix={() => { fix(t.id); }}
+          onPause={() => pause(t.id)} onResume={() => resume(t.id)} onLaunch={() => setLaunching(true)} onLook={() => setTab('deroule')} />
         <div className="tk__phases"><PhaseFrise t={t} /></div>
         <div className="tk__tabs">
           <Tabs<Tab> label="Vues du ticket" value={tab} onChange={setTab} tabs={[
@@ -200,26 +254,17 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <div className="empty"><h3>Rien de réalisé pour l’instant</h3><p>À la fin du ticket, le programme écrit ici ce qui a été fait et ajouté, à partir des commits et des tests. Sans IA.</p></div>
             ) : (
               <div className="descr">
-                {t.status === 'a-tester' && (
+                {/* Valider est dans le bandeau du haut ; ici seulement la description de ce qui ne va pas, quand on l'ouvre. */}
+                {t.status === 'a-tester' && rejecting && (
                   <div className="recette">
-                    <h3>Recette : à vous de tester</h3>
-                    <p className="small muted">Le programme a déjà vérifié les tests, les critères, les secrets et les failles. Il reste à essayer comme un vrai utilisateur.</p>
-                    <ol className="steps" style={{ margin: '10px 0 14px' }}>
-                      <li>Ouvrez l’aperçu : rien à compiler, les changements s’affichent tout de suite.</li>
-                      <li>Essayez chaque critère d’acceptation.</li>
-                      <li>Validez, ou décrivez ce qui ne va pas : le même agent corrige.</li>
-                    </ol>
-                    <div className="row">
-                      <button className="btn" onClick={() => notify('Maquette : l’aperçu du projet s’ouvre dans un onglet (J5).')}>Ouvrir l’aperçu</button>
-                      <button className="btn btn--primary" onClick={() => validate(t.id)}>Tout marche : valider</button>
-                      <button className="btn" onClick={() => setRejecting(true)}>Ça ne marche pas</button>
-                    </div>
+                    <h3>Qu’est-ce qui ne va pas ?</h3>
+                    <p className="small muted">L’agent qui a fait le travail reprend sa conversation avec votre description, corrige et repasse les tests.</p>
                     {rejecting && (
                       <div className="recette__ko">
                         <label className="sr-only" htmlFor="ko">Ce qui ne marche pas</label>
                         <textarea id="ko" className="input" rows={3} value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="Ex. : le lien de connexion arrive, mais la page reste blanche sur mobile." />
                         <div className="row" style={{ justifyContent: 'flex-end' }}>
-                          <button className="btn btn--ghost btn--sm"><Paperclip size={14} />Joindre une capture</button>
+                          <button className="btn btn--ghost btn--sm" onClick={() => setRejecting(false)}>Annuler</button>
                           <button className="btn btn--primary btn--sm" disabled={!problem.trim()} onClick={() => { reject(t.id, problem.trim()); setRejecting(false); setProblem(''); }}>Renvoyer à l’agent</button>
                         </div>
                       </div>
@@ -233,7 +278,11 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                     : <span><strong>Pas encore rapporté.</strong> Il sera dans le prochain compte rendu.</span>}
                   <button className="link" style={{ marginLeft: 'auto' }} onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'docs' })}>Comptes rendus</button>
                 </div>
-                <div className="descr__block"><h3>Résumé</h3><p className="realized__summary">{t.realized.summary}</p></div>
+                <div className="descr__block">
+                  <h3>Résumé de l’agent</h3>
+                  {/* Les annonces « ÉTAPE n : faite » servent au programme, pas à la lecture. */}
+                  <div className="realized__summary"><Markdown text={t.realized.summary.replace(/ÉTAPE \d+ : (faite|commencée)\s*/g, '').replace(/ (#{2,3} )/g, '\n\n$1').replace(/ - \*\*/g, '\n- **')} /></div>
+                </div>
                 <div className="descr__block" hidden={t.realized.added.length === 0}>
                   <h3>Ajouté</h3>
                   <ul className="ulist">{t.realized.added.map((a) => <li key={a}><Plus size={13} />{a}</li>)}</ul>
@@ -268,33 +317,45 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               {journal.length === 0 && <p className="muted">Chaque événement du ticket est écrit ici par le moteur, tel quel, pour l’audit.</p>}
             </ol>
           )}
+          {/* Avant : des exemples écrits en dur. Maintenant : les vrais changements et les vrais tests du ticket. */}
           {tab === 'diff' && (
-            <div className="box mono" style={{ fontSize: '.84rem', lineHeight: 1.7, whiteSpace: 'pre', overflowX: 'auto' }}>
-              <div className="faint">src/calendar.ts</div>
-              <div style={{ color: 'var(--ok)' }}>{'+ export const SLOT_MINUTES = 90;\n+ export function freeSlots(day: Date, taken: Slot[]): Slot[] {\n+   return allSlots(day, SLOT_MINUTES).filter((s) => !overlaps(s, taken));\n+ }'}</div>
-            </div>
+            !t.realized || t.realized.files.length === 0
+              ? <div className="empty"><h3>Aucun changement pour l’instant</h3><p>Les fichiers modifiés par l’agent s’affichent ici, avec leurs lignes ajoutées et retirées.</p></div>
+              : demo
+                ? <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
+                : <FileViewer ticketId={t.id} files={t.realized.files} />
           )}
-          {tab === 'tests' && (
-            <div className="box">
-              <div className="figures">
-                <div><div className="figure__value" style={{ color: 'var(--ok)' }}>42</div><div className="figure__label">passés</div></div>
-                <div><div className="figure__value">0</div><div className="figure__label">échec</div></div>
-                <div><div className="figure__value">1,8 s</div><div className="figure__label">durée</div></div>
-              </div>
-              <p className="xsmall faint" style={{ marginTop: 12 }}>La sortie complète (312 lignes) est gardée dans le journal. L’agent n’a reçu que ce résumé.</p>
-            </div>
-          )}
+          {tab === 'tests' && (() => {
+            // Seulement les vrais passages de tests (pas les recherches de l'agent qui contiennent le mot « test »).
+            const runs = (feed ?? []).filter((i) => (i.kind === 'test' || i.kind === 'commande') && /^(npm (test|run (check|build))|npx tsc)\b/.test(i.text.trim()));
+            return runs.length === 0
+              ? <div className="empty"><h3>Aucun test lancé pour l’instant</h3><p>Chaque passage des tests (par l’agent, par le programme, ou par vous avec « Tester ») s’affiche ici.</p></div>
+              : (
+                <ol className="testruns">
+                  {runs.slice().reverse().map((i) => (
+                    <li key={i.id} className={`testrun ${i.ok === false ? 'is-ko' : i.ok ? 'is-ok' : ''}`}>
+                      <span className="testrun__mark" aria-hidden="true">{i.ok === false ? <X size={12} strokeWidth={3} /> : <Check size={12} strokeWidth={3} />}</span>
+                      <span className="testrun__what">{i.text}<span className="sr-only">{i.ok === false ? ', en échec' : ', vert'}</span></span>
+                      <span className="testrun__who">{i.who === 'programme' ? 'le programme' : i.who === 'vous' ? 'vous' : 'l’agent'}</span>
+                      <span className="testrun__at">{new Date(i.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      {i.detail && <span className="testrun__detail">{i.detail.split('\n')[0]}</span>}
+                    </li>
+                  ))}
+                </ol>
+              );
+          })()}
         </div>
 
-        {tab === 'deroule' && (t.status === 'en-cours' || t.status === 'action') && (
+        {tab === 'deroule' && t.status !== 'termine' && (
           <div className="composer">
             <div className="composer__box">
               <label className="sr-only" htmlFor="agent-input">Message à l’agent</label>
-              <textarea id="agent-input" rows={1} value={text} placeholder={`Message à ${agent?.name ?? 'l’agent'}…`}
+              <textarea id="agent-input" rows={1} value={text} placeholder={
+                t.status === 'a-tester' || t.status === 'action' ? 'Demander une modification à l’agent qui a fait le travail : il reprend sa conversation…'
+                : t.status === 'en-cours' ? 'Message à l’agent : il le reçoit à la fin de son tour, dans sa conversation…'
+                : 'Message pour l’agent : il le recevra à son lancement…'}
                 onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
               <div className="composer__bar">
-                <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre un fichier" title="Joindre un fichier"><Paperclip size={16} /></button>
-                <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre une image" title="Joindre une image"><ImageIcon size={16} /></button>
                 <span className="hint">Entrée pour envoyer. « !npm test » lance une commande par le moteur.</span>
                 <button className="btn btn--primary btn--icon btn--sm" aria-label="Envoyer" onClick={send}><SendHorizontal size={15} /></button>
               </div>
@@ -303,52 +364,65 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         )}
       </div>
 
-      <aside className="tk__side" aria-label="Détails du ticket">
-        <h4>Détails</h4>
-        <div className="kv"><span>État</span><span>{agent ? <span className={`pill pill--dot pill--${paused ? '' : STATE[agent.state].tone}`}>{paused ? 'En pause' : STATE[agent.state].label}</span> : <span className="pill">{t.status === 'a-faire' ? 'À faire' : t.status === 'a-tester' ? 'À tester' : t.status === 'termine' ? 'Fini' : 'Sans agent'}</span>}</span></div>
-        {agent && <div className="kv"><span>Agent</span><span>{agent.name}<span className="faint xsmall"> {role?.name}</span></span></div>}
-        <div className="kv"><span>Étapes</span><span className="num">{proven} sur {t.steps.length} prouvées{!t.planOk && <span className="faint xsmall">, plan à valider</span>}</span></div>
-        <div className="kv"><span>Outil</span><span>{TOOLS[conf.tool].label}</span></div>
-        <div className="kv"><span>Compte</span><span>{account?.label}<span className="faint xsmall"> 5 h : {account?.quota5h} %</span></span></div>
-        <div className="kv"><span>Modèle</span><span>{conf.model}, effort {conf.effort}</span></div>
-        <div className="kv"><span>Budget</span><span><Bar value={t.used} max={t.budget} label="Budget" thick /><span className="xsmall muted num">{t.used === 0 && t.status !== 'a-faire'
-          ? <>non mesuré : aucun agent branché n’a compté (budget {fmtTokens(t.budget)})</>
-          : <>{fmtTokens(t.used)} sur {fmtTokens(t.budget)}, boucle {t.loops}</>}</span></span></div>
-        {realizedState && <div className="kv"><span>Rapport</span><span>{t.reportedIn ? <span className="pill pill--ok">{t.reportedIn}</span> : <span className="pill pill--wait">à rapporter</span>}</span></div>}
+      {/* Panneau de droite : qui travaille, ce que ça consomme, à quoi le ticket est relié.
+          Les actions sont dans le bandeau d'état, en haut : pas de doublon ici. Seulement des chiffres vrais. */}
+      <aside className="tk__side sd" aria-label="Détails du ticket">
+        <section className="sd-card">
+          <h4 className="sd-label">Qui travaille</h4>
+          <div className="sd-model">
+            <span className="sd-model__name">{t.model}</span>
+            <span className="sd-chip">effort {effortOf(t)}</span>
+          </div>
+          <p className="sd-line">{TOOLS[t.tool]?.label ?? t.tool}{!demo && ', sur votre abonnement'}</p>
+          <p className="sd-line">{t.loops > 1 ? `${t.loops} passages de l’agent` : t.status === 'a-faire' ? 'Pas encore lancé' : '1 passage de l’agent'}{t.usage?.turns ? ` · ${t.usage.turns} échanges` : ''}</p>
+          {t.interrupted && <p className="sd-line sd-line--warn">Dernière étape prouvée : {t.interrupted.lastProved ?? 'aucune'}</p>}
+        </section>
 
-        <h4>Dépend de</h4>
-        {t.deps.length === 0 ? <p className="small faint">Aucun ticket.</p> : (
-          <div className="row">{t.deps.map((d) => {
-            const done = tickets.find((x) => x.id === d)?.status === 'termine';
-            return <button key={d} className={`pill ${done ? 'pill--ok' : 'pill--wait'}`} onClick={() => go({ kind: 'ticket', ticketId: d })}>{d} {done ? <Check size={12} /> : 'en cours'}</button>;
-          })}</div>
-        )}
+        {!demo && <ContextCard id={t.id} running={t.status === 'en-cours'} />}
 
-        <h4>Partie</h4>
-        <p className="small">{t.part}, lot {t.lot}</p>
+        <section className="sd-card">
+          <h4 className="sd-label">Consommation</h4>
+          {(() => {
+            const ref = budgetFor(t);
+            const ratio = t.used / ref;
+            const tone = ratio > 1 ? 'danger' : ratio > .8 ? 'wait' : 'ok';
+            const u = t.usage;
+            return t.used === 0 ? <p className="sd-line">Rien de consommé pour l’instant. Prévu : environ {fmtTokens(ref)} tokens pour {t.model}.</p> : (<>
+              <div className="sd-big"><span className="num">{fmtTokens(t.used)}</span> tokens{u && u.costUsd > 0 && <span className="sd-cost">≈ {u.costUsd.toFixed(2)} $ d’équivalent</span>}</div>
+              <div className={`sd-meter is-${tone}`} role="meter" aria-valuemin={0} aria-valuemax={ref} aria-valuenow={t.used} aria-label="Tokens utilisés par rapport au prévu">
+                <span style={{ width: `${Math.min(100, ratio * 100)}%` }} />
+              </div>
+              <p className="sd-line">{ratio > 1 ? `Au-dessus du prévu (environ ${fmtTokens(ref)} pour ${t.model}).` : `Dans le prévu : environ ${fmtTokens(ref)} pour ${t.model}.`}</p>
+              {u && (
+                <dl className="sd-split">
+                  {u.split && <><dt>Entrée</dt><dd className="num">{fmtTokens(u.input)}</dd><dt>Sortie</dt><dd className="num">{fmtTokens(u.output)}</dd><dt>Cache écrit</dt><dd className="num">{fmtTokens(u.cacheWrite)}</dd></>}
+                  <dt>Relu du cache</dt><dd className="num">{fmtTokens(u.cacheRead)}</dd>
+                </dl>
+              )}
+              {u && !u.split && <p className="sd-note">L’entrée et la sortie sont séparées à partir des prochains passages de l’agent.</p>}
+              <p className="sd-note">Le cache relu n’est pas compté dans le total : il coûte environ 10 fois moins.</p>
+            </>);
+          })()}
+        </section>
 
-        {t.files.length > 0 && (<>
-          <h4>Fichiers verrouillés</h4>
-          {t.files.map((f) => <div key={f} className="lockfile"><Lock size={12} />{f}</div>)}
-        </>)}
-
-        <div className="tk__actions">
-          {t.status === 'a-faire' && <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>}
-          {t.status === 'a-tester' && (<>
-            <button className="btn btn--primary" onClick={() => validate(t.id)}><Check size={15} />Valider</button>
-            <button className="btn" onClick={() => { setTab('realise'); setRejecting(true); }}><X size={15} />Ça ne marche pas</button>
+        <section className="sd-card">
+          <h4 className="sd-label">Relié à</h4>
+          <dl className="sd-links">
+            <dt>Partie</dt><dd>{t.part}, lot {t.lot}</dd>
+            <dt>Dépend de</dt>
+            <dd>{t.deps.length === 0 ? <span className="faint">aucun ticket</span> : <span className="sd-chips">{t.deps.map((d) => {
+              const done = tickets.find((x) => x.id === d)?.status === 'termine';
+              return <button key={d} className={`sd-tk ${done ? 'is-ok' : ''}`} onClick={() => go({ kind: 'ticket', ticketId: d })}>{d}{done && <Check size={11} strokeWidth={3} />}</button>;
+            })}</span>}</dd>
+            {t.description.cdcRefs.length > 0 && (<><dt>Exigences</dt><dd className="sd-chips">{t.description.cdcRefs.map((r) => <button key={r} className="sd-tk" onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'cdc' })}>{r}</button>)}</dd></>)}
+            {realizedState && (<><dt>Rapport</dt><dd>{t.reportedIn ? <span className="sd-chip is-ok">dans {t.reportedIn}</span> : <span className="sd-chip">à rapporter</span>}</dd></>)}
+          </dl>
+          {t.files.length > 0 && (<>
+            <h4 className="sd-label" style={{ marginTop: 14 }}>Fichiers réservés</h4>
+            {t.files.map((f) => <div key={f} className="lockfile"><Lock size={12} />{f}</div>)}
           </>)}
-          {t.status === 'en-cours' && (<>
-            <button className="btn" onClick={() => { setPaused((v) => !v); notify(paused ? 'L’agent reprend là où il s’était arrêté.' : 'Agent en pause. Son travail est enregistré.'); }}>
-              {paused ? <Play size={15} /> : <Pause size={15} />}{paused ? 'Reprendre' : 'Pause'}
-            </button>
-            <button className="btn" onClick={() => { const acc = accounts.find((a) => a.tool === other && a.connected)!; setConf({ tool: other, accountId: acc.id, model: TOOLS[other].models[1], effort: conf.effort }); notify(`Passera sur ${TOOLS[other].label} à la fin du tour, avec la passation.`); }}>
-              <ArrowLeftRight size={15} />Passer à {TOOLS[other].short}
-            </button>
-            <button className="btn btn--danger" onClick={() => stop(t.id)}><Square size={14} />Arrêter</button>
-            {demo && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
-          </>)}
-        </div>
+        </section>
+        {demo && t.status === 'en-cours' && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
       </aside>
       {launching && <LaunchDialog ticketId={t.id} onClose={() => setLaunching(false)} />}
     </div>

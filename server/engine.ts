@@ -1,15 +1,18 @@
 // Le moteur : il écrit chaque événement dans le journal, met à jour la vue des tickets dans la même
 // transaction, puis applique les règles (0 token). Aucune IA ici.
 import type { DatabaseSync } from 'node:sqlite';
-import type { HumanAction, LiveItem, LiveKind, Ticket } from '../src/shared/contract.ts';
-import { Refused, assertMove, reduce, type EngineEvent } from './tickets.ts';
+import type { HumanAction, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
+import { Refused, assertMove, lastProvedStep, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
-import { checkDone, isReady, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
+import { budgetReached, checkDone, DAY_BUDGET, isReady, MAX_REPAIRS, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
+import type { MilestoneStats } from '../src/shared/targets.ts';
 
 type Listener = () => void;
 const now = () => new Date().toISOString();
-const DEFAULT_PILOT: PilotSettings = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true };
+const DEFAULT_PILOT: PilotSettings = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true, dayBudget: DAY_BUDGET };
+// Minuit à l'heure du PC : le « jour » du budget est celui du propriétaire.
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
 export class Engine {
   private listeners = new Set<Listener>();
@@ -42,6 +45,19 @@ export class Engine {
     return row ? { ...DEFAULT_PILOT, ...JSON.parse(row.value) } : DEFAULT_PILOT;
   }
 
+  // Tokens mesurés depuis minuit, tous projets.
+  spentToday(): number {
+    const r = this.db.prepare("SELECT COALESCE(SUM(json_extract(data, '$.used')), 0) AS n FROM events WHERE type = 'tokens' AND at >= ?").get(startOfToday().toISOString()) as { n: number };
+    return r.n;
+  }
+
+  // Réglages du pilote et où en est le budget du jour (pour l'interface).
+  pilotState(): PilotSettings & { spentToday: number; budgetHit: boolean } {
+    const p = this.pilot();
+    const spentToday = this.spentToday();
+    return { ...p, spentToday, budgetHit: budgetReached(spentToday, p) };
+  }
+
   // Actions « Pour vous » encore ouvertes : ouvertes moins résolues, dans l'ordre du journal.
   actions(project?: string): HumanAction[] {
     const rows = this.db.prepare("SELECT type, data FROM events WHERE type IN ('action-ouverte', 'action-resolue') ORDER BY id").all() as { type: string; data: string }[];
@@ -59,6 +75,26 @@ export class Engine {
     if (n > 0) return;
     for (const a of actions) this.record({ project: a.projectId, type: 'action-ouverte', actor: 'programme', data: { action: a } });
     this.changed();
+  }
+
+  // Recalcule chaque ticket depuis son journal (au démarrage). Le journal est la source, la table
+  // « tickets » n'est qu'une vue : quand le calcul d'un ticket s'enrichit (ex. détail des tokens),
+  // les anciens tickets en profitent aussi, sans rien perdre.
+  rebuild(): number {
+    const rows = this.db.prepare('SELECT * FROM events WHERE ticket IS NOT NULL ORDER BY id').all() as (Omit<EngineEvent, 'data'> & { data: string })[];
+    const views = new Map<string, Ticket>();
+    for (const r of rows) {
+      const ev = { ...r, data: JSON.parse(r.data) } as EngineEvent;
+      const after = reduce(ev.type === 'ticket-cree' ? undefined : views.get(ev.ticket!), ev);
+      if (after) views.set(after.id, after);
+    }
+    this.db.exec('BEGIN');
+    try {
+      const put = this.db.prepare('INSERT OR REPLACE INTO tickets (id, project, data) VALUES (?, ?, ?)');
+      for (const t of views.values()) put.run(t.id, t.projectId, JSON.stringify(t));
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+    return views.size;
   }
 
   isEmpty(): boolean {
@@ -99,6 +135,7 @@ export class Engine {
   }
 
   setPilot(p: Partial<PilotSettings>): PilotSettings {
+    if (p.dayBudget !== undefined && !(Number.isFinite(p.dayBudget) && p.dayBudget > 0)) throw new Refused('Le budget du jour doit être un nombre de tokens positif.');
     const next = { ...this.pilot(), ...p };
     this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('pilot', ?)").run(JSON.stringify(next));
     this.record({ project: '*', type: 'pilote-regle', actor: 'vous', data: { ...p } });
@@ -115,25 +152,113 @@ export class Engine {
     const pilot = this.pilot();
     if (!isReady(t, all) && opts.actor === 'pilote') throw new Refused(`${id} attend ${t.deps.join(', ')}.`);
     if (!t.planOk && opts.actor === 'pilote') throw new Refused(`Le plan de ${id} n’est pas validé : le pilote ne le lance pas.`);
+    if (opts.actor === 'pilote' && this.budgetHit(t.projectId)) throw new Refused(`Budget du jour atteint : le pilote ne lance pas ${id}.`);
     const busy = running(all, t.projectId);
     if (busy.length >= pilot.maxParallel && !opts.replace) {
       throw new Refused(`Plus de place : ${busy.map((b) => b.id).join(' et ')} ${busy.length > 1 ? 'sont' : 'est'} en cours (${pilot.maxParallel} au plus). Arrêtez-en un ou mettez ${id} en tête de file.`);
     }
     let msg = '';
     if (!t.planOk) { this.record({ project: t.projectId, ticket: id, type: 'plan-valide', actor: opts.actor ?? 'vous', data: {} }); msg = 'Plan validé. '; }
-    if (opts.replace) { this.stop(opts.replace, false); msg = `${opts.replace} arrêté proprement, passation écrite. `; }
+    if (opts.replace) { this.stop(opts.replace, false, `remplacé par ${id}`); msg =`${opts.replace} arrêté proprement, passation écrite. `; }
     const { model, reason } = pickModel(t, t.loops > 1);
     this.record({ project: t.projectId, ticket: id, type: 'ticket-lance', actor: opts.actor ?? 'vous', data: { model, reason, ...(opts.manual ? { manual: true } : {}) } });
     this.changed();
     return `${msg}${id} démarre sur ${model}. ${reason}`;
   }
 
-  stop(id: string, notify = true): string {
+  // Sans raison : mis en pause par vous (le pilote ne le relance pas). Avec raison : repart seul en tête de file.
+  // Ce que le programme fait sur le ticket (valider, tester), affiché en haut de la fiche, avec l'erreur.
+  setActivity(id: string, activity: TicketActivity | null): void {
+    const t = this.ticket(id);
+    this.record({ project: t.projectId, ticket: id, type: 'activite', actor: 'programme', data: { activity } });
+    this.changed();
+  }
+
+  // Un problème que l'agent peut résoudre (conflit, tests rouges) : le ticket ne reste jamais bloqué
+  // « à tester », il passe en « Besoin d'action » avec la cause et le bouton « Demander à l'agent ».
+  needsAction(id: string, cause: string): void {
+    const t = this.ticket(id);
+    if (t.status === 'action') return;
+    assertMove(t, 'action');
+    this.record({ project: t.projectId, ticket: id, type: 'besoin-action', actor: 'programme', data: { cause } });
+    this.changed();
+  }
+
+  stop(id: string, notify = true, reason?: string): string {
     const t = this.ticket(id);
     assertMove(t, 'a-faire');
-    this.record({ project: t.projectId, ticket: id, type: 'ticket-arrete', actor: 'vous', data: {} });
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-arrete', actor: 'vous', data: reason ? { reason } : {} });
     if (notify) this.changed();
-    return `${id} arrêté proprement. Il reprendra avec sa passation.`;
+    return reason ? `${id} arrêté, il repartira en tête de file.` : `${id} mis en pause : son travail est gardé dans sa branche. « Reprendre » le relance dans sa session.`;
+  }
+
+  // Pause : un ticket en cours est arrêté (travail gardé) ; un ticket en file n'est plus pris par le pilote.
+  pause(id: string): string {
+    const t = this.ticket(id);
+    if (t.status === 'en-cours') return this.stop(id);
+    if (t.status !== 'a-faire') throw new Refused(`${id} n’est ni en cours ni en file : rien à mettre en pause.`);
+    if (t.paused) return `${id} est déjà en pause.`;
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-pause', actor: 'vous', data: { paused: true } });
+    this.changed();
+    return `${id} mis en pause : le pilote ne le lancera pas avant « Reprendre ».`;
+  }
+
+  // Reprendre : il repart tout de suite s'il y a une place (dans sa session s'il en a une), sinon en tête de file.
+  // Un seul « Reprendre » : un ticket mis en pause par vous, ou interrompu par une panne (LBA-16).
+  resume(id: string): string {
+    const t = this.ticket(id);
+    if (t.status === 'action' && t.interrupted) return this.resumeInterrupted(id);
+    return this.resumePaused(id);
+  }
+
+  private resumePaused(id: string): string {
+    const t = this.ticket(id);
+    if (t.status !== 'a-faire' || !t.paused) throw new Refused(`${id} n’est ni en pause ni interrompu : rien à reprendre.`);
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-pause', actor: 'vous', data: { paused: false } });
+    this.record({ project: t.projectId, ticket: id, type: 'priorite', actor: 'vous', data: { priority: 0 } });
+    try {
+      return this.launch(id);
+    } catch (err) {
+      if (!(err instanceof Refused)) throw err;
+      this.changed();
+      return `${id} repris : il attend en tête de file (${err.message})`;
+    }
+  }
+
+  // Plus aucun agent ne travaille sur ce ticket (PC éteint, panne, espace de travail impossible) :
+  // il ne reste pas « en cours » ; il attend votre « Reprendre », avec sa dernière étape prouvée.
+  interrupt(id: string, reason: string): string {
+    const t = this.inProgress(id);
+    const lastProved = lastProvedStep(t)?.label;
+    const cause = `${reason} ${lastProved ? `Dernière étape prouvée : « ${lastProved} ».` : 'Aucune étape prouvée pour l’instant.'}`;
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-interrompu', actor: 'programme', data: { cause, ...(lastProved ? { lastProved } : {}) } });
+    this.changed();
+    return cause;
+  }
+
+  // « Reprendre » après une panne : le ticket repart avec ses preuves ; le superviseur lui donne sa passation.
+  private resumeInterrupted(id: string): string {
+    const t = this.ticket(id);
+    if (t.status !== 'action' || !t.interrupted) throw new Refused(`${id} n’a pas été interrompu : rien à reprendre.`);
+    const until = this.quotaUntil();
+    if (until) throw new Refused(`Limite de l’abonnement jusqu’à ${new Date(until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : reprenez ${id} après cette heure.`);
+    const busy = running(this.tickets(t.projectId), t.projectId);
+    if (busy.length >= this.pilot().maxParallel) throw new Refused(`Plus de place : ${busy.map((b) => b.id).join(' et ')} ${busy.length > 1 ? 'sont' : 'est'} en cours. Arrêtez-en un ou attendez sa fin pour reprendre ${id}.`);
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-repris', actor: 'vous', data: {} });
+    this.changed();
+    return `${id} reprend avec sa passation, sans refaire les étapes prouvées.`;
+  }
+
+  // Dernier départ d'un ticket. Requête dédiée : un long direct ne doit jamais le faire disparaître.
+  lastStart(id: string): EngineEvent | undefined {
+    const r = this.db.prepare("SELECT * FROM events WHERE ticket = ? AND type IN ('ticket-lance', 'reclamation', 'reparation', 'ticket-repris') ORDER BY id DESC LIMIT 1").get(id) as (Omit<EngineEvent, 'data'> & { data: string }) | undefined;
+    return r ? { ...r, data: JSON.parse(r.data) } : undefined;
+  }
+
+  // Réclamation pas encore traitée : aucun passage « à tester » depuis qu'elle a été écrite.
+  openComplaint(id: string): string | undefined {
+    const r = this.db.prepare("SELECT type, data FROM events WHERE ticket = ? AND type IN ('reclamation', 'ticket-a-tester') ORDER BY id DESC LIMIT 1").get(id) as { type: string; data: string } | undefined;
+    return r?.type === 'reclamation' ? String(JSON.parse(r.data).problem ?? '') : undefined;
   }
 
   // Limite d'abonnement atteinte (ex. « 5-hour limit ») : ce n'est pas un échec du ticket.
@@ -157,7 +282,8 @@ export class Engine {
   }
 
   // Fin d'un agent. « result » vient de l'adaptateur (plus tard) ou d'une simulation (maquette).
-  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }): string {
+  // repair : le superviseur a vérifié qu'une réparation automatique peut aider (voir canAutoRepair).
+  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }, opts: { repair?: boolean } = {}): string {
     const t = this.ticket(id);
     if (t.status !== 'en-cours') throw new Refused(`${id} n’est pas en cours.`);
     this.record({ project: t.projectId, ticket: id, type: 'agent-termine', actor: t.agentId ?? 'agent', data: result });
@@ -168,13 +294,29 @@ export class Engine {
       this.record({ project: t.projectId, ticket: id, type: 'ticket-a-tester', actor: 'programme', data: {} });
       msg = `${id} est prêt à tester : définition de fini vérifiée.`;
     } else {
-      const cause = `Pas fini : ${verdict.missing.join(', ')}.`;
+      const missing = verdict.missing.join(', ');
+      const used = this.repairsUsed(id);
+      const noBudget = budgetReached(this.spentToday(), this.pilot());
+      if (opts.repair && used < MAX_REPAIRS && !noBudget) {
+        this.record({ project: t.projectId, ticket: id, type: 'reparation', actor: 'programme', data: { cause: `Pas fini : ${missing}.` } });
+        this.changed();
+        return `${id} n’est pas fini : réparation automatique lancée (une seule tentative). Manque : ${missing}.`;
+      }
+      const cause = `Pas fini${used ? ' après la réparation automatique' : ''} : ${missing}.${opts.repair && !used && noBudget ? ' Pas de réparation automatique : budget du jour atteint.' : ''}`;
       this.record({ project: t.projectId, ticket: id, type: 'besoin-action', actor: 'programme', data: { cause } });
       msg = `${id} n’est pas fini, il passe en « Besoin d’action ». ${cause}`;
     }
     msg += this.runPilot(t.projectId, t.lot);
     this.changed();
     return msg;
+  }
+
+  // Réparations déjà faites depuis votre dernier lancement ou votre dernière réclamation.
+  // Une relance par le pilote (après une limite d'abonnement) ne redonne pas de tentative.
+  private repairsUsed(id: string): number {
+    const r = this.db.prepare(`SELECT COUNT(*) AS n FROM events WHERE ticket = ? AND type = 'reparation' AND id > COALESCE(
+      (SELECT MAX(id) FROM events WHERE ticket = ? AND actor = 'vous' AND type IN ('ticket-lance', 'reclamation')), 0)`).get(id, id) as { n: number };
+    return r.n;
   }
 
   validate(id: string): string {
@@ -291,9 +433,11 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Tokens mesurés par un adaptateur (Claude Code renvoie l'usage à la fin de chaque tour).
-  tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number }): void {
+  // input / output / cacheWrite : le détail de « used » (entrée, sortie, cache écrit), pour la fiche du ticket.
+  tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number; input?: number; output?: number; cacheWrite?: number }): void {
     const t = this.ticket(id);
     this.record({ project: t.projectId, ticket: id, type: 'tokens', actor: 'programme', data: { ...d } });
+    this.budgetHit(t.projectId); // prévient dès que le budget est franchi, sans attendre le prochain lancement
     this.changed();
   }
 
@@ -306,7 +450,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Tokens réellement mesurés, par ticket et par jour (onglet Quotas). Aucune estimation.
-  usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[] } {
+  usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[]; stats: MilestoneStats } {
     const rows = this.db.prepare(`SELECT at, ticket, data FROM events WHERE type = 'tokens'${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; data: string }[];
     const total = { used: 0, cacheRead: 0, costUsd: 0, runs: 0 };
     const tk = new Map<string, { used: number; cacheRead: number; costUsd: number; runs: number }>();
@@ -323,6 +467,34 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
       total,
       byTicket: [...tk].map(([id, v]) => ({ id, title: title(id), ...v })).sort((a, b) => b.used - a.used),
       byDay: [...day].map(([d, used]) => ({ day: d, used })),
+      stats: this.milestoneStats(project, tk),
+    };
+  }
+
+  // Mesures à comparer aux cibles des jalons, sur les tickets faits par un agent et arrivés « à tester ».
+  // Temps : seulement quand l'agent travaille (les attentes et les arrêts ne comptent pas).
+  // Premier coup : validé par vous sans réclamation ni réparation automatique.
+  private milestoneStats(project: string | undefined, tokens: Map<string, { used: number }>): MilestoneStats {
+    const rows = this.db.prepare(`SELECT at, ticket, type FROM events WHERE type IN ('ticket-lance', 'reclamation', 'reparation', 'ticket-a-tester', 'ticket-arrete', 'besoin-action', 'ticket-valide')${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; type: string }[];
+    const by = new Map<string, { open?: number; ms: number; finished: boolean; validated: boolean; redone: boolean }>();
+    for (const r of rows) {
+      const x = by.get(r.ticket) ?? { ms: 0, finished: false, validated: false, redone: false };
+      by.set(r.ticket, x);
+      const at = Date.parse(r.at);
+      if (r.type === 'ticket-lance' || r.type === 'reclamation') x.open ??= at;
+      if (r.type === 'reclamation' || r.type === 'reparation') x.redone = true;
+      if (r.type === 'ticket-valide') x.validated = true;
+      if (r.type === 'ticket-a-tester') x.finished = true;
+      if ((r.type === 'ticket-a-tester' || r.type === 'ticket-arrete' || r.type === 'besoin-action') && x.open !== undefined) { x.ms += at - x.open; x.open = undefined; }
+    }
+    const done = [...by].filter(([id, x]) => x.finished && tokens.has(id));
+    const validated = done.filter(([, x]) => x.validated);
+    const avg = (n: number) => (done.length ? Math.round(n / done.length) : null);
+    return {
+      tickets: done.length,
+      tokensPerTicket: avg(done.reduce((s, [id]) => s + tokens.get(id)!.used, 0)),
+      firstTryPct: validated.length ? Math.round((validated.filter(([, x]) => !x.redone).length / validated.length) * 100) : null,
+      minutesPerTicket: avg(done.reduce((s, [, x]) => s + x.ms, 0) / 60_000),
     };
   }
 
@@ -399,10 +571,32 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return t;
   }
 
+  // Parler à l'agent qui a fait le travail. Sa conversation (session Claude) est gardée avec le ticket :
+  // - en cours : le message attend la fin de son tour, puis l'agent reprend sa session avec lui ;
+  // - à tester ou en besoin d'action : c'est une demande de modification, l'agent reprend sa session tout de suite ;
+  // - fini (réuni dans main) : sa branche est close, une modification devient un nouveau ticket.
   message(id: string, text: string): string {
-    if (!text.trim()) throw new Refused('Le message est vide.');
-    this.live(id, { kind: 'message', text: text.trim() }, 'vous');
-    return 'Message transmis. L’agent le lira à la fin de son action en cours.';
+    const t = this.ticket(id);
+    const msg = text.trim();
+    if (!msg) throw new Refused('Le message est vide.');
+    if (t.status === 'a-tester' || t.status === 'action') {
+      this.reject(id, msg);
+      return `Demande envoyée : l’agent de ${id} reprend sa conversation pour faire la modification. Le ticket repasse « En cours ».`;
+    }
+    if (t.status === 'termine') throw new Refused(`${id} est déjà réuni dans main : pour une modification, créez un nouveau ticket (sa conversation reste lisible dans le Direct).`);
+    this.live(id, { kind: 'message', text: msg, detail: t.status === 'en-cours' ? 'En attente : l’agent le reçoit à la fin de son tour.' : 'Gardé : l’agent le recevra à son lancement.' }, 'vous');
+    return t.status === 'en-cours' ? 'Message gardé : l’agent le reçoit dès la fin de son tour, puis continue dans sa conversation.' : 'Message gardé : l’agent le recevra à son lancement.';
+  }
+
+  // Messages de vous arrivés depuis un événement (ex. le départ du tour de l'agent), pas encore transmis.
+  messagesSince(id: string, sinceId: number): string[] {
+    return this.events({ ticket: id, limit: 200 })
+      .filter((e) => (e.id ?? 0) > sinceId && e.type === 'direct' && e.actor === 'vous' && e.data.kind === 'message')
+      .reverse().map((e) => String(e.data.text));
+  }
+
+  lastEventId(): number {
+    return (this.db.prepare('SELECT MAX(id) AS m FROM events').get() as { m: number | null }).m ?? 0;
   }
 
   // Le direct d'un ticket : son journal, raconté en clair, du plus ancien au plus récent.
@@ -416,6 +610,8 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
         case 'direct': return [{ ...base, kind: d.kind as LiveKind, text: String(d.text), detail: d.detail as string | undefined, ok: d.ok as boolean | undefined, step: d.step as string | undefined }];
         case 'ticket-lance': return [{ ...base, kind: 'agent', text: `Lancé sur ${d.model}`, detail: String(d.reason ?? '') }];
         case 'ticket-arrete': return [{ ...base, kind: 'systeme', text: 'Arrêté proprement, passation écrite' }];
+        case 'ticket-interrompu': return [{ ...base, kind: 'systeme', ok: false, text: String(d.cause) }];
+        case 'ticket-repris': return [{ ...base, kind: 'systeme', text: 'Repris par vous, avec sa passation' }];
         case 'plan-valide': return [{ ...base, kind: 'etape', text: 'Plan validé', ok: true }];
         case 'etape-commencee': return [{ ...base, kind: 'etape', text: `Commence : ${label(d.step)}`, step: String(d.step) }];
         case 'etape-annoncee': return [{ ...base, kind: 'etape', ok: Boolean(d.proofOk), step: String(d.step), text: d.proofOk ? `Prouvé : ${label(d.step)}` : `Annoncé, pas prouvé : ${label(d.step)}`, detail: String(d.evidence ?? '') }];
@@ -498,10 +694,33 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return msg;
   }
 
+  // Pilote allumé et budget du jour atteint : il s'arrête et vous prévient (une fois par jour et par budget).
+  private budgetHit(project: string): boolean {
+    const p = this.pilot();
+    const spent = this.spentToday();
+    if (!p.on || !budgetReached(spent, p)) return false;
+    const d = startOfToday();
+    const id = `budget-${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}-${p.dayBudget}`;
+    const known = this.db.prepare("SELECT 1 FROM events WHERE type = 'action-ouverte' AND json_extract(data, '$.action.id') = ? LIMIT 1").get(id);
+    if (known) return true;
+    const n = (v: number) => v.toLocaleString('fr-FR');
+    const action: HumanAction = {
+      id, projectId: project, kind: 'question', title: 'Budget du jour atteint : le pilote est arrêté',
+      cause: `${n(spent)} tokens utilisés aujourd’hui, pour un budget de ${n(p.dayBudget)}.`,
+      rule: 'Le pilote ne lance aucun ticket quand le budget du jour est atteint.',
+      todo: 'Les agents déjà au travail finissent leur ticket. Pour continuer aujourd’hui : montez le budget dans les réglages du projet, ou lancez un ticket vous-même. Le pilote ne repart pas seul à minuit : demain, il reprend à la prochaine validation ou fin de ticket.',
+      blocking: true, since: 'aujourd’hui', buttons: ['Compris'],
+    };
+    this.record({ project, type: 'action-ouverte', actor: 'programme', data: { action } });
+    this.changed();
+    return true;
+  }
+
   // Pilote automatique : remplit les places libres avec les tickets prêts.
   private runPilot(project: string, lot: number): string {
     const launched: string[] = [];
     if (this.quotaUntil()) return ''; // limite d'abonnement : rien ne part avant l'heure de retour
+    if (this.budgetHit(project)) return ' Budget du jour atteint : le pilote ne lance plus de ticket.';
     for (let i = 0; i < 4; i++) {
       const next = nextReady(this.tickets(project), project, this.pilot(), lot);
       if (!next) break;
