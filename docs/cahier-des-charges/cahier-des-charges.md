@@ -14,6 +14,38 @@ Version d'origine : 17 nov. 2026. Ajouts datés en fin de document.
 7. **Jamais** de push, merge, déploiement, dépense, suppression ou `curl | bash` sans « oui ». Jamais de secret lu ni affiché.
 8. Une information = **un seul endroit**. Chaque choix structurant = une décision écrite dans `docs/decisions/`.
 
+### Compléments du 18 nov. 2026 (version 2, LBA-12)
+
+Cette partie 1 est **le seul endroit où les règles sont écrites** ; l'onglet Règles l'affiche telle quelle. Les décisions expliquent pourquoi une règle existe : quand une décision crée une règle, sa ligne s'ajoute ici. Les règles 1 à 8 restent entières ; les lignes 5a à 8a les précisent sans les répéter.
+
+État : **Programme** = le moteur l'impose. **À la main** = suivie par les agents et le propriétaire, sans contrôle automatique. **Pas branchée** = le code existe, le moteur ne l'appelle pas. **À construire** = rien n'existe. **À vérifier** = pas contrôlée pendant LBA-12.
+
+| N° | Règle | Source | État |
+|---|---|---|---|
+| 5a | « Deux fois » veut dire : la même erreur deux fois de suite. Le travail s'arrête et le ticket passe en « Besoin d'action ». | `server/rules.ts` | Pas branchée |
+| 6a | Opus, effort haut, aussi pour l'architecture, le cahier des charges, l'audit, le cadrage, le backlog, la conception, la stratégie, la refonte et la migration. Haiku pour une recherche. | Décision 0007 | Programme |
+| 7a | Pour réunir un ticket dans main, le « oui » est la validation du ticket par le propriétaire. Le push et le déploiement demandent chacun leur propre « oui ». | Décision 0006 | Programme |
+| 8a | `CLAUDE.md` et `AGENTS.md` ne s'écrivent pas à la main : le programme les produit depuis cette liste, en moins de 1 000 tokens. | Recherche LBA-10 | À construire |
+| 9 | Le texte du propriétaire n'est jamais réécrit : on ajoute, avec la date. | Dossier du cahier | À la main |
+| 10 | Un agent reçoit les exigences de son ticket, jamais tout le dossier. Seul l'Architecte relit le cahier entier. | Dossier du cahier | À vérifier |
+| 11 | Une exigence sans ticket reste visible dans l'écran « Cahier des charges ». | Dossier du cahier | À vérifier |
+| 12 | Aucun lancement par le pilote sans plan validé, ni avant la fin des dépendances. | Décision 0005 | Programme |
+| 13 | Une étape n'est cochée que si le programme a vérifié sa preuve. Ce qu'aucun outil ne vérifie s'affiche « non vérifié », jamais « ok ». | Décisions 0005 et 0008 | Programme, sauf la capture d'écran |
+| 14 | Chaque ticket travaille dans son propre worktree ; main n'est touché qu'à la réunion. | Décision 0006 | Programme |
+| 15 | Réunion seulement dans un main propre. Tests relancés après la réunion ; s'ils sont rouges, `git revert`, et le ticket reste « à tester ». | Décision 0008 | Programme |
+| 16 | Un agent n'a que des droits précis (`npm test`, `npm run check`, `npm run build`, `npm run pdf`, git en lecture et commit, quelques commandes de lecture). Il ne modifie pas `package.json`. | Décision 0008 | Programme |
+| 17 | Deux agents au plus en même temps par défaut, chacun dans son worktree. | `server/engine.ts` | Programme |
+| 18 | Un ticket ne reste jamais bloqué « en cours » : si la fin d'un agent plante, il passe en « Besoin d'action » avec la raison. | Décision 0008 | Programme |
+| 19 | Plafond par passage : 3 $, 8 $ pour un agent Opus, 0,50 $ en mode direct. | `server/claude.ts`, `server/direct.ts` | Programme |
+| 20 | Une tâche simple de texte passe en mode direct : un seul appel, sans outils. | `server/rules.ts` | Programme |
+| 21 | Contexte limité à 60 000 tokens par agent : un seul compactage à 85 %, puis session neuve avec passation. | Décision 0003, LBA-10 | Pas branchée |
+| 22 | Mémoire : 3 à 8 notes par ticket, 600 tokens au plus. Une note = un fait. Les agents proposent, le programme écrit. | Décision 0003, LBA-10 | À construire |
+| 23 | Seul l'Éclaireur lit le web, et il n'écrit que dans `docs/recherche/` et `docs/rapports/`. | `src/shared/plan.ts` | Programme |
+| 24 | Une proposition de l'Architecte ne s'applique jamais seule : le propriétaire l'accepte d'abord. | `server/engine.ts` | Programme |
+| 25 | Le moteur n'obéit qu'à l'interface de ce PC. | Décision 0008 | Programme |
+| 26 | Un rôle n'existe que s'il a un besoin écrit, un déclencheur décidé par le programme et une preuve vérifiable. | Partie 2, LBA-12 | À la main |
+| 27 | Une économie de tokens se mesure sur 5 tickets réels avant d'être généralisée. | LBA-10 | À la main |
+
 ## 2. Échecs passés à ne jamais refaire (Escouade, fork, couche « Studio »)
 - Tokens : 3 à 59 M par ticket ; chef orchestrateur IA permanent très coûteux ; sorties de tests lues en entier ; agents en parallèle.
 - Boucles aveugles : jusqu'à 16 relances sur la même erreur ; tickets inachevés envoyés en « À tester » ; pas de colonne « besoin d'action ».
@@ -74,3 +106,100 @@ J0 Avis, architecture, maquettes → J1 Scan (E0, E18) → J2 Moteur (E6, E9, E1
 - **A11 Incidents** : incidents suivis avec chronologie et résolution.
 - **A12 Mise en place par l'orchestrateur** : l'orchestrateur lance les agents avec leurs rôles ; à la mise en place il compose une équipe adaptée au projet, aidé par des agents d'aide qui peuvent chercher sur Internet (documentation officielle, versions) et importer des briques évaluées, sur accord.
 - **A13 Flux de travail** : le flux complet doit être visible et remarquable, de A à Z.
+
+---
+
+## Version 2 du 18 nov. 2026 (LBA-12)
+
+Cette version complète le texte ci-dessus à partir de la recherche LBA-10 (`docs/rapports/cadrage-recherche.html`) et de l'audit LBA-11 (`docs/rapports/cadrage-audit.md`). Elle ne retire rien. Les priorités restent celles de la partie 3, les fonctions celles de la partie 4, les règles celles de la partie 1.
+
+### Objectifs
+
+| N° | Objectif | Vérifié par |
+|---|---|---|
+| O1 | Le propriétaire obtient un projet complet, de l'idée à la livraison, en gardant toutes les vraies décisions. | C13, C14 |
+| O2 | Rien n'est déclaré fini sur parole : chaque étape a une preuve contrôlée par le programme. | C3, C4 |
+| O3 | main reste sain, et aucun blocage ni aucune boucle ne passe inaperçu. | C1, C2, C5, C6, C12 |
+| O4 | Le coût en tokens est mesuré, borné et prévisible. | C7 à C11 |
+| O5 | L'interface reste claire, reposante et à jour sans geste inutile. | C14 à C16 |
+
+### Dans le périmètre
+
+- Solidifier ce qui existe : moteur, tickets, preuves, worktrees et réunion dans main.
+- Finir les points d'audit encore ouverts : test du superviseur avec un faux `claude`, `node_modules` partagé, arrêt des processus enfants sous Windows, journaux de commandes gardés hors du worktree, recherche de secrets plus large (décision 0008).
+- Brancher les règles écrites que le moteur n'appelle pas encore (5a, 21) et la bascule de quota de E1.
+- Construire la mémoire triée par le programme (scénario B de LBA-10), puis la mesurer sur 5 tickets réels.
+- Ajouter Codex par son interface officielle (LBA-7).
+- Travailler en local, sur Windows d'abord.
+
+### Hors périmètre
+
+- Un service en ligne ou partagé entre plusieurs personnes : la plateforme reste locale.
+- Rust et Tauri (partie 3).
+- Un chef IA permanent, et tout rôle sans déclencheur (partie 2).
+- Des mémoires relues en entier, ou laissées à chaque outil comme mémoire principale (scénarios A et C de LBA-10). Le scénario C reste possible en secours.
+- L'effacement de l'historique git (A10).
+- Un déploiement ou un push sans « oui » (règle 7).
+
+### Critères de réussite
+
+Les cibles sont des propositions à confirmer par le propriétaire. « Tokens comptés » : ceux du journal du ticket, sans les relectures du cache. « Pas mesuré » : aucun chiffre n'existe encore.
+
+| N° | Critère | Cible | Comment on mesure | Point de départ (18 nov. 2026) |
+|---|---|---|---|---|
+| C1 | main reste vert | 100 % des réunions suivies de tests verts dans main, ou annulées par `git revert` | Journal des réunions, `npm test` | 35 tests sur 35 verts |
+| C2 | Le projet compile | 0 erreur à chaque réunion | `npm run check` | 0 erreur |
+| C3 | Preuves réelles | 5 types de preuve sur 5 contrôlés par le programme ; 0 étape cochée sans contrôle | Lecture du superviseur, journal des étapes | 4 sur 5 (la capture manque) |
+| C4 | Validé du premier coup | Au moins 80 % des 20 derniers tickets | Statistiques E12 | Pas mesuré |
+| C5 | Pas de boucle aveugle | 0 nouvel essai après deux erreurs identiques de suite | Journal des erreurs | Pas mesuré (règle 5a pas branchée) ; ancien outil : jusqu'à 16 relances |
+| C6 | Pas de blocage silencieux | 0 ticket « en cours » resté plus de 15 min sans événement ni passage en « Besoin d'action » | Heures du journal | Pas mesuré |
+| C7 | Départ d'un agent léger | 13 000 tokens au plus | Premier tour de l'agent | Environ 12 300 (34 210 avant allègement) |
+| C8 | Tâche simple en mode direct | 10 000 tokens comptés au plus | Onglet Quotas | 5 842 (README, LBA-9) |
+| C9 | Ticket normal | Médiane de 60 000 tokens comptés au plus, sur 10 tickets | Onglet Quotas | 52 782 (LBA-10, un seul ticket) |
+| C10 | Ticket important sur Opus | Médiane de 100 000 tokens comptés au plus, sur 10 tickets | Onglet Quotas | 68 711 (LBA-11, un seul ticket) |
+| C11 | Pas de dérive | 0 ticket au-delà de 200 000 tokens comptés sans arrêt et sans avis au propriétaire | Onglet Quotas | Pas mesuré ; ancien outil : 3 à 59 millions |
+| C12 | Sécurité | 0 push, réunion ou suppression faits par un agent ; 0 secret dans main | Journal, historique git, recherche de secrets | Pas mesuré depuis la décision 0008 |
+| C13 | Couverture du cahier | 34 exigences sur 34 avec un ticket ou un report écrit | Écran « Cahier des charges » | Pas mesuré |
+| C14 | Flux court | Lancer, valider, voir ce qui bloque : moins de 3 clics chacun (E19) | Parcours compté à la recette | Pas mesuré |
+| C15 | Écran à jour | Un changement visible en 10 s au plus, sans recharger | Essai chronométré | Pas mesuré |
+| C16 | Lisibilité | Contraste AA sur tous les écrans, en clair et en sombre (E20) | Outil de contraste | Pas mesuré |
+
+### Équipes et rôles
+
+Il n'y a pas d'équipe fixe : pour chaque projet (A12), le programme n'appelle que les rôles dont le déclencheur se présente (règle 26). Le modèle suit la règle 6 et ses précisions.
+
+| Équipe | Rôle | Besoin | Déclencheur | Preuve |
+|---|---|---|---|---|
+| Direction | Propriétaire | C'est le client : il décide et valide (E5, règle 1). | Plan, recette, réunion, push | Sa validation, inscrite au journal |
+| Pilotage | Programme (moteur et pilote), sans IA | Tout ce qui est mécanique coûte 0 token (partie 3, E4). Le chef IA permanent était trop cher (partie 2). | Toujours actif | Journal des événements |
+| Pilotage | Architecte | Une erreur de conception coûte plus cher que les tokens économisés (décision 0007, E5). | Ticket d'architecture, de conception, de cahier des charges ou de backlog ; question du propriétaire | Document écrit |
+| Recherche | Éclaireur | Chercher dans la documentation officielle et évaluer des briques (A12, E18). | Ticket de recherche, veille ou comparatif | Document avec ses sources |
+| Réalisation | Développeur serveur | Écrire le code hors interface (E2, E10). | Ticket sans rôle plus précis | Tests et compilation |
+| Réalisation | Développeur interface | L'interface est la priorité 1 (partie 3, E20). | Ticket d'écran, de page ou de design | Compilation et capture d'écran |
+| Réalisation | Rédacteur | Rapports et documentation lisibles (E12). | Ticket de rapport, compte rendu ou documentation | Document écrit |
+| Contrôle | Testeur | Prouver que le travail marche (E10). | Ticket de qualité ou de recette ; aide sur une étape de tests | Tests verts |
+| Contrôle | Sécurité | L'audit a montré des interdits contournables (LBA-11, E16). | Ticket d'audit ou de sécurité ; relecture d'un ticket à risque | Scans sans alerte |
+
+**Un seul ajout proposé : le relecteur design** (équipe Contrôle, Sonnet).
+- **Besoin** : le design est une exigence forte (A1, E20) et un échec passé (partie 2). Or le superviseur réel ne contrôle aucune capture d'écran : `capture` n'apparaît que dans `server/simulate.ts`.
+- **Déclencheur** : un ticket du développeur interface, une fois les captures prises par le programme.
+- **Preuve** : captures en thème clair et sombre, et contraste AA mesuré par un outil (C16).
+- **Condition** : il ne démarre que lorsque le programme sait prendre ces captures. Sinon il jugerait sur parole.
+
+**Rôles écartés**
+
+| Rôle | Pourquoi il n'est pas retenu |
+|---|---|
+| Chef de projet IA | Le pilote et l'Architecte suffisent ; c'est l'échec le plus coûteux de la partie 2. |
+| Docteur, juge, Guardian | N'agissaient que si le chef y pensait (partie 2). |
+| Gardien de la mémoire | Le programme écrit les notes (règle 22). |
+| Surveillant du fonctionnement (A9) | Compter les tokens, les boucles et le disque est mécanique : c'est au programme de le faire. |
+| Intégrateur | La réunion est faite par le programme (règle 15). |
+| Analyste | Son nom existe dans `src/shared/plan.ts`, mais aucun ticket n'y mène ; l'Architecte fait déjà le cadrage. |
+| Agent Codex | Codex est un outil, pas un rôle : chaque rôle pourra l'utiliser (LBA-7). |
+
+### À trancher par le propriétaire
+
+1. **Cibles** : confirmer ou changer les cibles C4, C6, C9, C10 et C11, qui ne reposent encore sur aucune série de mesures.
+2. **Agents en même temps** : la partie 2 cite les agents en parallèle comme un échec, alors que la règle 17 en autorise deux. Avis : garder deux, car chacun a son worktree et main est retesté après chaque réunion.
+3. **Relecteur design** : l'accepter, une fois les captures faites par le programme. Avis : oui, c'est le seul ajout qui répond à un manque constaté.
