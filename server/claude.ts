@@ -57,11 +57,13 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[t.model] ?? 'sonnet',
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', allowed.join(','), '--disallowedTools', denied.join(','),
-    '--max-budget-usd', '3',
+    // Plafond par lancement ; plus haut pour Opus (décision 0007) pour ne pas couper un travail important en route.
+    '--max-budget-usd', t.model === 'Opus' ? '8' : '3',
     // Contexte minimal (mesuré : 34 210 tokens fixes au 1er tour sans ces options, ~12 300 avec) :
     // pas de connecteurs MCP, pas de liste de skills, seulement les 6 outils utiles à un ticket.
     '--strict-mcp-config', '--disable-slash-commands', '--tools', web ? 'Read,Edit,Write,Glob,Grep,Bash,WebSearch,WebFetch' : 'Read,Edit,Write,Glob,Grep,Bash',
-    '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' ? 'high' : 'medium',
+    // Opus = tâche importante (décision 0007) : réflexion poussée.
+    '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' || t.model === 'Opus' ? 'high' : 'medium',
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
   child.stdin.end(promptFor(t, complaint));

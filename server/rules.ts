@@ -35,16 +35,21 @@ export function sameErrorTwice(errors: string[]): boolean {
 
 // Choix du modèle par règles. Jamais Fable.
 const RISKY = /sécurité|securite|paiement|stripe|base de données|prisma|migration|architecture|auth|déploiement|deploiement/i;
+const IMPORTANT = /architecture|cahier des charges|audit|cadrage|backlog|conception|stratégie|refonte|migration/i;
 const SIMPLE = /texte|traduction|style|couleur|faute|libellé|page à propos|note de version|documentation/i;
 
 export function pickModel(t: Ticket, failedBefore = false): { model: string; reason: string } {
   const text = `${t.title} ${t.part} ${t.description.expected}`;
   let level = 1; // 0 Haiku, 1 Sonnet, 2 Opus
   let reason = 'Fonctionnalité normale.';
+  const research = t.steps?.some((s) => s.role === 'eclaireur');
   if (RISKY.test(text) || t.files.length > 8) { level = 2; reason = 'Sujet à risque (sécurité, paiement, données ou architecture) ou plus de 8 fichiers.'; }
+  // Décision 0007 : architecture et tâches importantes sur le modèle le plus fort, effort haut.
+  // Refaire un travail mal fait coûte plus cher que les tokens économisés.
+  else if (IMPORTANT.test(text) && !research) { level = 2; reason = 'Tâche importante (architecture, cahier des charges, audit, cadrage) : modèle le plus fort pour ne pas avoir à refaire.'; }
   else if (SIMPLE.test(text) && t.files.length <= 2) { level = 0; reason = 'Tâche simple : texte, style ou petit correctif.'; }
   // Recherche : surtout de la lecture, Haiku suffit et use beaucoup moins le quota (mesure LBA-10, 18 nov.).
-  else if (t.steps?.some((s) => s.role === 'eclaireur')) { level = 0; reason = 'Recherche : lecture et synthèse, Haiku suffit.'; }
+  else if (research) { level = 0; reason = 'Recherche : lecture et synthèse, Haiku suffit.'; }
   if (failedBefore && level < 2) { level += 1; reason += ' Un cran au-dessus après un échec.'; }
   if (t.tool === 'codex') return { model: level === 0 ? 'gpt-codex-mini' : 'gpt-codex', reason };
   return { model: ['Haiku', 'Sonnet', 'Opus'][level], reason };

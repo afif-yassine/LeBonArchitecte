@@ -301,6 +301,9 @@ test('recherche : rôle Éclaireur, mode agent (web), pas d’étape de tests ; 
   assert.ok(!r.steps.some((s) => s.proof.kind === 'tests'));
   assert.equal(pickMode(r), 'agent');
   assert.equal(pickModel(r).model, 'Haiku'); // le modèle est choisi au lancement
+  // Décision 0007 : architecture, cahier des charges, audit → modèle le plus fort.
+  const a = e.createTicket('lba', { title: 'Audit de l’architecture', expected: 'Un rapport', criteria: ['Points faibles classés'] });
+  assert.equal(pickModel(a).model, 'Opus');
   assert.ok(isResearch(r));
   assert.ok(!isResearch(e.ticket('LBA-6')));
 });
