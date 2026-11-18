@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, CircleCheck, CircleX, Plus, RefreshCw } from 'lucide-react';
 import { accounts, approvals, budgets, toolInstalls, usageByDay, usageByTool } from '../mock/data';
+import { RealUsage } from './RealSpaces';
 import { TOOLS } from '../shared/contract';
 import { Bar, CopyCommand, LocalSwitch, Setting, Tabs, fmtTokens, toolLabel } from '../components/ui';
 import { useNotify } from '../components/notify';
@@ -258,7 +259,18 @@ export function SettingsScreen({ tab, go, settings, update }: { tab: SettingsTab
         { id: 'apparence', label: 'Apparence' }, { id: 'notifications', label: 'Notifications' },
       ]} />
       {tab === 'connexions' && <Connections />}
-      {tab === 'quotas' && <Quotas />}
+      {tab === 'quotas' && (
+        <>
+          <div className="setgroup">
+            <h2>Tokens mesurés : Le Bon Architecte</h2>
+            <RealUsage projectId="lba" />
+          </div>
+          <details style={{ marginTop: 28 }}>
+            <summary className="muted">Exemple, pas encore branché : budgets, limites et usage par outil</summary>
+            <Quotas />
+          </details>
+        </>
+      )}
       {tab === 'securite' && <Security />}
       {tab === 'apparence' && <Appearance settings={settings} update={update} />}
       {tab === 'notifications' && <Notifications />}

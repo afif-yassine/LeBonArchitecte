@@ -260,6 +260,27 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     this.changed();
   }
 
+  // Tokens réellement mesurés, par ticket et par jour (onglet Quotas). Aucune estimation.
+  usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[] } {
+    const rows = this.db.prepare(`SELECT at, ticket, data FROM events WHERE type = 'tokens'${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; data: string }[];
+    const total = { used: 0, cacheRead: 0, costUsd: 0, runs: 0 };
+    const tk = new Map<string, { used: number; cacheRead: number; costUsd: number; runs: number }>();
+    const day = new Map<string, number>();
+    for (const r of rows) {
+      const d = JSON.parse(r.data) as { used: number; cacheRead: number; costUsd: number };
+      const x = tk.get(r.ticket) ?? { used: 0, cacheRead: 0, costUsd: 0, runs: 0 };
+      for (const o of [x, total]) { o.used += d.used || 0; o.cacheRead += d.cacheRead || 0; o.costUsd += d.costUsd || 0; o.runs += 1; }
+      tk.set(r.ticket, x);
+      day.set(r.at.slice(0, 10), (day.get(r.at.slice(0, 10)) ?? 0) + (d.used || 0));
+    }
+    const title = (id: string) => { try { return this.ticket(id).title; } catch { return id; } };
+    return {
+      total,
+      byTicket: [...tk].map(([id, v]) => ({ id, title: title(id), ...v })).sort((a, b) => b.used - a.used),
+      byDay: [...day].map(([d, used]) => ({ day: d, used })),
+    };
+  }
+
   // Ce qui a été réalisé, écrit par le programme à partir de git (sans IA).
   realized(id: string, realized: Ticket['realized']): void {
     const t = this.ticket(id);

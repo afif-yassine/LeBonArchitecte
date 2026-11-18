@@ -182,3 +182,10 @@
 - Il n'écrit que dans `docs/recherche/` et `docs/rapports/` : sinon le programme signale un bug et le contrôle « Périmètre respecté » passe en échec.
 - Rapports PDF : `npm run pdf -- docs/rapports/<nom>.html` (Microsoft Edge, rien à installer). Modèle avec schéma SVG et tableau de scénarios : `docs/rapports/modele.html`. Essai : PDF créé, 53 Ko.
 - Tests : 26 verts. Suite : tickets de cadrage C1 à C5.
+
+## Recherche moins chère et onglets réels, lot 1 (18 nov. 2026)
+- Mesure LBA-10 (Sonnet) contre une session Opus normale, même consigne : 52 782 contre 69 396 tokens comptés, 125 620 contre 595 281 relus du cache. En coût réel, environ 2 fois moins cher grâce au départ allégé.
+- Recherche : Haiku, 6 pages ouvertes au plus, rapport en Markdown mis en page par le programme (`npm run pdf -- x.md`).
+- Onglets branchés sur les vraies données du projet, sans IA : Cahier des charges, Documents, Règles (partie 1 du cahier), Git, Réglages > Quotas (tokens mesurés par ticket et par jour).
+- Sur un vrai projet, un onglet pas encore branché le dit au lieu d'afficher du faux (Architecte, Flux, Backlog, Équipe, Santé, Mémoire). Fausses pastilles et faux journal de l'Orchestrateur retirés.
+- Lot 2 : Backlog, Équipe, Santé, Flux, journal du pilote.

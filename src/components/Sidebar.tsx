@@ -41,8 +41,9 @@ export function Sidebar({ view, go, projectId, mini, toggleMini }: Props) {
     'pour-vous': [actions(projectId).length, 'wait'],
     travail: [run, 'run'],
     docs: [unreported(projectId).length, ''],
-    git: [branches.filter((b) => b.status === 'conflit' || b.status === 'a-reunir').length, ''],
-    sante: [health.filter((h) => h.status === 'ouvert' && h.severity === 'grave').length, 'danger'],
+    // Projet réel : pas de fausses pastilles (git et santé seront branchés plus tard).
+    git: !projects.find((p) => p.id === projectId)?.demo ? [0, ''] : [branches.filter((b) => b.status === 'conflit' || b.status === 'a-reunir').length, ''],
+    sante: !projects.find((p) => p.id === projectId)?.demo ? [0, ''] : [health.filter((h) => h.status === 'ouvert' && h.severity === 'grave').length, 'danger'],
   };
 
   return (

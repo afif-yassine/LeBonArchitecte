@@ -1,5 +1,5 @@
 import { ArrowLeftRight, ChevronsRight, CircleAlert, Hand, Lock, MessageSquare, Scale, ShieldAlert } from 'lucide-react';
-import { agentRoles, agents, interventions, roles } from '../mock/data';
+import { agentRoles, agents, interventions, projects, roles } from '../mock/data';
 import { useStore } from '../store';
 import { toolShort } from './ui';
 import type { Go } from '../view';
@@ -73,7 +73,8 @@ export function OrchestratorPanel({ onClose, go, projectId }: { onClose: () => v
         <section>
           <div className="panel__label">Ce que j’ai décidé, par règles</div>
           <ol className="journal">
-            {interventions.map((iv, i) => {
+            {!projects.find((p) => p.id === projectId)?.demo && <li className="muted small">Pas encore branché sur ce projet : le journal des décisions du pilote arrive au lot 2.</li>}
+            {projects.find((p) => p.id === projectId)?.demo && interventions.map((iv, i) => {
               const Icon = IV_ICON[iv.kind];
               return (
                 <li key={i} className={`ev ${iv.kind === 'bascule' || iv.kind === 'regle' ? 'ev--regle' : ''}`} style={{ gridTemplateColumns: '40px 16px minmax(0,1fr)', fontSize: '.86rem' }}>

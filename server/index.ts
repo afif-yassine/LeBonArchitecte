@@ -8,6 +8,7 @@ import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
 import { diffFile, fileAt } from './git.ts';
+import { gitInfo, listDocs, readDoc } from './projectData.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -98,6 +99,16 @@ app.post<Id>('/api/tickets/:id/plan/validate', async (req) => ({ message: engine
 app.post<Id & { Body: { text?: string } }>('/api/tickets/:id/message', async (req) => ({ message: engine.message(req.params.id, req.body?.text ?? '') }));
 // Démonstration tant que les adaptateurs ne sont pas branchés (LBA-6, LBA-7) : joue un déroulé sur un projet d'exemple.
 app.post<Id>('/api/tickets/:id/simulate-run', async (req) => ({ message: simulateRun(engine, req.params.id) }));
+// Onglets réels (lot 1) : documents, git, tokens mesurés. Lecture seule, sans IA.
+const repoOf = (id: string) => {
+  const r = PROJECT_DIRS[id];
+  if (!r) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC.');
+  return r;
+};
+app.get<Id>('/api/projects/:id/docs', async (req) => listDocs(repoOf(req.params.id)));
+app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => ({ path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') }));
+app.get<Id>('/api/projects/:id/git', async (req) => gitInfo(repoOf(req.params.id)));
+app.get<Id>('/api/projects/:id/usage', async (req) => engine.usage(req.params.id));
 app.post<Id & { Body: { reportId: string } }>('/api/projects/:id/report', async (req) => ({ tickets: engine.report(req.params.id, req.body.reportId) }));
 
 // Flux en direct : l'interface est prévenue à chaque changement et relit les données.

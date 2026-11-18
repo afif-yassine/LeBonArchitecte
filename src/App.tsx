@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, ChevronRight, CircleHelp, Focus, Lock, Moon, PanelRightOpen, Search, Sun } from 'lucide-react';
 import { projects } from './mock/data';
+import { RealDocs, RealGit, RealRules } from './screens/RealSpaces';
+import { Soon } from './components/ui';
+
+// Onglets pas encore branchés sur les vraies données : ce qu'il manque, en clair (au lieu de faux contenu).
+const NOT_PLUGGED: Record<string, string> = {
+  architecte: 'Discuter avec l’Architecte coûte des tokens à chaque message : ce sera branché après le cadrage (LBA-10 à LBA-14).',
+  flux: 'Le schéma du flux de travail sera tiré des vrais tickets et de leurs dépendances (lot 2).',
+  backlog: 'Le backlog viendra des vrais tickets « à faire » et de docs/backlog.md, écrit par LBA-13 (lot 2).',
+  equipe: 'L’équipe montrera les rôles configurés et les agents qui tournent vraiment (lot 2).',
+  sante: 'La santé montrera les vrais résultats des tests, de la compilation et les bugs du direct (lot 2).',
+  memoire: 'La mémoire partagée n’est pas encore construite : elle suivra la stratégie choisie au cadrage (rapport LBA-10).',
+};
 import { SPACES, type Go, type View } from './view';
 import { useSettings } from './settings';
 import { StoreProvider, useStore } from './store';
@@ -116,6 +128,17 @@ function Shell() {
   })();
 
   const projectScreen = (pid: string, space: string) => {
+    // Vrai projet : jamais de données d'exemple. Onglet branché = vraies données ; sinon on le dit.
+    if (!projects.find((p) => p.id === pid)?.demo) {
+      switch (space) {
+        case 'cdc': return <RealDocs projectId={pid} title="Cahier des charges" prefix="docs/cahier-des-charges/" lead="Les fichiers du dossier docs/cahier-des-charges, tels qu’ils sont sur le disque." />;
+        case 'docs': return <RealDocs projectId={pid} title="Documents" lead="Tout le dossier docs/ : décisions, journal, rapports. Les PDF s’ouvrent sur votre PC." />;
+        case 'regles': return <RealRules projectId={pid} />;
+        case 'git': return <RealGit projectId={pid} />;
+      }
+      const later = NOT_PLUGGED[space];
+      if (later) return <div className="page"><Soon title="Pas encore branché sur ce projet" text={later} /></div>;
+    }
     switch (space) {
       case 'architecte': return <Architect key={`${pid}-${view.kind === 'projet' ? view.ask ?? '' : ''}`} projectId={pid} go={go} ask={view.kind === 'projet' ? view.ask : undefined} />;
       case 'regles': return <Rules />;
