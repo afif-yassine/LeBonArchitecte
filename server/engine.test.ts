@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused, TRANSITIONS } from './tickets.ts';
-import { contextAction, mustSwitch, pickModel, sameErrorTwice } from './rules.ts';
+import { canAutoRepair, contextAction, mustSwitch, pickModel, sameErrorTwice } from './rules.ts';
+import { MILESTONE_TARGETS } from '../src/shared/targets.ts';
 import { humanActions, tickets } from '../src/mock/data.ts';
 import { checkCommand, runCommand, summarize } from './executor.ts';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
@@ -17,6 +18,107 @@ const fresh = () => { const e = new Engine(openDb(':memory:')); e.seed(tickets, 
 const OK = { criteriaOk: true, checks: { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } } as const;
 // Le programme a vérifié la preuve de chaque étape restante (ce que fera l'exécuteur).
 const proveAll = (e: Engine, id: string) => { for (const s of e.ticket(id).steps.filter((x) => x.state !== 'prouve')) e.stepDone(id, s.id, { ok: true, evidence: 'vérifié' }); };
+
+// LBA-17 : budget du jour, réparation limitée, cibles des jalons.
+const KO = { criteriaOk: true, checks: { 'Tests verts': 'echec' } } as const;
+const spend = (e: Engine, id: string, used: number) => e.tokens(id, { used, cacheRead: 0, costUsd: 0, turns: 1 });
+const twoReady = (e: Engine, project: string) => {
+  const list = ['A', 'B'].map((n) => e.createTicket(project, { title: `Correctif ${n}`, expected: 'x', criteria: ['y'] }).id);
+  e.validatePlans(project, list);
+  return list;
+};
+
+test('budget du jour : le pilote s’arrête, prévient une fois, et repart si vous montez le budget', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false, dayBudget: 1000 });
+  const ids = twoReady(e, 'bb');
+  const first = ids.find((id) => e.ticket(id).status === 'en-cours')!;
+  const other = ids.find((id) => id !== first)!;
+  spend(e, first, 1000);
+  assert.equal(e.pilotState().budgetHit, true);
+  e.stop(first, true, 'place libérée'); // arrêt avec raison : repart seul (sans raison, ce serait une pause)
+  assert.match(e.kickPilot('bb'), /Budget du jour atteint/);
+  e.kickPilot('bb');
+  assert.ok(ids.every((id) => e.ticket(id).status === 'a-faire'));
+  assert.equal(e.actions('bb').filter((a) => /Budget du jour/.test(a.title)).length, 1);
+  assert.throws(() => e.launch(other, { actor: 'pilote' }), /Budget du jour/);
+  e.launch(other); // vous gardez la main
+  e.stop(other, true, 'place libérée');
+  e.setPilot({ dayBudget: 5000 });
+  assert.match(e.kickPilot('bb'), /démarre/);
+});
+
+test('budget du jour : les tokens d’hier ne comptent plus après minuit', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 17, 23, 30) });
+  const e = fresh();
+  spend(e, 'T-12', 500);
+  assert.equal(e.spentToday(), 500);
+  t.mock.timers.setTime(new Date(2026, 10, 18, 0, 30).getTime());
+  assert.equal(e.spentToday(), 0);
+});
+
+test('réparation automatique : une seule tentative, preuves refaites, puis « Besoin d’action »', () => {
+  const e = fresh();
+  proveAll(e, 'T-12');
+  assert.match(e.agentDone('T-12', KO, { repair: true }), /réparation automatique/);
+  assert.equal(e.ticket('T-12').status, 'en-cours');
+  assert.ok(e.ticket('T-12').steps.every((s) => s.state === 'a-faire'));
+  proveAll(e, 'T-12');
+  e.agentDone('T-12', KO, { repair: true });
+  assert.equal(e.ticket('T-12').status, 'action');
+  assert.match(e.ticket('T-12').needAction ?? '', /après la réparation automatique/);
+  assert.equal(e.events({ ticket: 'T-12' }).filter((x) => x.type === 'reparation').length, 1);
+  e.reject('T-12', 'À revoir'); // votre réclamation redonne une tentative
+  e.agentDone('T-12', KO, { repair: true });
+  assert.equal(e.ticket('T-12').status, 'en-cours');
+});
+
+test('réparation automatique : aucune si le budget du jour est atteint', () => {
+  const e = fresh();
+  e.setPilot({ dayBudget: 100 });
+  spend(e, 'T-12', 100);
+  e.agentDone('T-12', KO, { repair: true });
+  assert.equal(e.ticket('T-12').status, 'action');
+  assert.match(e.ticket('T-12').needAction ?? '', /budget du jour atteint/);
+});
+
+test('réparation automatique : seulement si l’agent a fini et que le programme peut revérifier', () => {
+  const e = fresh();
+  const base = e.createTicket('rr', { title: 'Correctif', expected: 'x', criteria: ['y'] });
+  const step = (kind: string) => ({ ...base.steps[0], state: 'a-faire', proof: { kind, text: 'x' } });
+  const t = { ...base, steps: [step('tests')] } as typeof base;
+  const run = { agentOk: true, hasSession: true, leaked: false, outside: 0 };
+  const cmd = { test: 'npm test' };
+  assert.equal(canAutoRepair(t, cmd, run), true);
+  assert.equal(canAutoRepair(t, {}, run), false);
+  assert.equal(canAutoRepair(t, cmd, { ...run, agentOk: false }), false);
+  assert.equal(canAutoRepair(t, cmd, { ...run, hasSession: false }), false);
+  assert.equal(canAutoRepair(t, cmd, { ...run, leaked: true }), false);
+  assert.equal(canAutoRepair(t, cmd, { ...run, outside: 1 }), false);
+  assert.equal(canAutoRepair({ ...t, steps: [step('relecture')] } as typeof base, cmd, run), false);
+});
+
+test('cibles des jalons : J2 à J4 écrites dans le journal, identiques à celles affichées', () => {
+  const journal = readFileSync(join(import.meta.dirname, '..', 'docs', 'JOURNAL.md'), 'utf8');
+  assert.deepEqual(MILESTONE_TARGETS.map((c) => c.id), ['J2', 'J3', 'J4']);
+  for (const c of MILESTONE_TARGETS) {
+    const tokens = c.tokensPerTicket.toLocaleString('fr-FR').replace(/\s/g, ' ');
+    assert.ok(journal.includes(`| ${c.id} ${c.name} | ${tokens} | ${c.firstTryPct} % | ${c.minutesPerTicket} min |`), `${c.id} absent du journal`);
+  }
+});
+
+test('statistiques des jalons : tokens par ticket et part validée du premier coup', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 2, stopAtLotEnd: false });
+  assert.equal(e.usage('ss').stats.tokensPerTicket, null);
+  const [a, b] = twoReady(e, 'ss');
+  const finish = (id: string) => { proveAll(e, id); e.agentDone(id, OK); };
+  spend(e, a, 1000); finish(a); e.validate(a);
+  spend(e, b, 3000); finish(b); e.reject(b, 'À revoir'); finish(b); e.validate(b);
+  const s = e.usage('ss').stats;
+  assert.deepEqual([s.tickets, s.tokensPerTicket, s.firstTryPct], [2, 2000, 50]);
+  assert.equal(typeof s.minutesPerTicket, 'number');
+});
 
 test('un ticket fini ne peut pas revenir en arrière', () => {
   assert.deepEqual(TRANSITIONS.termine, []);
@@ -455,4 +557,38 @@ test('limite d’abonnement : pas un échec, le ticket attend en tête, le pilot
   assert.equal(e.ticket(running.id).priority, 0);
   assert.equal(e.kickPilot('qq'), '');
   assert.ok([a, b].every((t) => e.ticket(t.id).status === 'a-faire'));
+});
+
+test('pause et reprise : le pilote respecte la pause, « Reprendre » relance tout de suite', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false });
+  const a = e.createTicket('pp', { title: 'Correctif A', expected: 'x', criteria: ['y'] });
+  const b = e.createTicket('pp', { title: 'Correctif B', expected: 'x', criteria: ['y'] });
+  e.pause(b.id);
+  e.validatePlans('pp', [a.id, b.id]);
+  assert.equal(e.ticket(a.id).status, 'en-cours');
+  assert.match(e.pause(a.id), /pause/);
+  assert.equal(e.ticket(a.id).status, 'a-faire');
+  assert.ok(e.ticket(a.id).paused);
+  assert.equal(e.kickPilot('pp'), ''); // tous les deux en pause : rien ne part
+  assert.match(e.resume(a.id), /démarre/);
+  assert.equal(e.ticket(a.id).status, 'en-cours');
+  assert.match(e.resume(b.id), /attend en tête de file/); // plus de place : il attend sans pause
+  assert.ok(!e.ticket(b.id).paused);
+  assert.throws(() => e.resume(b.id), /ni en pause ni interrompu/);
+});
+
+test('parler à l’agent : à tester = demande de modification (il reprend), en cours = gardé, fini = refusé', () => {
+  const e = fresh();
+  const t = e.createTicket('mm', { title: 'Correctif message', expected: 'x', criteria: ['y'] });
+  e.launch(t.id);
+  const since = e.lastEventId();
+  assert.match(e.message(t.id, 'Ajoute aussi un titre'), /fin de son tour/);
+  assert.deepEqual(e.messagesSince(t.id, since), ['Ajoute aussi un titre']);
+  proveAll(e, t.id);
+  e.agentDone(t.id, OK);
+  assert.equal(e.ticket(t.id).status, 'a-tester');
+  assert.match(e.message(t.id, 'Le titre est trop long'), /reprend sa conversation/);
+  assert.equal(e.ticket(t.id).status, 'en-cours');
+  assert.equal(e.events({ ticket: t.id, limit: 5 }).find((x) => x.type === 'reclamation')?.data.problem, 'Le titre est trop long');
 });

@@ -2,7 +2,22 @@
 import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH } from '../src/shared/plan.ts';
 
-export interface PilotSettings { on: boolean; maxParallel: number; stopAtLotEnd: boolean; respectBudget: boolean }
+export interface PilotSettings { on: boolean; maxParallel: number; stopAtLotEnd: boolean; respectBudget: boolean; dayBudget: number }
+
+// Budget du jour par défaut (tokens mesurés, tous projets) : au-delà, le pilote ne lance plus rien.
+export const DAY_BUDGET = 200_000;
+export const budgetReached = (spent: number, s: PilotSettings) => s.respectBudget && spent >= s.dayBudget;
+
+// Réparation automatique : une seule tentative, puis « Besoin d'action ».
+export const MAX_REPAIRS = 1;
+
+// Une réparation n'a de sens que si l'agent a fini normalement et que le programme pourra revérifier
+// tout ce qui manque. Secret écrit, sortie du périmètre, preuve à regarder par vous : c'est à vous de voir.
+export function canAutoRepair(t: Ticket, commands: { test?: string; check?: string }, run: { agentOk: boolean; hasSession: boolean; leaked: boolean; outside: number }): boolean {
+  if (!run.agentOk || !run.hasSession || run.leaked || run.outside > 0 || pickMode(t) !== 'agent') return false;
+  return t.steps.filter((s) => s.state !== 'prouve').every((s) =>
+    (s.proof.kind === 'tests' && !!commands.test) || (s.proof.kind === 'commande' && !!commands.check) || (s.proof.kind === 'fichier' && !!s.proof.check));
+}
 
 // Définition de fini : tous les critères tenus, toutes les étapes prouvées, tous les contrôles verts.
 export function checkDone(t: Ticket): { ok: boolean; missing: string[] } {
@@ -23,7 +38,7 @@ export const running = (all: Ticket[], project: string) => all.filter((t) => t.p
 export function nextReady(all: Ticket[], project: string, s: PilotSettings, lot?: number): Ticket | undefined {
   if (!s.on || running(all, project).length >= s.maxParallel) return undefined;
   return all
-    .filter((t) => t.projectId === project && t.status === 'a-faire' && t.planOk && isReady(t, all))
+    .filter((t) => t.projectId === project && t.status === 'a-faire' && t.planOk && !t.paused && isReady(t, all))
     .filter((t) => !s.stopAtLotEnd || lot === undefined || t.lot === lot)
     .sort((a, b) => a.priority - b.priority)[0];
 }

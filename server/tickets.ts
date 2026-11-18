@@ -29,7 +29,7 @@ export type EventType =
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
-  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee'
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
   | 'ticket-interrompu' | 'ticket-repris';
 
 export interface EngineEvent {
@@ -51,17 +51,21 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
   if (!t) return t;
   switch (e.type) {
     case 'ticket-lance':
-      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined, model: (e.data.model as string) ?? t.model };
+      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined, paused: undefined, model: (e.data.model as string) ?? t.model };
     case 'ticket-interrompu':
       // Plus aucun agent ne travaille dessus (PC éteint, panne) : il attend votre « Reprendre ».
       return { ...t, status: 'action', needAction: String(e.data.cause ?? 'Travail interrompu'), interrupted: { at: e.at, lastProved: e.data.lastProved as string | undefined } };
     case 'ticket-repris':
       return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined };
     case 'ticket-arrete':
+      // Arrêté par vous = en pause : le pilote ne le relance pas, « Reprendre » le relance dans sa session.
+      // Arrêté par le programme (avec une raison, ex. limite d'abonnement) : il repart seul en tête de file.
       return {
-        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined, interrupted: undefined,
-        waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'Arrêté par vous, reprendra avec sa passation',
+        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined, interrupted: undefined, paused: e.data.reason ? undefined : true,
+        waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'En pause : il reprendra sa session quand vous cliquerez « Reprendre »',
       };
+    case 'ticket-pause':
+      return { ...t, paused: e.data.paused ? true : undefined, waitingFor: e.data.paused ? 'En pause : le pilote ne le lance pas' : undefined };
     case 'agent-termine':
       return {
         ...t,
@@ -77,6 +81,9 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
     case 'reclamation':
       // Le travail va changer : toutes les preuves sont à refaire, aucune coche ancienne ne reste.
       return { ...t, status: 'en-cours', loops: t.loops + 1, interrupted: undefined, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
+    case 'reparation':
+      // Le ticket reste « en cours » ; le code va changer, donc toutes les preuves sont à refaire.
+      return { ...t, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
     case 'tokens':

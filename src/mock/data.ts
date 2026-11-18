@@ -435,7 +435,7 @@ export const incidents: Incident[] = [
   },
 ];
 
-export const autopilotDefaults = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true };
+export const autopilotDefaults = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true, dayBudget: 200_000, spentToday: 0, budgetHit: false };
 
 // ---------- Équipe composée par l'orchestrateur ----------
 export const roles: Role[] = [
