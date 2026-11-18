@@ -74,3 +74,29 @@ J0 Avis, architecture, maquettes → J1 Scan (E0, E18) → J2 Moteur (E6, E9, E1
 - **A11 Incidents** : incidents suivis avec chronologie et résolution.
 - **A12 Mise en place par l'orchestrateur** : l'orchestrateur lance les agents avec leurs rôles ; à la mise en place il compose une équipe adaptée au projet, aidé par des agents d'aide qui peuvent chercher sur Internet (documentation officielle, versions) et importer des briques évaluées, sur accord.
 - **A13 Flux de travail** : le flux complet doit être visible et remarquable, de A à Z.
+
+---
+
+## Ajouts du 18 nov. 2026 (décision 0009)
+Quand deux règles de ce cahier se contredisent, `docs/decisions/0009-contradictions-du-cahier.md` dit laquelle gagne. Elle range aussi A9 dans E12 et E17, et A11 dans E11.
+
+### Ordre de construction : état réel
+Ce tableau remplace la lecture de la section 5, dont le texte d'origine reste en place. Le travail n'a pas suivi l'ordre prévu : le « J1 » du journal a construit le moteur, pas le scan. L'état vient du code et du journal au 18 nov. 2026.
+
+| Jalon | Exigences | État | Ce qui manque |
+|---|---|---|---|
+| J0 Avis, architecture, maquettes | A1, A2 | Fait | Validation finale de la maquette, non notée au journal |
+| J1 Scan | E0, E18 | En partie | Graphify, outils de sécurité et de qualité, `.lba/scan/`, démarrage depuis un dépôt, modèles de projets |
+| J2 Moteur | E6, E9, E10, E11, E16, A3, A4, A11 | En grande partie | Contrôle des doublons, bibliothèque de skills, Docker, aperçu, réparations automatiques, incidents |
+| J3 Agents | E2, E1 | En partie | Codex (LBA-7), changement d'outil ou de compte en cours de route, plusieurs comptes, bascule automatique |
+| J4 Orchestrateur et démarche | E4, E5, E12, A5, A7, A8, A9 (chiffres), A12 | En partie | Contrôle du budget et des quotas par le pilote, règles écrites mais pas appelées par le moteur, Flux réel, comptes rendus du jour, note de passation, équipe adaptée au projet, Importateur |
+| J5 Espace de travail | E7, E13, E14, E15, E19, E20, A6, A10, A13 | En partie | Plusieurs vrais projets, notifications Windows, images et fichiers joints, résolution des conflits, onglets Backlog, Équipe, Santé et Flux |
+| J6 Mémoire et contexte | E8 | Étudié, pas construit | Mémoire partagée, Graphify, paquet de contexte par ticket |
+| J7 Avancé | E3, E17, A9 (actions) | E3 pas commencé, E17 en partie | Coordination entre agents, nettoyage, parallélisme selon les quotas |
+
+Suite proposée, à confirmer par le propriétaire :
+1. Brancher les garde-fous déjà écrits (J2 et J4).
+2. Finir les onglets réels et les comptes rendus du jour (J4 et J5).
+3. Ajouter Codex (J3).
+4. Compléter le scan (J1).
+5. Construire la mémoire (J6), puis le jalon avancé (J7).
