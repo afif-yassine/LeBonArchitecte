@@ -5,11 +5,14 @@ import type { HumanAction, LiveItem, LiveKind, Ticket } from '../src/shared/cont
 import { Refused, assertMove, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
-import { checkDone, isReady, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
+import { budgetReached, checkDone, DAY_BUDGET, isReady, MAX_REPAIRS, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
+import type { MilestoneStats } from '../src/shared/targets.ts';
 
 type Listener = () => void;
 const now = () => new Date().toISOString();
-const DEFAULT_PILOT: PilotSettings = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true };
+const DEFAULT_PILOT: PilotSettings = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true, dayBudget: DAY_BUDGET };
+// Minuit à l'heure du PC : le « jour » du budget est celui du propriétaire.
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
 export class Engine {
   private listeners = new Set<Listener>();
@@ -40,6 +43,19 @@ export class Engine {
   pilot(): PilotSettings {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = 'pilot'").get() as { value: string } | undefined;
     return row ? { ...DEFAULT_PILOT, ...JSON.parse(row.value) } : DEFAULT_PILOT;
+  }
+
+  // Tokens mesurés depuis minuit, tous projets.
+  spentToday(): number {
+    const r = this.db.prepare("SELECT COALESCE(SUM(json_extract(data, '$.used')), 0) AS n FROM events WHERE type = 'tokens' AND at >= ?").get(startOfToday().toISOString()) as { n: number };
+    return r.n;
+  }
+
+  // Réglages du pilote et où en est le budget du jour (pour l'interface).
+  pilotState(): PilotSettings & { spentToday: number; budgetHit: boolean } {
+    const p = this.pilot();
+    const spentToday = this.spentToday();
+    return { ...p, spentToday, budgetHit: budgetReached(spentToday, p) };
   }
 
   // Actions « Pour vous » encore ouvertes : ouvertes moins résolues, dans l'ordre du journal.
@@ -99,6 +115,7 @@ export class Engine {
   }
 
   setPilot(p: Partial<PilotSettings>): PilotSettings {
+    if (p.dayBudget !== undefined && !(Number.isFinite(p.dayBudget) && p.dayBudget > 0)) throw new Refused('Le budget du jour doit être un nombre de tokens positif.');
     const next = { ...this.pilot(), ...p };
     this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('pilot', ?)").run(JSON.stringify(next));
     this.record({ project: '*', type: 'pilote-regle', actor: 'vous', data: { ...p } });
@@ -115,6 +132,7 @@ export class Engine {
     const pilot = this.pilot();
     if (!isReady(t, all) && opts.actor === 'pilote') throw new Refused(`${id} attend ${t.deps.join(', ')}.`);
     if (!t.planOk && opts.actor === 'pilote') throw new Refused(`Le plan de ${id} n’est pas validé : le pilote ne le lance pas.`);
+    if (opts.actor === 'pilote' && this.budgetHit(t.projectId)) throw new Refused(`Budget du jour atteint : le pilote ne lance pas ${id}.`);
     const busy = running(all, t.projectId);
     if (busy.length >= pilot.maxParallel && !opts.replace) {
       throw new Refused(`Plus de place : ${busy.map((b) => b.id).join(' et ')} ${busy.length > 1 ? 'sont' : 'est'} en cours (${pilot.maxParallel} au plus). Arrêtez-en un ou mettez ${id} en tête de file.`);
@@ -157,7 +175,8 @@ export class Engine {
   }
 
   // Fin d'un agent. « result » vient de l'adaptateur (plus tard) ou d'une simulation (maquette).
-  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }): string {
+  // repair : le superviseur a vérifié qu'une réparation automatique peut aider (voir canAutoRepair).
+  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }, opts: { repair?: boolean } = {}): string {
     const t = this.ticket(id);
     if (t.status !== 'en-cours') throw new Refused(`${id} n’est pas en cours.`);
     this.record({ project: t.projectId, ticket: id, type: 'agent-termine', actor: t.agentId ?? 'agent', data: result });
@@ -168,13 +187,29 @@ export class Engine {
       this.record({ project: t.projectId, ticket: id, type: 'ticket-a-tester', actor: 'programme', data: {} });
       msg = `${id} est prêt à tester : définition de fini vérifiée.`;
     } else {
-      const cause = `Pas fini : ${verdict.missing.join(', ')}.`;
+      const missing = verdict.missing.join(', ');
+      const used = this.repairsUsed(id);
+      const noBudget = budgetReached(this.spentToday(), this.pilot());
+      if (opts.repair && used < MAX_REPAIRS && !noBudget) {
+        this.record({ project: t.projectId, ticket: id, type: 'reparation', actor: 'programme', data: { cause: `Pas fini : ${missing}.` } });
+        this.changed();
+        return `${id} n’est pas fini : réparation automatique lancée (une seule tentative). Manque : ${missing}.`;
+      }
+      const cause = `Pas fini${used ? ' après la réparation automatique' : ''} : ${missing}.${opts.repair && !used && noBudget ? ' Pas de réparation automatique : budget du jour atteint.' : ''}`;
       this.record({ project: t.projectId, ticket: id, type: 'besoin-action', actor: 'programme', data: { cause } });
       msg = `${id} n’est pas fini, il passe en « Besoin d’action ». ${cause}`;
     }
     msg += this.runPilot(t.projectId, t.lot);
     this.changed();
     return msg;
+  }
+
+  // Réparations déjà faites depuis votre dernier lancement ou votre dernière réclamation.
+  // Une relance par le pilote (après une limite d'abonnement) ne redonne pas de tentative.
+  private repairsUsed(id: string): number {
+    const r = this.db.prepare(`SELECT COUNT(*) AS n FROM events WHERE ticket = ? AND type = 'reparation' AND id > COALESCE(
+      (SELECT MAX(id) FROM events WHERE ticket = ? AND actor = 'vous' AND type IN ('ticket-lance', 'reclamation')), 0)`).get(id, id) as { n: number };
+    return r.n;
   }
 
   validate(id: string): string {
@@ -294,6 +329,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number }): void {
     const t = this.ticket(id);
     this.record({ project: t.projectId, ticket: id, type: 'tokens', actor: 'programme', data: { ...d } });
+    this.budgetHit(t.projectId); // prévient dès que le budget est franchi, sans attendre le prochain lancement
     this.changed();
   }
 
@@ -306,7 +342,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Tokens réellement mesurés, par ticket et par jour (onglet Quotas). Aucune estimation.
-  usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[] } {
+  usage(project?: string): { total: { used: number; cacheRead: number; costUsd: number; runs: number }; byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[]; byDay: { day: string; used: number }[]; stats: MilestoneStats } {
     const rows = this.db.prepare(`SELECT at, ticket, data FROM events WHERE type = 'tokens'${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; data: string }[];
     const total = { used: 0, cacheRead: 0, costUsd: 0, runs: 0 };
     const tk = new Map<string, { used: number; cacheRead: number; costUsd: number; runs: number }>();
@@ -323,6 +359,34 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
       total,
       byTicket: [...tk].map(([id, v]) => ({ id, title: title(id), ...v })).sort((a, b) => b.used - a.used),
       byDay: [...day].map(([d, used]) => ({ day: d, used })),
+      stats: this.milestoneStats(project, tk),
+    };
+  }
+
+  // Mesures à comparer aux cibles des jalons, sur les tickets faits par un agent et arrivés « à tester ».
+  // Temps : seulement quand l'agent travaille (les attentes et les arrêts ne comptent pas).
+  // Premier coup : validé par vous sans réclamation ni réparation automatique.
+  private milestoneStats(project: string | undefined, tokens: Map<string, { used: number }>): MilestoneStats {
+    const rows = this.db.prepare(`SELECT at, ticket, type FROM events WHERE type IN ('ticket-lance', 'reclamation', 'reparation', 'ticket-a-tester', 'ticket-arrete', 'besoin-action', 'ticket-valide')${project ? ' AND project = ?' : ''} ORDER BY id`).all(...(project ? [project] : [])) as { at: string; ticket: string; type: string }[];
+    const by = new Map<string, { open?: number; ms: number; finished: boolean; validated: boolean; redone: boolean }>();
+    for (const r of rows) {
+      const x = by.get(r.ticket) ?? { ms: 0, finished: false, validated: false, redone: false };
+      by.set(r.ticket, x);
+      const at = Date.parse(r.at);
+      if (r.type === 'ticket-lance' || r.type === 'reclamation') x.open ??= at;
+      if (r.type === 'reclamation' || r.type === 'reparation') x.redone = true;
+      if (r.type === 'ticket-valide') x.validated = true;
+      if (r.type === 'ticket-a-tester') x.finished = true;
+      if ((r.type === 'ticket-a-tester' || r.type === 'ticket-arrete' || r.type === 'besoin-action') && x.open !== undefined) { x.ms += at - x.open; x.open = undefined; }
+    }
+    const done = [...by].filter(([id, x]) => x.finished && tokens.has(id));
+    const validated = done.filter(([, x]) => x.validated);
+    const avg = (n: number) => (done.length ? Math.round(n / done.length) : null);
+    return {
+      tickets: done.length,
+      tokensPerTicket: avg(done.reduce((s, [id]) => s + tokens.get(id)!.used, 0)),
+      firstTryPct: validated.length ? Math.round((validated.filter(([, x]) => !x.redone).length / validated.length) * 100) : null,
+      minutesPerTicket: avg(done.reduce((s, [, x]) => s + x.ms, 0) / 60_000),
     };
   }
 
@@ -498,10 +562,33 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return msg;
   }
 
+  // Pilote allumé et budget du jour atteint : il s'arrête et vous prévient (une fois par jour et par budget).
+  private budgetHit(project: string): boolean {
+    const p = this.pilot();
+    const spent = this.spentToday();
+    if (!p.on || !budgetReached(spent, p)) return false;
+    const d = startOfToday();
+    const id = `budget-${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}-${p.dayBudget}`;
+    const known = this.db.prepare("SELECT 1 FROM events WHERE type = 'action-ouverte' AND json_extract(data, '$.action.id') = ? LIMIT 1").get(id);
+    if (known) return true;
+    const n = (v: number) => v.toLocaleString('fr-FR');
+    const action: HumanAction = {
+      id, projectId: project, kind: 'question', title: 'Budget du jour atteint : le pilote est arrêté',
+      cause: `${n(spent)} tokens utilisés aujourd’hui, pour un budget de ${n(p.dayBudget)}.`,
+      rule: 'Le pilote ne lance aucun ticket quand le budget du jour est atteint.',
+      todo: 'Les agents déjà au travail finissent leur ticket. Pour continuer aujourd’hui : montez le budget dans les réglages du projet, ou lancez un ticket vous-même. Le pilote ne repart pas seul à minuit : demain, il reprend à la prochaine validation ou fin de ticket.',
+      blocking: true, since: 'aujourd’hui', buttons: ['Compris'],
+    };
+    this.record({ project, type: 'action-ouverte', actor: 'programme', data: { action } });
+    this.changed();
+    return true;
+  }
+
   // Pilote automatique : remplit les places libres avec les tickets prêts.
   private runPilot(project: string, lot: number): string {
     const launched: string[] = [];
     if (this.quotaUntil()) return ''; // limite d'abonnement : rien ne part avant l'heure de retour
+    if (this.budgetHit(project)) return ' Budget du jour atteint : le pilote ne lance plus de ticket.';
     for (let i = 0; i < 4; i++) {
       const next = nextReady(this.tickets(project), project, this.pilot(), lot);
       if (!next) break;

@@ -1,6 +1,6 @@
 // Superviseur des vrais agents : il démarre Claude Code quand un ticket d'un vrai projet est lancé
 // (par vous ou par le pilote), l'arrête quand vous l'arrêtez, puis fait vérifier les preuves par le programme.
-// Un lancement = un seul passage d'agent : jamais de boucle aveugle.
+// Un lancement = un passage d'agent, plus au plus une réparation automatique : jamais de boucle aveugle.
 
 import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
@@ -8,7 +8,7 @@ import type { ProjectProfile } from './scan.ts';
 import { isResearch, runClaude, transcriptOf, type RunOutcome } from './claude.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
-import { pickMode } from './rules.ts';
+import { canAutoRepair, pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
 import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, removeWorktree, revertMerge, worktreeOf } from './git.ts';
 import { Refused } from './tickets.ts';
@@ -38,7 +38,7 @@ function recentlyActive(cwd: string, session: string): boolean {
 export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile) {
   const runs = new Map<string, ChildProcess>();
   const handled = new Set<number>();
-  const startEvent = (id: string) => engine.events({ ticket: id, limit: 300 }).find((e) => e.type === 'ticket-lance' || e.type === 'reclamation');
+  const startEvent = (id: string) => engine.events({ ticket: id, limit: 300 }).find((e) => e.type === 'ticket-lance' || e.type === 'reclamation' || e.type === 'reparation');
 
   // Au démarrage du moteur, on ne relance jamais un agent depuis zéro. Mais un agent coupé par le
   // redémarrage (son ticket est encore « en cours ») est repris dans sa propre session Claude :
@@ -75,6 +75,11 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       if (!e?.id || handled.has(e.id) || e.data.manual) continue;
       handled.add(e.id);
       if (e.type === 'reclamation') { start(t.id, String(e.data.problem ?? '')); continue; }
+      if (e.type === 'reparation') {
+        engine.live(t.id, { kind: 'systeme', text: 'Réparation automatique : l’agent reprend sa session, une seule fois.', detail: String(e.data.cause ?? '') }, 'programme');
+        start(t.id, String(e.data.cause ?? ''), engine.sessionOf(t.id), 'reparation');
+        continue;
+      }
       // Relancé après un arrêt (limite d'abonnement, arrêt par vous, « Pas fini ») : il reprend sa
       // propre session au lieu de tout relire et refaire. Sans session ni dossier : départ normal.
       const session = engine.sessionOf(t.id);
@@ -95,7 +100,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
   const held = engine.quotaUntil();
   if (held) wakeAt(held);
 
-  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage') {
+  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' = 'redemarrage') {
     const t = engine.ticket(id);
     let wt: string;
     try { wt = ensureWorktree(dirs[t.projectId], id); } catch (err) {
@@ -181,7 +186,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
         'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === true ? 'ok' : testsOk === false ? 'echec' : 'non-verifie',
         'Périmètre respecté': outside.length ? 'echec' : isResearch(t) ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'non-verifie', 'Documentation à jour': 'non-verifie',
       },
-    });
+    }, { repair: canAutoRepair(engine.ticket(id), prof.commands, { agentOk: o.ok, hasSession: !!engine.sessionOf(id), leaked, outside: outside.length }) });
   }
 
   // Valider un ticket d'un vrai projet : tests relancés dans son espace, puis réunion dans main.

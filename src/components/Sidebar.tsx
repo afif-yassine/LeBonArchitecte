@@ -112,7 +112,9 @@ export function Sidebar({ view, go, projectId, mini, toggleMini }: Props) {
       <div className="side__foot">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <span className="strong">Pilote automatique</span>
-          <span className={`pill pill--dot ${autopilot.on ? 'pill--accent' : ''}`}>{autopilot.on ? 'actif' : 'coupé'}</span>
+          {autopilot.on && autopilot.budgetHit
+            ? <span className="pill pill--dot pill--wait">budget atteint</span>
+            : <span className={`pill pill--dot ${autopilot.on ? 'pill--accent' : ''}`}>{autopilot.on ? 'actif' : 'coupé'}</span>}
         </div>
         <div className="faint" style={{ marginTop: 4 }}>{run} sur {autopilot.maxParallel} agents au travail.</div>
         <div className="engine-state" style={{ color: online ? 'var(--ok)' : 'var(--danger)' }}>

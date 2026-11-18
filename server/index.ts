@@ -62,7 +62,7 @@ app.post<Id>('/api/projects/:id/scan', async (req) => ({ message: 'Scan fait : f
 app.get('/api/tickets', async () => engine.tickets());
 app.get<Id>('/api/projects/:id/events', async (req) => engine.events({ project: req.params.id }));
 app.get<Id>('/api/tickets/:id/events', async (req) => engine.events({ ticket: req.params.id }));
-app.get('/api/pilot', async () => engine.pilot());
+app.get('/api/pilot', async () => engine.pilotState());
 app.get('/api/actions', async () => engine.actions());
 app.post<Id & { Body: { label?: string } }>('/api/actions/:id/resolve', async (req) => ({ message: engine.resolveAction(req.params.id, req.body?.label ?? 'Fait') }));
 app.post<Id & { Body: { dir?: -1 | 1 | 'tete' } }>('/api/tickets/:id/priority', async (req) => ({ message: engine.reorder(req.params.id, req.body?.dir ?? 'tete') }));
@@ -71,7 +71,7 @@ app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
   const s = engine.setPilot(req.body as never);
   // Allumer le pilote démarre tout de suite les tickets prêts des vrais projets (pas les démos).
   if (s.on) for (const p of Object.keys(PROJECT_DIRS)) engine.kickPilot(p);
-  return s;
+  return engine.pilotState();
 });
 
 app.post<Id & { Body: { replace?: string; manual?: boolean; who?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace, manual: req.body?.manual, actor: req.body?.who }) }));

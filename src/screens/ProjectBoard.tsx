@@ -153,7 +153,9 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
             <Switch checked={autopilot.on} label="Pilote automatique" onChange={(v) => setAutopilot({ on: v })} />
             <div>
               <div className="pilot__title">Pilote automatique</div>
-              <div className="pilot__sub">{autopilot.on
+              <div className="pilot__sub">{autopilot.on && autopilot.budgetHit
+                ? `Arrêté : budget du jour atteint (${fmtTokens(autopilot.spentToday)} sur ${fmtTokens(autopilot.dayBudget)}). Aucun nouveau ticket ne part.`
+                : autopilot.on
                 ? `${run.length} sur ${autopilot.maxParallel} en cours.${unplanned.length ? ` ${unplanned.length} plan${unplanned.length > 1 ? 's' : ''} à valider : le pilote ne lance que les plans validés.` : ' Un ticket fini lance le suivant prêt.'}`
                 : 'Coupé : vous lancez les tickets vous-même.'}</div>
             </div>

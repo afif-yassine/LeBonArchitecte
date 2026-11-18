@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useStore } from '../store';
 import { headings, Markdown } from '../components/Markdown';
-import { fmtTokens } from '../components/ui';
+import { Bar, fmtTokens } from '../components/ui';
+import { MILESTONE_TARGETS, type MilestoneStats } from '../shared/targets';
 
 interface DocEntry { path: string; title: string; size: number; at: string }
 interface GitInfo {
@@ -16,6 +17,12 @@ interface Usage {
   total: { used: number; cacheRead: number; costUsd: number; runs: number };
   byTicket: { id: string; title: string; used: number; cacheRead: number; costUsd: number; runs: number }[];
   byDay: { day: string; used: number }[];
+  stats: MilestoneStats;
+}
+
+// Une cible et sa mesure : « tenue » ou « pas encore » ; rien tant qu'il n'y a pas de mesure.
+function Target({ text, held }: { text: string; held: boolean | null }) {
+  return <td className="num">{text}{held !== null && <> <span className={`pill ${held ? 'pill--ok' : 'pill--wait'}`}>{held ? 'tenue' : 'pas encore'}</span></>}</td>;
 }
 
 // Relit à chaque changement du moteur (rev) : l'écran suit le travail sans actualiser.
@@ -209,15 +216,37 @@ export function RealGit({ projectId }: { projectId: string }) {
 }
 
 export function RealUsage({ projectId }: { projectId: string }) {
+  const { autopilot } = useStore();
   const { data: u, error } = useApi<Usage>(`/projects/${projectId}/usage`);
   if (!u) return <Wait error={error} />;
   const max = Math.max(...u.byDay.map((d) => d.used), 1);
+  const s = u.stats;
   return (
     <div>
       <p className="lead">
         Mesuré pour chaque lancement d’agent, sans estimation : <b>{fmtTokens(u.total.used)}</b> tokens en {u.total.runs} lancement{u.total.runs > 1 ? 's' : ''},
         plus {fmtTokens(u.total.cacheRead)} relus depuis le cache (environ 10 fois moins chers). Coût estimé {u.total.costUsd.toFixed(2)} $, pris sur votre abonnement.
       </p>
+      <div className="box" style={{ marginTop: 16 }}>
+        <div className="meter__head"><span>Budget du jour, tous projets</span><span className="num">{fmtTokens(autopilot.spentToday)} sur {fmtTokens(autopilot.dayBudget)}</span></div>
+        <Bar value={autopilot.spentToday} max={autopilot.dayBudget} label="Budget du jour" thick />
+        <p className="xsmall faint" style={{ marginTop: 10 }}>{autopilot.budgetHit ? 'Atteint : le pilote ne lance plus de ticket aujourd’hui.' : 'Une fois atteint, le pilote s’arrête et vous prévient.'}</p>
+      </div>
+      <div className="table-wrap" style={{ marginTop: 16 }}><table className="table">
+        <thead><tr><th>Objectifs par jalon</th><th>Tokens par ticket</th><th>Validé du premier coup</th><th>Temps par ticket</th></tr></thead>
+        <tbody>
+          <tr><td><b>Mesuré</b> <span className="muted">{s.tickets} ticket{s.tickets > 1 ? 's' : ''} d’agent</span></td>
+            <td className="num"><b>{s.tokensPerTicket === null ? '—' : fmtTokens(s.tokensPerTicket)}</b></td>
+            <td className="num"><b>{s.firstTryPct === null ? '—' : `${s.firstTryPct} %`}</b></td>
+            <td className="num"><b>{s.minutesPerTicket === null ? '—' : `${s.minutesPerTicket} min`}</b></td></tr>
+          {MILESTONE_TARGETS.map((c) => (
+            <tr key={c.id}><td><b>{c.id}</b> <span className="muted">{c.name}</span></td>
+              <Target text={`${fmtTokens(c.tokensPerTicket)} au plus`} held={s.tokensPerTicket === null ? null : s.tokensPerTicket <= c.tokensPerTicket} />
+              <Target text={`${c.firstTryPct} % au moins`} held={s.firstTryPct === null ? null : s.firstTryPct >= c.firstTryPct} />
+              <Target text={`${c.minutesPerTicket} min au plus`} held={s.minutesPerTicket === null ? null : s.minutesPerTicket <= c.minutesPerTicket} /></tr>
+          ))}
+        </tbody>
+      </table></div>
       {u.byDay.length > 0 && (
         <div className="chart" role="img" aria-label={u.byDay.map((d) => `${day(d.day)} ${fmtTokens(d.used)}`).join(', ')} style={{ marginTop: 16 }}>
           {u.byDay.map((d) => (

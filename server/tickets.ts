@@ -29,7 +29,7 @@ export type EventType =
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
-  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee';
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation';
 
 export interface EngineEvent {
   id?: number;
@@ -68,6 +68,9 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
     case 'reclamation':
       // Le travail va changer : toutes les preuves sont à refaire, aucune coche ancienne ne reste.
       return { ...t, status: 'en-cours', loops: t.loops + 1, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
+    case 'reparation':
+      // Le ticket reste « en cours » ; le code va changer, donc toutes les preuves sont à refaire.
+      return { ...t, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
     case 'tokens':
