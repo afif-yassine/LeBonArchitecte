@@ -1,6 +1,6 @@
 # Le Bon Architecte
 
-Le Bon Architecte est une plateforme locale, sur votre PC. Elle sert à organiser une petite équipe d'agents IA (Claude Code, Codex, et d'autres) qui construisent vos projets, comme une équipe bien rangée dans une entreprise de services informatiques : des tickets, un ordre de travail, des tests, une recette, puis des comptes rendus.
+Le Bon Architecte est une plateforme locale, sur votre PC. Elle sert à organiser une petite équipe d'agents IA (Claude Code, Codex, et d'autres) qui construisent vos projets. Le travail suit une organisation de type entreprise de services informatiques : des tickets, un ordre de travail, des tests, une recette, puis des comptes rendus.
 
 Le propriétaire du projet est le client. Il valide le travail. Les agents ne poussent rien en ligne, ne fusionnent rien et ne suppriment rien sans son accord.
 
@@ -61,4 +61,3 @@ Avant de dire qu'une modification est prête, lancez au minimum `npm test` et `n
 - **Décisions** : [docs/decisions/](docs/decisions/). Chaque choix important y est écrit, avec son statut (proposée ou acceptée) et sa date.
 - **Cahier des charges** : [docs/cahier-des-charges/](docs/cahier-des-charges/). C'est la source de vérité : chaque ticket cite les exigences qu'il couvre.
 - **Évaluations de dépôts existants** : [docs/evaluations/](docs/evaluations/).
-
