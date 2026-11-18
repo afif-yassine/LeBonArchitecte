@@ -296,3 +296,9 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 ## Mémoire personnelle protégée, « À vous » réel sur le kanban (18 nov. 2026)
 - Les agents ne lisent plus la mémoire du propriétaire (~/.claude, hors du projet) : Read/Edit/Write/Glob/Grep refusés sur ~/.claude/**, mémoire automatique coupée (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1). Essayé en vrai avec un petit appel Haiku : lecture refusée (environ 3 k tokens écrits + 6 k relus du cache).
 - Kanban : la « Porte » écrite en dur (« Faire la recette de LBA-3 », bouton Valider factice) devient « À vous », calculé : besoin d'action, sinon recette, sinon plans à valider. « Tokens aujourd'hui » montre le vrai total (1,1 M) au lieu de 0. 60 tests verts. Vérifié dans le navigateur.
+
+## Architecte autonome, lot A : la commande lba et ses garde-fous (18 nov. 2026)
+- Décision 0014 : l'Architecte aura la main sur tout le projet, comme Claude Code, sans question de permission ; le propriétaire garde Valider (main), git, budget, supprimer et ses décisions.
+- `node scripts/lba.mjs` : état du kanban, ticket, déroulé, compte rendu, créer (avec le modèle), valider un plan, lancer, pause, reprendre, résoudre, tester, message, refuser, ordre, documents. Sortie courte (lue par un agent).
+- Le serveur écrit ses actions au nom « architecte » et lui ferme les portes du propriétaire : essayé en vrai, Valider, pilote, git et preuves répondent « Refusé à l'Architecte ». 61 tests verts.
+- Corrigé : le cache des PDF de comptes rendus (.lba/comptes-rendus/) n'était pas ignoré par git ; il aurait pu bloquer une réunion dans main.

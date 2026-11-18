@@ -102,8 +102,11 @@ export class Engine {
   }
 
   // ---------- Écriture : un événement = une ligne du journal + la vue à jour ----------
+  // Qui agit à la place de « vous » (l'Architecte, via la commande lba) : réglé par le serveur pour chaque requête.
+  actorOverride?: () => string | undefined;
+
   private record(e: Omit<EngineEvent, 'at'>): number {
-    const ev: EngineEvent = { ...e, at: now() };
+    const ev: EngineEvent = { ...e, actor: e.actor === 'vous' ? (this.actorOverride?.() ?? 'vous') : e.actor, at: now() };
     this.db.exec('BEGIN');
     let id = 0;
     try {
@@ -552,7 +555,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return decision === 'acceptee' ? `Proposition acceptée : ${ticket} créé, plan à valider. Rien d’autre n’a changé.` : 'Proposition refusée.';
   }
 
-  createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number }): Ticket {
+  createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number; model?: 'Opus' | 'Sonnet' | 'Haiku' }): Ticket {
     if (!o.title?.trim() || !o.expected?.trim()) throw new Refused('Un ticket a besoin d’un titre et de ce qui est attendu.');
     const all = this.tickets(project);
     const prefix = (all[0]?.id.split('-')[0]) ?? project.toUpperCase();
@@ -560,7 +563,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     const base = {
       id: `${prefix}-${n}`, projectId: project, title: o.title.trim(), deps: o.deps ?? [], status: 'a-faire' as const,
       part: o.part ?? 'Général', lot: o.lot ?? Math.max(1, ...all.map((x) => x.lot)), tool: 'claude-code' as const, accountId: 'acc-claude-1',
-      model: 'Sonnet', effort: 'moyen' as const, budget: 40000, used: 0, loops: 1, files: [],
+      model: o.model ?? 'Sonnet', effort: 'moyen' as const, budget: 40000, used: 0, loops: 1, files: [],
       done: ['Critères tenus', 'Tests verts', 'Périmètre respecté', 'Aucun secret', 'Aucune nouvelle faille', 'Documentation à jour'].map((label) => ({ label, state: 'attente' as const })),
       priority: Math.max(0, ...all.filter((x) => x.status === 'a-faire').map((x) => x.priority)) + 1,
       criteria: o.criteria.filter((c) => c.trim()).map((text) => ({ text: text.trim(), done: false })),

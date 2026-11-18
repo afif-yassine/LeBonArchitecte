@@ -58,3 +58,23 @@ test('schémas des comptes rendus : frise et barres en SVG, rien si pas assez de
   assert.match(t, /^<svg[\s\S]*Validé[\s\S]*<\/svg>$/);
   assert.match(tokenBarsSvg([{ id: 'LBA-1', tokens: 9000, testsOk: true, heavy: false }]), /LBA-1[\s\S]*9 k/);
 });
+
+test('Architecte : ses actions sont écrites à son nom, et les portes du propriétaire lui sont fermées', async () => {
+  const { architectRefusal, actorStore, currentActor } = await import('./acteurs.ts');
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  for (const [m, u] of [['POST', '/api/tickets/LBA-1/validate'], ['PUT', '/api/pilot'], ['POST', '/api/projects/lba/git/revert'], ['POST', '/api/tickets/LBA-1/steps/s1/prove'], ['POST', '/api/projects/lba/architect/decide'], ['DELETE', '/api/tickets/LBA-1']]) {
+    assert.ok(architectRefusal(m, u), `${m} ${u} doit rester au propriétaire`);
+  }
+  for (const [m, u] of [['POST', '/api/tickets/LBA-1/launch'], ['POST', '/api/projects/lba/tickets'], ['POST', '/api/tickets/LBA-1/priority'], ['GET', '/api/tickets']]) {
+    assert.equal(architectRefusal(m, u), undefined, `${m} ${u} est permis à l’Architecte`);
+  }
+  const e = new Engine(openDb(':memory:'));
+  e.actorOverride = currentActor;
+  const mine = e.createTicket('p', { title: 'A', expected: 'x', criteria: ['y'] });
+  const his = actorStore.run('architecte', () => e.createTicket('p', { title: 'B', expected: 'x', criteria: ['y'], model: 'Haiku' }));
+  const actor = (id: string) => e.events({ ticket: id }).find((x) => x.type === 'ticket-cree')?.actor;
+  assert.equal(actor(mine.id), 'vous');
+  assert.equal(actor(his.id), 'architecte');
+  assert.equal(e.ticket(his.id).model, 'Haiku');
+});

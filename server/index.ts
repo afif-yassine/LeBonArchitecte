@@ -11,6 +11,7 @@ import { startSupervisor } from './supervisor.ts';
 import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
+import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -53,7 +54,14 @@ app.addHook('onRequest', async (req, reply) => {
   if (req.method !== 'GET' && req.method !== 'HEAD' && !String(req.headers['content-type'] ?? '').startsWith('application/json')) {
     return reply.code(415).send({ message: 'Refusé : une action doit être envoyée en JSON par l’interface.' });
   }
+  // L'Architecte (commande lba) : ses actions sont écrites à son nom, et les portes qui restent à vous lui sont fermées.
+  if (req.headers[ACTOR_HEADER] === 'architecte') {
+    const why = architectRefusal(req.method, req.url);
+    if (why) return reply.code(403).send({ message: `Refusé à l’Architecte : ${why}. Demandez-le au propriétaire.` });
+    actorStore.enterWith('architecte');
+  }
 });
+engine.actorOverride = currentActor;
 
 type Id = { Params: { id: string } };
 
@@ -124,9 +132,11 @@ app.get('/api/busy', async () => {
   const validating = supervisor.validating();
   return { busy: running.length + validating.length > 0, running, validating };
 });
-app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string } }>('/api/projects/:id/tickets', async (req) => {
+app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string } }>('/api/projects/:id/tickets', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
-  const t = engine.createTicket(req.params.id, { ...req.body, criteria: req.body.criteria ?? [] });
+  const model = req.body.model && ['Opus', 'Sonnet', 'Haiku'].includes(req.body.model) ? req.body.model as 'Opus' | 'Sonnet' | 'Haiku' : undefined;
+  if (req.body.model && !model) throw new Refused('Modèle inconnu : Opus, Sonnet ou Haiku (jamais Fable).');
+  const t = engine.createTicket(req.params.id, { ...req.body, model, criteria: req.body.criteria ?? [] });
   return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.`, ticket: t };
 });
 app.post<Id & { Body: { problem?: string } }>('/api/tickets/:id/reject', async (req) => ({ message: engine.reject(req.params.id, req.body?.problem ?? '') }));
