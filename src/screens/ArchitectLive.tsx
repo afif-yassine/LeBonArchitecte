@@ -7,11 +7,12 @@ import { Markdown } from '../components/Markdown';
 import { fmtTokens } from '../components/ui';
 import { useNotify } from '../components/notify';
 import { ARCHITECT_COST, pickArchitectModel } from '../shared/architect';
+import { ARCHITECT_COMMANDS, parseCommand } from '../shared/commands';
 import { useApi } from './RealSpaces';
 import type { Go } from '../view';
 import '../architect.css';
 
-interface Msg { id: number; at: string; who: 'vous' | 'architecte' | 'action' | 'systeme'; text: string; model?: string; tokens?: number; cacheRead?: number; context?: number; ms?: number; ok?: boolean; detail?: string }
+interface Msg { id: number; at: string; who: 'vous' | 'architecte' | 'action' | 'systeme'; text: string; model?: string; tokens?: number; cacheRead?: number; context?: number; ms?: number; ok?: boolean; detail?: string; commande?: boolean }
 
 const SUGGEST = [
   'Où en est le projet, et que ferais-tu ensuite ?',
@@ -22,7 +23,7 @@ const hour = (iso: string) => new Date(iso).toLocaleTimeString('fr-FR', { hour: 
 
 export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: Go; ask?: string }) {
   const notify = useNotify();
-  const { data } = useApi<{ busy: boolean; thread: Msg[] }>(`/projects/${projectId}/architecte`);
+  const { data } = useApi<{ busy: boolean; thread: Msg[]; model: 'Opus' | 'Sonnet' | null }>(`/projects/${projectId}/architecte`);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -51,13 +52,20 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
   // La barre « Écrire à l'Architecte… » du bas de chaque page arrive ici avec la demande.
   useEffect(() => { if (ask && !asked.current) { asked.current = true; void send(ask); } }, [ask]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Commandes proposées pendant qu'on tape « /… » (avant l'espace) ; Tab complète la première.
+  const typing = /^\/[\p{L}]*$/u.test(text) ? text.slice(1).toLowerCase() : null;
+  const matches = typing === null ? [] : ARCHITECT_COMMANDS.filter((c) => c.name.startsWith(typing));
+  const complete = (name: string) => { setText(`/${name} `); input.current?.focus(); };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && matches.length) { e.preventDefault(); complete(matches[0].name); return; }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(text); }
   };
-  const model = pickArchitectModel(text);
+  const fixed = data?.model ?? undefined;
+  const model = pickArchitectModel(text, fixed);
+  const cmd = parseCommand(text);
   const lastAsk = [...thread].reverse().find((m) => m.who === 'vous');
   const elapsed = busy && lastAsk ? Math.max(0, Math.round((now - Date.parse(lastAsk.at)) / 1000)) : 0;
-  const today = thread.filter((m) => m.who === 'architecte' && new Date(m.at).toDateString() === new Date().toDateString());
+  const today = thread.filter((m) => m.who === 'architecte' && !m.commande && new Date(m.at).toDateString() === new Date().toDateString());
   const spent = today.reduce((n, m) => n + (m.tokens ?? 0), 0);
 
   return (
@@ -75,10 +83,17 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
           <div className="ar__empty">
             <p>Demandez-lui ce que vous voulez sur le projet. Une petite consigne est faite tout de suite ; une grosse idée reçoit d’abord son avis et attend votre « oui ».</p>
             <div className="ar__chips">{SUGGEST.map((s) => <button key={s} className="ar__chip" onClick={() => void send(s)}>{s}</button>)}</div>
+            <p className="ar__hint">Tapez <code>/</code> pour les commandes : <code>/usage</code>, <code>/context</code>, <code>/compact</code>… faites par le programme, 0 token.</p>
           </div>
         )}
         {thread.map((m) => {
-          if (m.who === 'vous') return <div key={m.id} className="ar__me"><p>{m.text}</p><span className="ar__time">{hour(m.at)}</span></div>;
+          if (m.who === 'vous') return <div key={m.id} className={`ar__me ${m.commande ? 'is-cmd' : ''}`}><p>{m.text}</p><span className="ar__time">{hour(m.at)}</span></div>;
+          if (m.commande) return (
+            <article key={m.id} className="ar__prog" aria-label="Réponse du programme">
+              <div className="ar__md"><Markdown text={m.text} onLink={() => undefined} /></div>
+              <footer className="ar__meta"><span className="ar__chipm">Programme</span><span>0 token</span><span>{hour(m.at)}</span></footer>
+            </article>
+          );
           if (m.who === 'action') return <div key={m.id} className="ar__act"><Wrench size={12} aria-hidden="true" /><code>{m.text}</code><span className="ar__time">{hour(m.at)}</span></div>;
           if (m.who === 'systeme') return <div key={m.id} className={`ar__sys ${m.ok === false ? 'is-ko' : ''}`} title={m.detail}>{m.text}</div>;
           return (
@@ -100,11 +115,28 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
       </div>
 
       <div className="ar__compose">
+        {matches.length > 0 && (
+          <ul className="ar__cmds" role="listbox" aria-label="Commandes">
+            {matches.map((c, i) => (
+              <li key={c.name}>
+                <button type="button" className={i === 0 ? 'is-first' : ''} onMouseDown={(e) => { e.preventDefault(); complete(c.name); }}>
+                  <code>/{c.name}{c.args ? ` ${c.args}` : ''}</code><span>{c.what}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <label className="sr-only" htmlFor="ar-input">Votre demande à l’Architecte</label>
         <textarea id="ar-input" ref={input} rows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} disabled={busy}
           placeholder={busy ? 'Il répond à votre demande précédente…' : 'Écrivez votre demande. Entrée pour envoyer, Maj + Entrée pour aller à la ligne.'} />
         <div className="ar__bar">
-          <span className="ar__cost">{text.trim() ? <>Partira sur <b>{model}</b>, {ARCHITECT_COST[model]} tokens. « /opus » ou « /sonnet » au début pour choisir.</> : 'Sonnet pour une consigne, Opus pour l’architecture, les décisions et l’équipe.'}</span>
+          <span className="ar__cost">{matches.length > 0 && (!cmd || cmd.name === 'inconnue')
+            ? <>Choisissez une commande : <b>Tab</b> pour compléter. Toutes sont faites par le programme, 0 token.</>
+            : cmd
+            ? (cmd.name === 'inconnue' ? <>Commande inconnue : tapez <b>/aide</b> pour la liste.</> : <>Commande faite par le programme : <b>0 token</b>, réponse tout de suite.</>)
+            : text.trim() ? <>Partira sur <b>{model}</b>, {ARCHITECT_COST[model]} tokens. « /opus » ou « /sonnet » au début pour choisir.</>
+            : fixed ? <>Modèle fixé : <b>{fixed}</b>. « /modele auto » pour revenir au choix automatique.</>
+            : 'Sonnet pour une consigne, Opus pour l’architecture, les décisions et l’équipe. « / » pour les commandes.'}</span>
           <button className="btn btn--primary btn--sm" onClick={() => void send(text)} disabled={busy || !text.trim()}><ArrowUp size={14} />Envoyer</button>
         </div>
       </div>

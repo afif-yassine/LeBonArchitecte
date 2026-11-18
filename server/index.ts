@@ -13,6 +13,8 @@ import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
 import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
 import { adviceMarkdown, architectRunning, askArchitectAgent } from './architectAgent.ts';
+import { runArchitectCommand } from './architectCommands.ts';
+import { askMap, refreshMap } from './carte.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -73,7 +75,10 @@ const profiles = new Map<string, ProjectProfile>();
 const profileOf = (project: string, fresh = false) => {
   const dir = PROJECT_DIRS[project];
   if (!dir) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC : rien à scanner.');
-  if (fresh || !profiles.has(project)) profiles.set(project, writeProfile(dir));
+  if (fresh || !profiles.has(project)) {
+    profiles.set(project, writeProfile(dir));
+    void refreshMap(dir); // au scan (et donc à l'import d'un projet) : la carte du code, sans IA
+  }
   return profiles.get(project)!;
 };
 app.get<Id>('/api/projects/:id/profile', async (req) => profileOf(req.params.id));
@@ -250,7 +255,10 @@ app.get<Id>('/api/projects/:id/cdc', async (req) => {
 });
 app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
 // Architecte autonome (décision 0014) : vous lui écrivez, il agit avec la commande lba ; son fil garde tout.
-app.get<Id>('/api/projects/:id/architecte', async (req) => ({ busy: architectRunning(req.params.id), thread: engine.architectThread(req.params.id) }));
+app.get<Id>('/api/projects/:id/architecte', async (req) => ({ busy: architectRunning(req.params.id), thread: engine.architectThread(req.params.id), model: engine.architectModel(req.params.id) ?? null }));
+// Carte du code (décision 0015) : petites questions (lba carte <nom>), jamais la carte entière.
+app.get<Id & { Querystring: { q?: string; to?: string } }>('/api/projects/:id/carte', async (req) => ({ text: await askMap(repoOf(req.params.id), req.query.q ?? '', req.query.to || undefined) }));
+app.post<Id>('/api/projects/:id/carte', async (req) => ({ message: (await refreshMap(repoOf(req.params.id))).text }));
 app.get<{ Params: { id: string; msg: string } }>('/api/projects/:id/architecte/avis/:msg', async (req, reply) => {
   const md = adviceMarkdown(engine, req.params.id, Number(req.params.msg));
   if (!md) throw new Refused('Cette réponse de l’Architecte n’existe pas.');
@@ -258,6 +266,9 @@ app.get<{ Params: { id: string; msg: string } }>('/api/projects/:id/architecte/a
 });
 app.post<Id & { Body: { text?: string } }>('/api/projects/:id/architecte', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple n’ont pas d’Architecte branché.');
+  // /usage, /context, /compact… : le programme répond seul, 0 token (décision 0015).
+  const cmd = await runArchitectCommand(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '');
+  if (cmd) return { message: cmd };
   return { message: askArchitectAgent(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '') };
 });
 app.post<Id & { Body: { mode?: string; question?: string } }>('/api/projects/:id/architect', async (req) => ({ message: askArchitect(engine, req.params.id, repoOf(req.params.id), req.body ?? {}) }));
@@ -277,7 +288,10 @@ app.get('/api/stream', (req, reply) => {
 });
 
 // Vrais agents : démarrés au lancement d'un ticket d'un vrai projet (Claude Code, abonnement du propriétaire).
-const supervisor = startSupervisor(engine, PROJECT_DIRS, (p) => profileOf(p));
+// Après chaque réunion dans main, la carte du code est refaite (3 s, 0 token) : l'Architecte voit le vrai code.
+const supervisor = startSupervisor(engine, PROJECT_DIRS, (p) => profileOf(p), undefined, (p) => { void refreshMap(PROJECT_DIRS[p]); });
+// Au démarrage aussi : le code a pu changer pendant que le moteur était arrêté.
+for (const dir of Object.values(PROJECT_DIRS)) void refreshMap(dir);
 
 app.listen({ port: PORT, host: '127.0.0.1' })
   .then(() => console.log(`Moteur prêt sur http://127.0.0.1:${PORT}`))

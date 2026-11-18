@@ -119,3 +119,44 @@ test('carnet de l’Architecte : vos consignes passées, ses actions et le titre
   assert.match(n, /Décisions prises[\s\S]*Décision 0012 : comptes rendus selon le poids/);
   assert.doesNotMatch(n, /Texte long/, 'seulement le titre, pas le texte');
 });
+
+test('commandes du chat de l’Architecte : reconnues, faites par le programme, jamais Fable (décision 0015)', async () => {
+  const { parseCommand } = await import('../src/shared/commands.ts');
+  const { pickArchitectModel } = await import('../src/shared/architect.ts');
+  assert.deepEqual(parseCommand('/usage'), { name: 'usage', arg: '' });
+  assert.deepEqual(parseCommand('/coût LBA-2'), { name: 'cout', arg: 'LBA-2' });
+  assert.equal(parseCommand('/modèle opus')?.name, 'modele');
+  assert.equal(parseCommand('/xyz')?.name, 'inconnue');
+  assert.equal(parseCommand('/opus fais une revue'), undefined, '/opus reste un choix de modèle pour une demande');
+  assert.equal(parseCommand('bonjour'), undefined);
+
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { runArchitectCommand } = await import('./architectCommands.ts');
+  const { notebook } = await import('./architectAgent.ts');
+  const e = new Engine(openDb(':memory:'));
+  const last = () => e.architectThread('p').slice(-1)[0];
+  assert.equal(await runArchitectCommand(e, 'p', process.cwd(), 'quel ticket lancer ?'), undefined, 'une vraie demande va à l’agent');
+
+  await runArchitectCommand(e, 'p', process.cwd(), '/modele fable');
+  assert.match(String(last().text), /jamais le modèle Fable/);
+  assert.equal(e.architectModel('p'), undefined);
+  await runArchitectCommand(e, 'p', process.cwd(), '/modele opus');
+  assert.equal(e.architectModel('p'), 'Opus');
+  assert.equal(pickArchitectModel('mets LBA-3 en tête', e.architectModel('p')), 'Opus');
+  assert.equal(pickArchitectModel('/sonnet mets LBA-3 en tête', e.architectModel('p')), 'Sonnet', 'le préfixe passe avant');
+  await runArchitectCommand(e, 'p', process.cwd(), '/modele auto');
+  assert.equal(e.architectModel('p'), undefined);
+
+  e.setSession('architecte-p', 'session-inexistante');
+  await runArchitectCommand(e, 'p', process.cwd(), '/compact');
+  assert.equal(e.sessionOf('architecte-p'), '', '/compact oublie la conversation');
+  assert.match(String(last().text), /repartira à neuf/);
+
+  await runArchitectCommand(e, 'p', process.cwd(), '/usage');
+  assert.match(String(last().text), /Architecte/);
+  assert.equal(last().model, 'programme');
+  assert.equal(last().tokens, 0);
+  assert.equal(e.spentToday(), 0, 'les commandes ne coûtent aucun token');
+  assert.doesNotMatch(notebook(e, 'p'), /\/usage|\/modele/, 'les commandes ne vont pas dans le carnet');
+});

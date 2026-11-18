@@ -54,6 +54,7 @@ const COMMANDS = {
   ordre: ['<id> tete|monter|descendre', 'changer la place dans la file du pilote'],
   docs: ['', 'la liste des documents du projet'],
   doc: ['<chemin>', 'lire un document'],
+  carte: ['<nom> [nom2]', 'carte du code : où est un élément et qui l’utilise (réponse courte) ; avec 2 noms, le chemin entre eux'],
 };
 
 const run = {
@@ -119,6 +120,10 @@ const run = {
     say(await api('POST', `/tickets/${need(args[0], 'l’id')}/priority`, { dir }));
   },
   async docs() { for (const d of await api('GET', `/projects/${PROJECT}/docs`)) if (!d.path.endsWith('.pdf')) console.log(`${d.path} : ${d.title}`); },
+  async carte() {
+    const q = new URLSearchParams({ q: need(args[0], 'un nom (fonction, fichier, composant)'), ...(args[1] ? { to: args[1] } : {}) });
+    console.log((await api('GET', `/projects/${PROJECT}/carte?${q}`)).text);
+  },
   async doc() { console.log((await api('GET', `/projects/${PROJECT}/doc?path=${encodeURIComponent(need(args[0], 'le chemin'))}`)).content); },
 };
 

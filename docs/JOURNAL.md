@@ -314,3 +314,20 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 ## Architecte autonome, lot C : l'écran (18 nov. 2026)
 - Écran Architecte branché (src/screens/ArchitectLive.tsx) : conversation en direct, actions visibles, modèle / tokens / cache / contexte / durée sous chaque réponse, coût annoncé avant l'envoi, PDF « Avis de l'Architecte » (vérifié : 100 Ko, généré en environ 1 s).
 - Interface construite sans erreur, 63 tests verts. Pas encore vérifié dans le navigateur : l'extension Chrome s'est déconnectée.
+
+## Essai Graphify (carte du code) (18 nov. 2026)
+- Graphify (gratuit, Python) installé à part, hors du projet. Il a fait la carte de LBA en 3 s, pour 0 token : 962 éléments, 2 497 liens. Sans IA, les groupes restent « Community N », sans nom.
+- Mesure, avec la même question posée deux fois à Sonnet (« où sont refusées les routes du propriétaire ? ») :
+  - sans carte : 7 tours, 6,6 k écrits + 23 k relus, 0,042 $ ;
+  - avec carte : 6 tours, 12,4 k écrits + 58 k relus, 0,070 $, soit environ 65 % plus cher. La réponse est un peu meilleure : il a trouvé le test.
+- Conclusion : pas utile pour LBA, qui est petit et a des noms clairs. À réessayer sur un gros projet importé avant de le brancher. Rien n'a été changé dans LBA.
+- Essai 2, votre idée : l'agent ne lit pas la carte entière, il pose seulement de petites questions à la carte (`graphify explain <nom>`, environ 400 caractères par réponse). Résultat : 4 tours, 3,1 k écrits + 28,7 k relus, 0,025 $. C'est environ 40 % moins cher que sans carte et 3 fois moins cher qu'avec la carte entière. La réponse est juste et complète (le test est trouvé). Une seule mesure pour l'instant : à confirmer sur 2 autres questions.
+- Essai 3 : 2 autres questions. Total sur les 3 questions : 0,152 $ sans carte, 0,100 $ avec les petites questions, soit 34 % de moins, avec la même qualité. Confirmé.
+
+## Lot D : commandes du chat et carte du code (18 nov. 2026)
+- 8 commandes dans le chat de l'Architecte, faites par le programme pour 0 token : /aide, /statut, /usage, /cout, /context, /compact, /modele (jamais Fable), /graphify. Taper « / » les propose, et Tab complète. Décision 0015.
+- /compact ne coûte rien : la demande suivante repart avec le carnet, sans résumé écrit par une IA.
+- Carte du code (Graphify) refaite au démarrage, au scan ou à l'import, et après chaque réunion dans main (3 s, 0 token). git l'ignore en local. L'Architecte lui pose de petites questions (`lba carte <nom>`), jamais la carte entière.
+- Vérifié en vrai : chaque commande répond, la carte trouve `askArchitectAgent` et `refreshMap`. L'Architecte a utilisé la carte sur une vraie question, mais avec un mot français, et la carte n'a rien trouvé. Sa règle dit maintenant : un nom du code, ou un seul Grep pour le trouver.
+- Écran vérifié dans un Chrome sans fenêtre, sur PC (1 280 px) et sur téléphone (390 px) : les commandes s'affichent, aucune erreur, pas de défilement de côté. 64 tests verts, compilation sans erreur.
+- Remarque : sur un petit écran, le tiroir « Orchestrateur » couvre le chat à l'ouverture. C'était déjà comme ça avant, et il se ferme avec ».

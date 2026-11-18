@@ -37,6 +37,23 @@
 .ar__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .ar__cost { font-size: .78rem; color: var(--faint); }
 .ar__cost b { color: var(--text-strong); font-weight: 600; }
+/* Commandes (/usage, /context…) : réponses du programme, plus discrètes que celles de l'agent. */
+.ar__hint { margin: 14px auto 0; font-size: .8rem; color: var(--faint); }
+.ar__hint code, .ar__cost code { font-family: var(--mono); font-size: .78rem; }
+.ar__me.is-cmd { background: var(--sunken); }
+.ar__me.is-cmd p { font-family: var(--mono); font-size: .84rem; }
+.ar__prog { align-self: stretch; padding: 10px 14px; border-radius: 10px; background: var(--sunken); border: 1px dashed var(--line); }
+.ar__prog .ar__md { font-size: .88rem; }
+.ar__prog .ar__meta { margin-top: 8px; padding-top: 6px; }
+.ar__cmds { list-style: none; margin: 0 0 8px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); max-height: 230px; overflow-y: auto; }
+.ar__cmds button { display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 9px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: .84rem; text-align: left; cursor: pointer; }
+.ar__cmds button:hover, .ar__cmds button.is-first { background: var(--accent-soft); }
+.ar__cmds code { flex: none; font-family: var(--mono); font-size: .8rem; color: var(--accent); }
+.ar__cmds span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) {
+  .ar__cmds button { flex-direction: column; gap: 2px; }
+  .ar__cmds span { white-space: normal; }
+}
 @media (max-width: 640px) {
   .ar { padding: 12px 16px 0; }
   .ar__head { flex-direction: column; align-items: flex-start; }

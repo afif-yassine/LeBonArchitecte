@@ -45,7 +45,8 @@ export function cacheWarm(cwd: string, session: string, now = Date.now()): boole
   try { return now - statSync(transcriptOf(cwd, session)).mtimeMs < CACHE_MS; } catch { return false; }
 }
 
-export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile, runAgent: typeof runClaude = runClaude) {
+// onMerged : prévenu après chaque réunion réussie dans main (le serveur y refait la carte du code).
+export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile, runAgent: typeof runClaude = runClaude, onMerged?: (project: string) => void) {
   const runs = new Map<string, ChildProcess>();
   const handled = new Set<number>();
   const startEvent = (id: string) => engine.lastStart(id);
@@ -334,6 +335,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const msg = engine.validate(id);
     engine.live(id, { kind: 'systeme', ok: true, text: `Réuni dans main (${m.merge})`, detail: `Point de retour : ${m.before}. Pour annuler : git revert -m 1 ${m.merge}` }, 'programme');
     removeWorktree(repo, id);
+    try { onMerged?.(t.projectId); } catch { /* la carte n'empêche jamais une validation */ }
     return `${msg} Réuni dans main (${m.merge}), point de retour ${m.before}.`;
   }
 

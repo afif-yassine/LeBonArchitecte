@@ -30,6 +30,7 @@ const RULES = [
   'Règles du projet : ne jamais perturber un ticket en cours sans raison ; un changement de périmètre devient un nouveau ticket ; jamais le modèle Fable ; Opus seulement pour le risqué ou l’architecture, sinon Sonnet, Haiku pour le très simple.',
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Économie de tokens : l’état du projet t’est donné, ne le redemande que s’il a changé. Ne relis jamais un fichier déjà lu. Lis par morceaux (Grep, Read avec offset). Ne lis pas docs/JOURNAL.md ni toutes les décisions sauf si la demande les concerne.',
+  'Pour trouver du code : la carte attend un NOM du code (souvent en anglais : architectRefusal, mergeTicket, Engine…), pas un mot français. Si tu connais le nom, lance node scripts/lba.mjs carte <nom> (où il est, qui l’utilise, avec fichiers et lignes ; avec deux noms : le chemin entre eux). Sinon, un seul Grep pour trouver le nom, puis la carte pour ses liens au lieu d’ouvrir les fichiers un par un. Lis ensuite seulement les lignes utiles. Ne lis jamais le dossier graphify-out (trop gros).',
   'Tu ne modifies aucun fichier toi-même. Pour écrire ou changer un document ou du code : crée un ticket précis puis lance-le ; un agent le fait dans sa branche, le propriétaire valide. Le programme choisit le mode le moins cher (un document simple coûte environ 6 k).',
   'Tu es un conseiller critique, pas un exécutant : le propriétaire ne connaît pas la technique et compte sur toi pour l’arrêter quand une idée est mauvaise, même s’il insiste.',
   'Demande petite et claire (ordre du kanban, lancer, pause, message, un ticket simple) : fais-la tout de suite. Demande grosse ou structurelle (nouveaux agents ou équipe, chaîne d’agents, architecture, nouvelle fonction, plus de 3 tickets, plus de 50 k estimés) : NE FAIS RIEN avant son « oui ». Réponds dans cet ordre : « Avis : je conseille / je déconseille / à adapter » ; les problèmes, même si l’idée est bonne, expliqués comme à un débutant ; « Existe déjà ? » (dans le projet, ou un logiciel gratuit que tu connais, marqué « à vérifier » ; si une recherche web est utile, propose un petit ticket de recherche) ; le coût en tokens de son idée et de ta proposition côte à côte ; ta meilleure proposition, la plus simple qui marche ; puis « Dites oui, ou choisissez ».',
@@ -41,6 +42,7 @@ const RULES = [
 // Lecture seule sur le projet (main, toujours à jour) + la commande lba. Aucune écriture de fichier.
 const ALLOWED = ['Read', 'Glob', 'Grep', 'Bash(node scripts/lba.mjs *)', 'Bash(git status)', 'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)'];
 const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pem)', 'Read(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)',
+  'Read(**/graphify-out/**)', 'Grep(**/graphify-out/**)', 'Glob(**/graphify-out/**)',
   'Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git -C *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npx *)', 'Bash(npm *)',
   'WebFetch', 'WebSearch'];
 
@@ -71,7 +73,8 @@ export function projectDigest(engine: Engine, project: string): string {
 // Carnet, écrit par le programme (0 token) : mémoire courte quand il repart à neuf.
 // Vos 10 dernières consignes + ses 12 dernières actions + le titre de chaque décision : de quoi voir une contradiction.
 export function notebook(engine: Engine, project: string, repo?: string): string {
-  const fil = engine.architectThread(project, 120);
+  // Les commandes (/usage, /context…) sont faites par le programme : ni consignes ni réponses à retenir.
+  const fil = engine.architectThread(project, 120).filter((m) => !m.commande);
   const when = (at: string) => at.slice(5, 16).replace('T', ' ');
   const asks = fil.filter((m) => m.who === 'vous').slice(-10);
   const acts = fil.filter((m) => m.who === 'action').slice(-12);
@@ -127,6 +130,23 @@ export function adviceMarkdown(engine: Engine, project: string, id: number): str
   ].join('\n');
 }
 
+// Pour /context et /compact (0 token) : ce que la prochaine demande emportera, et si elle reprend ou repart à neuf.
+// Les tailles du texte préparé sont estimées (1 token ≈ 4 caractères) ; celle de la conversation est mesurée.
+export function architectContext(engine: Engine, project: string, repo: string) {
+  const est = (s: string) => Math.round(s.length / 4);
+  const prev = engine.sessionOf(`${ARCHITECT_ID}-${project}`) || undefined;
+  const size = prev ? contextOf(repo, prev).end : 0;
+  const warm = prev ? cacheWarm(repo, prev) : false;
+  const resume = Boolean(prev && warm && size < MAX_RESUME_CONTEXT);
+  return {
+    rules: est(RULES), digest: est(projectDigest(engine, project)), notebook: est(notebook(engine, project, repo)),
+    session: prev, size, warm, resume, maxResume: MAX_RESUME_CONTEXT,
+    why: !prev ? 'aucune conversation en cours' : resume ? 'conversation de moins de 5 min et assez courte' : size >= MAX_RESUME_CONTEXT ? 'conversation trop longue' : 'pause de plus de 5 min, le cache a expiré',
+  };
+}
+// /compact : oublier la conversation ; la prochaine demande repart avec le carnet (écrit par le programme, 0 token).
+export function forgetArchitectSession(engine: Engine, project: string): void { engine.setSession(`${ARCHITECT_ID}-${project}`, ''); }
+
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const running = new Map<string, ChildProcess>();
 export const architectRunning = (project: string) => running.has(project);
@@ -134,7 +154,7 @@ export const architectRunning = (project: string) => running.has(project);
 export function askArchitectAgent(engine: Engine, project: string, repo: string, text: string): string {
   if (!text.trim()) throw new Refused('Écrivez votre demande à l’Architecte.');
   if (running.has(project)) throw new Refused('L’Architecte travaille déjà sur votre demande précédente : attendez sa réponse.');
-  const model = pickArchitectModel(text);
+  const model = pickArchitectModel(text, engine.architectModel(project));
   const ask = text.replace(/^\/(opus|sonnet)\s*/i, '').trim();
   const cwd = repo; // lecture seule : il voit main tel qu'il est maintenant
   const key = `${ARCHITECT_ID}-${project}`;

@@ -533,6 +533,28 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   architectTokens(project: string, d: { used: number; cacheRead: number; costUsd: number; turns: number; model: string }): void {
     this.record({ project, type: 'tokens', actor: 'architecte', data: { ...d, architecte: true } });
   }
+  // Tokens d'aujourd'hui pour /usage : l'Architecte à part, puis chaque ticket. Mesurés, jamais estimés.
+  usageToday(project: string): { architect: { used: number; cacheRead: number; costUsd: number; runs: number }; tickets: { id: string; used: number; costUsd: number }[] } {
+    const rows = this.db.prepare("SELECT ticket, data FROM events WHERE type = 'tokens' AND project = ? AND at >= ?").all(project, startOfToday().toISOString()) as { ticket: string | null; data: string }[];
+    const architect = { used: 0, cacheRead: 0, costUsd: 0, runs: 0 };
+    const tk = new Map<string, { used: number; costUsd: number }>();
+    for (const r of rows) {
+      const d = JSON.parse(r.data) as { used?: number; cacheRead?: number; costUsd?: number; architecte?: boolean };
+      if (d.architecte || !r.ticket) { architect.used += d.used ?? 0; architect.cacheRead += d.cacheRead ?? 0; architect.costUsd += d.costUsd ?? 0; architect.runs += 1; continue; }
+      const x = tk.get(r.ticket) ?? { used: 0, costUsd: 0 };
+      x.used += d.used ?? 0; x.costUsd += d.costUsd ?? 0; tk.set(r.ticket, x);
+    }
+    return { architect, tickets: [...tk].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.used - a.used) };
+  }
+  // Modèle choisi avec /modele pour les demandes suivantes ; vide = choix automatique.
+  architectModel(project: string): 'Opus' | 'Sonnet' | undefined {
+    const v = (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(`architecte-modele:${project}`) as { value: string } | undefined)?.value;
+    return v === 'Opus' || v === 'Sonnet' ? v : undefined;
+  }
+  setArchitectModel(project: string, model?: 'Opus' | 'Sonnet'): void {
+    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`architecte-modele:${project}`, model ?? '');
+    this.changed();
+  }
 
   recordReview(project: string, data: { question: string; answer: unknown; tokens: number; model: string }): number {
     const id = this.record({ project, ticket: undefined, type: 'architecte-revue', actor: 'architecte', data });
