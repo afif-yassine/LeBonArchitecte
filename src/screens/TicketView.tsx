@@ -90,7 +90,7 @@ function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
 
 export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const notify = useNotify();
-  const { tickets, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject } = useStore();
+  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject, pause, resume } = useStore();
   const [rejecting, setRejecting] = useState(false);
   const [problem, setProblem] = useState('');
   const t = tickets.find((x) => x.id === ticketId)!;
@@ -100,7 +100,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const [tab, setTab] = useState<Tab>(t.status === 'a-tester' ? 'realise' : 'deroule');
   const [conf, setConf] = useState({ tool: t.tool, accountId: t.accountId, model: t.model, effort: t.effort });
   const [menu, setMenu] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const paused = t.status === 'a-faire' && !!t.paused;
   const [launching, setLaunching] = useState(false);
   const [feed, setFeed] = useState<LiveItem[] | null>(null); // null = pas encore lu
   const [journal, setJournal] = useState<RawEvent[]>([]);
@@ -286,11 +286,14 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           )}
         </div>
 
-        {tab === 'deroule' && (t.status === 'en-cours' || t.status === 'action') && (
+        {tab === 'deroule' && t.status !== 'termine' && (
           <div className="composer">
             <div className="composer__box">
               <label className="sr-only" htmlFor="agent-input">Message à l’agent</label>
-              <textarea id="agent-input" rows={1} value={text} placeholder={`Message à ${agent?.name ?? 'l’agent'}…`}
+              <textarea id="agent-input" rows={1} value={text} placeholder={
+                t.status === 'a-tester' || t.status === 'action' ? 'Demander une modification à l’agent qui a fait le travail : il reprend sa conversation…'
+                : t.status === 'en-cours' ? 'Message à l’agent : il le reçoit à la fin de son tour, dans sa conversation…'
+                : 'Message pour l’agent : il le recevra à son lancement…'}
                 onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
               <div className="composer__bar">
                 <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre un fichier" title="Joindre un fichier"><Paperclip size={16} /></button>
@@ -333,19 +336,20 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         </>)}
 
         <div className="tk__actions">
-          {t.status === 'a-faire' && <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>}
+          {t.status === 'a-faire' && (t.paused
+            ? <button className="btn btn--primary" onClick={() => resume(t.id)}><Play size={15} />Reprendre</button>
+            : <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>)}
           {t.status === 'a-tester' && (<>
             <button className="btn btn--primary" onClick={() => validate(t.id)}><Check size={15} />Valider</button>
             <button className="btn" onClick={() => { setTab('realise'); setRejecting(true); }}><X size={15} />Ça ne marche pas</button>
           </>)}
           {t.status === 'en-cours' && (<>
-            <button className="btn" onClick={() => { setPaused((v) => !v); notify(paused ? 'L’agent reprend là où il s’était arrêté.' : 'Agent en pause. Son travail est enregistré.'); }}>
-              {paused ? <Play size={15} /> : <Pause size={15} />}{paused ? 'Reprendre' : 'Pause'}
+            <button className="btn" onClick={() => pause(t.id)} title="Arrête l’agent ; son travail et sa conversation sont gardés. « Reprendre » le relance dans sa session.">
+              <Pause size={15} />Pause
             </button>
             <button className="btn" onClick={() => { const acc = accounts.find((a) => a.tool === other && a.connected)!; setConf({ tool: other, accountId: acc.id, model: TOOLS[other].models[1], effort: conf.effort }); notify(`Passera sur ${TOOLS[other].label} à la fin du tour, avec la passation.`); }}>
               <ArrowLeftRight size={15} />Passer à {TOOLS[other].short}
             </button>
-            <button className="btn btn--danger" onClick={() => stop(t.id)}><Square size={14} />Arrêter</button>
             {demo && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
           </>)}
         </div>

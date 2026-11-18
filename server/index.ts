@@ -1,13 +1,14 @@
 // Serveur local du Bon Architecte. Écoute seulement sur 127.0.0.1 : rien n'est exposé au réseau.
 import Fastify from 'fastify';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
-import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge } from './git.ts';
+import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
 import { architectBusy, askArchitect, CDC_PATH, CHOICES_PATH, choicesDoc, readCdc } from './architect.ts';
@@ -76,7 +77,26 @@ app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
 
 app.post<Id & { Body: { replace?: string; manual?: boolean; who?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace, manual: req.body?.manual, actor: req.body?.who }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
+app.post<Id>('/api/tickets/:id/pause', async (req) => ({ message: engine.pause(req.params.id) }));
+app.post<Id>('/api/tickets/:id/resume', async (req) => ({ message: engine.resume(req.params.id) }));
 app.post<Id>('/api/tickets/:id/validate', async (req) => ({ message: await supervisor.validate(req.params.id) }));
+// « Tester » : les tests du projet lancés dans la branche du ticket (son dossier), pas dans main.
+app.post<Id>('/api/tickets/:id/test', async (req) => {
+  const t = engine.ticket(req.params.id);
+  const repo = PROJECT_DIRS[t.projectId];
+  if (!repo) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC : rien à tester.');
+  const test = profileOf(t.projectId).commands.test;
+  if (!test) throw new Refused('Aucune commande de tests dans la fiche du projet.');
+  const wt = worktreeOf(repo, t.id);
+  const r = await engine.run(t.id, test, existsSync(wt) ? wt : repo, 'vous');
+  return { message: `${r.ok ? 'Tests verts' : 'Tests rouges'} dans ${existsSync(wt) ? `la branche de ${t.id}` : 'main'} : ${r.summary.split('\n')[0]}`, result: r };
+});
+// Pour le lanceur : le moteur ne redémarre (mise à jour de son code) que s'il est libre.
+app.get('/api/busy', async () => {
+  const running = supervisor.running();
+  const validating = supervisor.validating();
+  return { busy: running.length + validating.length > 0, running, validating };
+});
 app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string } }>('/api/projects/:id/tickets', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
   const t = engine.createTicket(req.params.id, { ...req.body, criteria: req.body.criteria ?? [] });
@@ -87,7 +107,8 @@ app.post<Id & { Body: { command?: string } }>('/api/tickets/:id/run', async (req
   const t = engine.ticket(req.params.id);
   const dir = PROJECT_DIRS[t.projectId];
   if (!dir) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC : rien à exécuter.');
-  const r = await engine.run(t.id, req.body?.command ?? '', dir, 'vous');
+  const wt = worktreeOf(dir, t.id);
+  const r = await engine.run(t.id, req.body?.command ?? '', existsSync(wt) ? wt : dir, 'vous'); // dans la branche du ticket si elle existe
   const first = r.summary.split('\n')[0];
   return { message: r.ok ? `Commande terminée : ${first}` : `Commande en échec : ${first}`, result: r };
 });

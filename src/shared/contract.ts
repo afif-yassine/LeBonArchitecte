@@ -143,6 +143,7 @@ export interface Ticket {
   securityBlock?: string;
   needAction?: string;
   waitingFor?: string; // ce que la carte attend, en mots simples
+  paused?: boolean; // mis en pause par vous : le pilote ne le lance pas
   part: string;
   lot: number;
   tool: ToolId;

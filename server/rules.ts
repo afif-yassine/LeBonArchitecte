@@ -38,7 +38,7 @@ export const running = (all: Ticket[], project: string) => all.filter((t) => t.p
 export function nextReady(all: Ticket[], project: string, s: PilotSettings, lot?: number): Ticket | undefined {
   if (!s.on || running(all, project).length >= s.maxParallel) return undefined;
   return all
-    .filter((t) => t.projectId === project && t.status === 'a-faire' && t.planOk && isReady(t, all))
+    .filter((t) => t.projectId === project && t.status === 'a-faire' && t.planOk && !t.paused && isReady(t, all))
     .filter((t) => !s.stopAtLotEnd || lot === undefined || t.lot === lot)
     .sort((a, b) => a.priority - b.priority)[0];
 }

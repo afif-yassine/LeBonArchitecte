@@ -74,7 +74,14 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       const e = startEvent(t.id);
       if (!e?.id || handled.has(e.id) || e.data.manual) continue;
       handled.add(e.id);
-      if (e.type === 'reclamation') { start(t.id, String(e.data.problem ?? '')); continue; }
+      if (e.type === 'reclamation') {
+        // « Pas bon » ou demande de modification : le même agent reprend SA conversation (il sait ce qu'il a fait).
+        const s = engine.sessionOf(t.id);
+        const same = s && pickMode(t) === 'agent' && existsSync(worktreeOf(dirs[t.projectId], t.id));
+        if (same) engine.live(t.id, { kind: 'systeme', text: 'L’agent qui a fait le travail reprend sa conversation avec votre demande.' }, 'programme');
+        start(t.id, String(e.data.problem ?? ''), same ? s : undefined, same ? 'message' : 'redemarrage');
+        continue;
+      }
       if (e.type === 'reparation') {
         engine.live(t.id, { kind: 'systeme', text: 'Réparation automatique : l’agent reprend sa session, une seule fois.', detail: String(e.data.cause ?? '') }, 'programme');
         start(t.id, String(e.data.cause ?? ''), engine.sessionOf(t.id), 'reparation');
@@ -100,8 +107,22 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
   const held = engine.quotaUntil();
   if (held) wakeAt(held);
 
-  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' = 'redemarrage') {
+  // Messages que vous avez écrits à l'agent et qu'il n'a pas encore reçus.
+  const DELIVERED = 'Messages transmis à l’agent';
+  const pendingMessages = (id: string) => {
+    const mark = engine.events({ ticket: id, limit: 300 }).find((e) => e.type === 'direct' && String(e.data.text ?? '').startsWith(DELIVERED))?.id ?? 0;
+    return engine.messagesSince(id, mark);
+  };
+
+  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' | 'message' = 'redemarrage') {
     const t = engine.ticket(id);
+    // Messages écrits avant le lancement : ils partent avec la consigne.
+    const inbox = pendingMessages(id);
+    if (inbox.length) {
+      complaint = [complaint, ...inbox].filter(Boolean).join(' ; ');
+      if (resume && why !== 'reparation') why = 'message';
+      engine.live(id, { kind: 'systeme', text: `${DELIVERED} : ${inbox.length}` }, 'programme');
+    }
     let wt: string;
     try { wt = ensureWorktree(dirs[t.projectId], id); } catch (err) {
       engine.live(id, { kind: 'systeme', ok: false, text: (err as Error).message }, 'programme');
@@ -116,6 +137,12 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
         commitWorktree(wt, `${id} : travail en cours (limite de l’abonnement)`);
         engine.quotaPause(id, o.quotaUntil, o.summary ?? '');
         wakeAt(o.quotaUntil);
+        return;
+      }
+      // Vous avez écrit pendant son tour : il reprend sa conversation avec vos messages avant d'être vérifié.
+      const session = engine.sessionOf(id);
+      if (o.ok && session && pickMode(engine.ticket(id)) === 'agent' && pendingMessages(id).length) {
+        start(id, undefined, session, 'message');
         return;
       }
       // Audit LBA-11, point 5 : si la fin plante, le ticket ne reste pas « en cours » pour toujours :
@@ -190,7 +217,15 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
   }
 
   // Valider un ticket d'un vrai projet : tests relancés dans son espace, puis réunion dans main.
+  // Une validation en cours (tests, réunion, tests dans main) ne doit jamais être coupée par un redémarrage.
+  const validating = new Set<string>();
   async function validate(id: string): Promise<string> {
+    if (validating.has(id)) throw new Refused(`${id} est déjà en train d’être validé : tests puis réunion, patientez.`);
+    validating.add(id);
+    try { return await validateNow(id); } finally { validating.delete(id); }
+  }
+
+  async function validateNow(id: string): Promise<string> {
     const t = engine.ticket(id);
     const repo = dirs[t.projectId];
     if (!repo || !existsSync(worktreeOf(repo, id))) return engine.validate(id);
@@ -217,5 +252,5 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     return `${msg} Réuni dans main (${m.merge}), point de retour ${m.before}.`;
   }
 
-  return { validate, running: () => [...runs.keys()] };
+  return { validate, running: () => [...runs.keys()], validating: () => [...validating] };
 }

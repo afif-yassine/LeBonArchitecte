@@ -139,19 +139,46 @@ export class Engine {
     }
     let msg = '';
     if (!t.planOk) { this.record({ project: t.projectId, ticket: id, type: 'plan-valide', actor: opts.actor ?? 'vous', data: {} }); msg = 'Plan validé. '; }
-    if (opts.replace) { this.stop(opts.replace, false); msg = `${opts.replace} arrêté proprement, passation écrite. `; }
+    if (opts.replace) { this.stop(opts.replace, false, `remplacé par ${id}`); msg =`${opts.replace} arrêté proprement, passation écrite. `; }
     const { model, reason } = pickModel(t, t.loops > 1);
     this.record({ project: t.projectId, ticket: id, type: 'ticket-lance', actor: opts.actor ?? 'vous', data: { model, reason, ...(opts.manual ? { manual: true } : {}) } });
     this.changed();
     return `${msg}${id} démarre sur ${model}. ${reason}`;
   }
 
-  stop(id: string, notify = true): string {
+  // Sans raison : mis en pause par vous (le pilote ne le relance pas). Avec raison : repart seul en tête de file.
+  stop(id: string, notify = true, reason?: string): string {
     const t = this.ticket(id);
     assertMove(t, 'a-faire');
-    this.record({ project: t.projectId, ticket: id, type: 'ticket-arrete', actor: 'vous', data: {} });
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-arrete', actor: 'vous', data: reason ? { reason } : {} });
     if (notify) this.changed();
-    return `${id} arrêté proprement. Il reprendra avec sa passation.`;
+    return reason ? `${id} arrêté, il repartira en tête de file.` : `${id} mis en pause : son travail est gardé dans sa branche. « Reprendre » le relance dans sa session.`;
+  }
+
+  // Pause : un ticket en cours est arrêté (travail gardé) ; un ticket en file n'est plus pris par le pilote.
+  pause(id: string): string {
+    const t = this.ticket(id);
+    if (t.status === 'en-cours') return this.stop(id);
+    if (t.status !== 'a-faire') throw new Refused(`${id} n’est ni en cours ni en file : rien à mettre en pause.`);
+    if (t.paused) return `${id} est déjà en pause.`;
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-pause', actor: 'vous', data: { paused: true } });
+    this.changed();
+    return `${id} mis en pause : le pilote ne le lancera pas avant « Reprendre ».`;
+  }
+
+  // Reprendre : il repart tout de suite s'il y a une place (dans sa session s'il en a une), sinon en tête de file.
+  resume(id: string): string {
+    const t = this.ticket(id);
+    if (t.status !== 'a-faire' || !t.paused) throw new Refused(`${id} n’est pas en pause.`);
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-pause', actor: 'vous', data: { paused: false } });
+    this.record({ project: t.projectId, ticket: id, type: 'priorite', actor: 'vous', data: { priority: 0 } });
+    try {
+      return this.launch(id);
+    } catch (err) {
+      if (!(err instanceof Refused)) throw err;
+      this.changed();
+      return `${id} repris : il attend en tête de file (${err.message})`;
+    }
   }
 
   // Limite d'abonnement atteinte (ex. « 5-hour limit ») : ce n'est pas un échec du ticket.
@@ -463,10 +490,32 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return t;
   }
 
+  // Parler à l'agent qui a fait le travail. Sa conversation (session Claude) est gardée avec le ticket :
+  // - en cours : le message attend la fin de son tour, puis l'agent reprend sa session avec lui ;
+  // - à tester ou en besoin d'action : c'est une demande de modification, l'agent reprend sa session tout de suite ;
+  // - fini (réuni dans main) : sa branche est close, une modification devient un nouveau ticket.
   message(id: string, text: string): string {
-    if (!text.trim()) throw new Refused('Le message est vide.');
-    this.live(id, { kind: 'message', text: text.trim() }, 'vous');
-    return 'Message transmis. L’agent le lira à la fin de son action en cours.';
+    const t = this.ticket(id);
+    const msg = text.trim();
+    if (!msg) throw new Refused('Le message est vide.');
+    if (t.status === 'a-tester' || t.status === 'action') {
+      this.reject(id, msg);
+      return `Demande envoyée : l’agent de ${id} reprend sa conversation pour faire la modification. Le ticket repasse « En cours ».`;
+    }
+    if (t.status === 'termine') throw new Refused(`${id} est déjà réuni dans main : pour une modification, créez un nouveau ticket (sa conversation reste lisible dans le Direct).`);
+    this.live(id, { kind: 'message', text: msg, detail: t.status === 'en-cours' ? 'En attente : l’agent le reçoit à la fin de son tour.' : 'Gardé : l’agent le recevra à son lancement.' }, 'vous');
+    return t.status === 'en-cours' ? 'Message gardé : l’agent le reçoit dès la fin de son tour, puis continue dans sa conversation.' : 'Message gardé : l’agent le recevra à son lancement.';
+  }
+
+  // Messages de vous arrivés depuis un événement (ex. le départ du tour de l'agent), pas encore transmis.
+  messagesSince(id: string, sinceId: number): string[] {
+    return this.events({ ticket: id, limit: 200 })
+      .filter((e) => (e.id ?? 0) > sinceId && e.type === 'direct' && e.actor === 'vous' && e.data.kind === 'message')
+      .reverse().map((e) => String(e.data.text));
+  }
+
+  lastEventId(): number {
+    return (this.db.prepare('SELECT MAX(id) AS m FROM events').get() as { m: number | null }).m ?? 0;
   }
 
   // Le direct d'un ticket : son journal, raconté en clair, du plus ancien au plus récent.

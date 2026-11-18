@@ -29,7 +29,7 @@ export type EventType =
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
-  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation';
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee' | 'reparation' | 'ticket-pause';
 
 export interface EngineEvent {
   id?: number;
@@ -47,12 +47,16 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
   if (!t) return t;
   switch (e.type) {
     case 'ticket-lance':
-      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, model: (e.data.model as string) ?? t.model };
+      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, paused: undefined, model: (e.data.model as string) ?? t.model };
     case 'ticket-arrete':
+      // Arrêté par vous = en pause : le pilote ne le relance pas, « Reprendre » le relance dans sa session.
+      // Arrêté par le programme (avec une raison, ex. limite d'abonnement) : il repart seul en tête de file.
       return {
-        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined,
-        waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'Arrêté par vous, reprendra avec sa passation',
+        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined, paused: e.data.reason ? undefined : true,
+        waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'En pause : il reprendra sa session quand vous cliquerez « Reprendre »',
       };
+    case 'ticket-pause':
+      return { ...t, paused: e.data.paused ? true : undefined, waitingFor: e.data.paused ? 'En pause : le pilote ne le lance pas' : undefined };
     case 'agent-termine':
       return {
         ...t,

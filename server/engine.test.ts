@@ -35,14 +35,14 @@ test('budget du jour : le pilote s’arrête, prévient une fois, et repart si v
   const other = ids.find((id) => id !== first)!;
   spend(e, first, 1000);
   assert.equal(e.pilotState().budgetHit, true);
-  e.stop(first);
+  e.stop(first, true, 'place libérée'); // arrêt avec raison : repart seul (sans raison, ce serait une pause)
   assert.match(e.kickPilot('bb'), /Budget du jour atteint/);
   e.kickPilot('bb');
   assert.ok(ids.every((id) => e.ticket(id).status === 'a-faire'));
   assert.equal(e.actions('bb').filter((a) => /Budget du jour/.test(a.title)).length, 1);
   assert.throws(() => e.launch(other, { actor: 'pilote' }), /Budget du jour/);
   e.launch(other); // vous gardez la main
-  e.stop(other);
+  e.stop(other, true, 'place libérée');
   e.setPilot({ dayBudget: 5000 });
   assert.match(e.kickPilot('bb'), /démarre/);
 });
@@ -556,4 +556,38 @@ test('limite d’abonnement : pas un échec, le ticket attend en tête, le pilot
   assert.equal(e.ticket(running.id).priority, 0);
   assert.equal(e.kickPilot('qq'), '');
   assert.ok([a, b].every((t) => e.ticket(t.id).status === 'a-faire'));
+});
+
+test('pause et reprise : le pilote respecte la pause, « Reprendre » relance tout de suite', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false });
+  const a = e.createTicket('pp', { title: 'Correctif A', expected: 'x', criteria: ['y'] });
+  const b = e.createTicket('pp', { title: 'Correctif B', expected: 'x', criteria: ['y'] });
+  e.pause(b.id);
+  e.validatePlans('pp', [a.id, b.id]);
+  assert.equal(e.ticket(a.id).status, 'en-cours');
+  assert.match(e.pause(a.id), /pause/);
+  assert.equal(e.ticket(a.id).status, 'a-faire');
+  assert.ok(e.ticket(a.id).paused);
+  assert.equal(e.kickPilot('pp'), ''); // tous les deux en pause : rien ne part
+  assert.match(e.resume(a.id), /démarre/);
+  assert.equal(e.ticket(a.id).status, 'en-cours');
+  assert.match(e.resume(b.id), /attend en tête de file/); // plus de place : il attend sans pause
+  assert.ok(!e.ticket(b.id).paused);
+  assert.throws(() => e.resume(b.id), /pas en pause/);
+});
+
+test('parler à l’agent : à tester = demande de modification (il reprend), en cours = gardé, fini = refusé', () => {
+  const e = fresh();
+  const t = e.createTicket('mm', { title: 'Correctif message', expected: 'x', criteria: ['y'] });
+  e.launch(t.id);
+  const since = e.lastEventId();
+  assert.match(e.message(t.id, 'Ajoute aussi un titre'), /fin de son tour/);
+  assert.deepEqual(e.messagesSince(t.id, since), ['Ajoute aussi un titre']);
+  proveAll(e, t.id);
+  e.agentDone(t.id, OK);
+  assert.equal(e.ticket(t.id).status, 'a-tester');
+  assert.match(e.message(t.id, 'Le titre est trop long'), /reprend sa conversation/);
+  assert.equal(e.ticket(t.id).status, 'en-cours');
+  assert.equal(e.events({ ticket: t.id, limit: 5 }).find((x) => x.type === 'reclamation')?.data.problem, 'Le titre est trop long');
 });
