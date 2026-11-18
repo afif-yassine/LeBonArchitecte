@@ -7,8 +7,10 @@ import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
-import { diffFile, fileAt } from './git.ts';
-import { gitInfo, listDocs, readDoc } from './projectData.ts';
+import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge } from './git.ts';
+import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
+import { runCommand } from './executor.ts';
+import { architectBusy, askArchitect, CDC_PATH, CHOICES_PATH, choicesDoc, readCdc } from './architect.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -26,6 +28,21 @@ app.setErrorHandler((err, _req, reply) => {
   const e = err as Error;
   console.error(e);
   return reply.code(500).send({ message: `Erreur du serveur : ${e.message}` });
+});
+
+// Audit LBA-11, point 8 : le moteur n'obéit qu'à l'interface de ce PC.
+// - Nom d'hôte local seulement (bloque un site qui se ferait passer pour « localhost » : DNS rebinding).
+// - Une page d'un autre site (Origin étranger) ne peut rien demander.
+// - Toute action (POST, PUT) doit être en JSON : un formulaire ou un envoi « texte » d'un autre site est refusé.
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+app.addHook('onRequest', async (req, reply) => {
+  const host = String(req.headers.host ?? '');
+  const origin = req.headers.origin;
+  if (!LOCAL_HOST.test(host) || (origin && !LOCAL_ORIGIN.test(origin))) return reply.code(403).send({ message: 'Refusé : le moteur ne répond qu’à l’interface de ce PC.' });
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !String(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    return reply.code(415).send({ message: 'Refusé : une action doit être envoyée en JSON par l’interface.' });
+  }
 });
 
 type Id = { Params: { id: string } };
@@ -49,7 +66,12 @@ app.get('/api/pilot', async () => engine.pilot());
 app.get('/api/actions', async () => engine.actions());
 app.post<Id & { Body: { label?: string } }>('/api/actions/:id/resolve', async (req) => ({ message: engine.resolveAction(req.params.id, req.body?.label ?? 'Fait') }));
 app.post<Id & { Body: { dir?: -1 | 1 | 'tete' } }>('/api/tickets/:id/priority', async (req) => ({ message: engine.reorder(req.params.id, req.body?.dir ?? 'tete') }));
-app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => engine.setPilot(req.body as never));
+app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
+  const s = engine.setPilot(req.body as never);
+  // Allumer le pilote démarre tout de suite les tickets prêts des vrais projets (pas les démos).
+  if (s.on) for (const p of Object.keys(PROJECT_DIRS)) engine.kickPilot(p);
+  return s;
+});
 
 app.post<Id & { Body: { replace?: string; manual?: boolean; who?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace, manual: req.body?.manual, actor: req.body?.who }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
@@ -95,6 +117,7 @@ app.get<Id & { Querystring: { path?: string; diff?: string } }>('/api/tickets/:i
   return { path, content };
 });
 app.get<Id>('/api/tickets/:id/live', async (req) => engine.liveFeed(req.params.id));
+app.post<Id>('/api/tickets/:id/plan/redo', async (req) => ({ message: engine.replan(req.params.id) }));
 app.post<Id>('/api/tickets/:id/plan/validate', async (req) => ({ message: engine.validatePlan(req.params.id) }));
 app.post<Id & { Body: { text?: string } }>('/api/tickets/:id/message', async (req) => ({ message: engine.message(req.params.id, req.body?.text ?? '') }));
 // Démonstration tant que les adaptateurs ne sont pas branchés (LBA-6, LBA-7) : joue un déroulé sur un projet d'exemple.
@@ -105,9 +128,60 @@ const repoOf = (id: string) => {
   if (!r) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC.');
   return r;
 };
-app.get<Id>('/api/projects/:id/docs', async (req) => listDocs(repoOf(req.params.id)));
-app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => ({ path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') }));
+app.get<Id>('/api/projects/:id/docs', async (req) => {
+  const docs = listDocs(repoOf(req.params.id));
+  const c = choicesDoc(engine, req.params.id);
+  if (c) { const { content: _, ...entry } = c; docs.push(entry); }
+  return docs;
+});
+app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => {
+  if (req.query.path === CHOICES_PATH) return { path: CHOICES_PATH, content: choicesDoc(engine, req.params.id)?.content ?? '' };
+  return { path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') };
+});
+// PDF ouvert directement dans le navigateur (affichage, pas téléchargement).
+const pdf = (reply: { header: (k: string, v: string) => unknown; type: (t: string) => unknown; send: (b: Buffer) => unknown }, body: Buffer, name: string) => {
+  reply.header('Content-Disposition', `inline; filename="${name.replace(/[^\w.-]/g, '_')}"`);
+  reply.type('application/pdf');
+  return reply.send(body);
+};
+app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/raw', async (req, reply) => {
+  const path = req.query.path ?? '';
+  return pdf(reply, readPdf(repoOf(req.params.id), path), path.split('/').pop() ?? 'document.pdf');
+});
+app.get<Id & { Querystring: { path?: string } }>('/api/tickets/:id/raw', async (req, reply) => {
+  const t = engine.ticket(req.params.id);
+  const path = req.query.path ?? '';
+  if (!path.endsWith('.pdf') || !t.realized?.files.some((f) => f.path === path)) throw new Refused('Ce PDF ne fait pas partie de ce que le ticket a réalisé.');
+  const body = fileBytesAt(repoOf(t.projectId), t.id, path);
+  if (!body) throw new Refused(`${path} n’existe plus dans la branche du ticket.`);
+  return pdf(reply, body, path.split('/').pop() ?? 'document.pdf');
+});
+// Git en schéma (point 3) : graphe, détail d'un commit, « Repartir d'ici », annuler un ticket réuni.
+app.get<Id>('/api/projects/:id/graph', async (req) => gitGraph(repoOf(req.params.id)));
+app.get<Id & { Querystring: { hash?: string } }>('/api/projects/:id/commit', async (req) => commitInfo(repoOf(req.params.id), req.query.hash ?? ''));
+app.post<Id & { Body: { hash: string } }>('/api/projects/:id/git/branch', async (req) => ({ message: branchFrom(repoOf(req.params.id), String(req.body?.hash ?? '')) }));
+// Annuler un ticket déjà réuni : un commit d'annulation dans main (jamais d'effacement), puis les tests.
+app.post<Id & { Body: { hash: string } }>('/api/projects/:id/git/revert', async (req) => {
+  const repo = repoOf(req.params.id);
+  const node = gitGraph(repo, 200).nodes.find((n) => n.hash === req.body?.hash);
+  if (!node || node.kind !== 'reunion') throw new Refused('Seule la réunion d’un ticket dans main peut être annulée ici.');
+  assertMainReady(repo);
+  const rev = revertMerge(repo, node.hash);
+  const test = profileOf(req.params.id).commands.test;
+  const r = test ? await runCommand(test, { cwd: repo }) : undefined;
+  return { message: `Réunion ${node.short}${node.ticket ? ` (${node.ticket})` : ''} annulée par le commit ${rev} ; l’historique est gardé.${r ? (r.ok ? ' Tests verts.' : ` Attention, tests rouges : ${r.summary.split('\n')[0]}`) : ''}` };
+});
 app.get<Id>('/api/projects/:id/git', async (req) => gitInfo(repoOf(req.params.id)));
+// Cahier des charges (point 2) : exigences lues dans le cahier, liens avec les tickets, discussion avec l'Architecte.
+app.get<Id>('/api/projects/:id/cdc', async (req) => {
+  const c = readCdc(repoOf(req.params.id));
+  return { title: c.title, intro: c.intro, version: c.version, sections: c.sections, requirements: c.requirements, path: CDC_PATH };
+});
+app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
+app.post<Id & { Body: { mode?: string; question?: string } }>('/api/projects/:id/architect', async (req) => ({ message: askArchitect(engine, req.params.id, repoOf(req.params.id), req.body ?? {}) }));
+app.post<Id & { Body: { review: number; index: number; decision: 'acceptee' | 'refusee' } }>('/api/projects/:id/architect/decide', async (req) =>
+  ({ message: engine.decideProposal(req.params.id, Number(req.body.review), Number(req.body.index), req.body.decision === 'acceptee' ? 'acceptee' : 'refusee') }));
+app.post<Id & { Body: { refs: string[] } }>('/api/tickets/:id/requirements', async (req) => ({ message: engine.linkRequirements(req.params.id, req.body?.refs ?? []) }));
 app.get<Id>('/api/projects/:id/usage', async (req) => engine.usage(req.params.id));
 app.post<Id & { Body: { reportId: string } }>('/api/projects/:id/report', async (req) => ({ tickets: engine.report(req.params.id, req.body.reportId) }));
 

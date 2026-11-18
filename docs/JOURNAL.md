@@ -189,3 +189,21 @@
 - Onglets branchés sur les vraies données du projet, sans IA : Cahier des charges, Documents, Règles (partie 1 du cahier), Git, Réglages > Quotas (tokens mesurés par ticket et par jour).
 - Sur un vrai projet, un onglet pas encore branché le dit au lieu d'afficher du faux (Architecte, Flux, Backlog, Équipe, Santé, Mémoire). Fausses pastilles et faux journal de l'Orchestrateur retirés.
 - Lot 2 : Backlog, Équipe, Santé, Flux, journal du pilote.
+
+## Corrections de l'audit LBA-11 (18 nov. 2026)
+- Plans adaptés à chaque ticket : preuve vérifiable par critère (PDF, schéma, liens, document, tests, compilation), rôle Architecte pour l'architecture. Étapes annoncées en direct par l'agent (« ÉTAPE n : commencée / faite »), cochées seulement après vérification.
+- Incident : un redémarrage du moteur (mes changements) a coupé l'agent LBA-11. Correction : un agent coupé reprend sa propre session Claude (reprise LBA-11 : 2 597 tokens au lieu de tout refaire). Les fichiers lus et les tokens de la partie coupée sont repris du journal de session.
+- Décision 0008 : réunion seulement dans un main propre, tests relancés après la réunion avec annulation par revert, droits précis des agents (plus de node/npx/npm *), contrôles « non vérifié » au lieu de « ok », ticket jamais bloqué en cours, moteur fermé aux pages étrangères (vérifié : 403 et 415).
+- Tests : 29 verts. LBA-11 : 68 711 tokens (Opus), prêt à tester.
+- À vérifier au prochain vrai ticket : que les nouveaux droits suffisent à l'agent (tests, compilation, PDF).
+
+## Cahier des charges réel, point 2 (18 nov. 2026)
+- Onglet Cahier des charges : les 34 exigences (E0 à E20, A1 à A13) lues dans le cahier sans IA ; carte de couverture ; schémas d'architecture et de vie d'un ticket (couleurs du thème) ; exigences en cases cochées seulement par les preuves.
+- Lien ticket → exigences dans le ticket (« E2 » en entier, « E2~ » en partie). Les 14 tickets LBA sont liés. Couverture actuelle : 4 faites, 15 en partie, 1 en cours, 3 prévues, 11 sans ticket.
+- Discussion avec l'Architecte (Opus, effort haut, un appel sans outils, contexte préparé par le programme). Ses propositions deviennent des tickets « à faire » seulement si vous les acceptez. Premier essai, revue complète : 13 334 tokens mesurés, 5 propositions et 9 points à enlever ou reporter.
+- Tests : 29 verts. Écran vérifié dans le navigateur.
+
+## Git en schéma, point 3 (18 nov. 2026)
+- Onglet Git : main et une colonne par branche de ticket, départs et réunions dessinés, annulations en rouge, point « changements pas encore enregistrés ». Légende des branches : réunie, en travail, pas réunie.
+- Clic sur un point : message, fichiers changés (pour une réunion : ce que le ticket a apporté). « Repartir d'ici » crée une branche reprise/<commit> sans toucher main. « Annuler ce ticket dans main » ajoute un commit d'annulation (main propre exigé), puis relance les tests. Confirmation dans la page, jamais de boîte du navigateur.
+- Tests : 30 verts (dont un dépôt jetable : schéma, reprise, annulation). Écran vérifié dans le navigateur.

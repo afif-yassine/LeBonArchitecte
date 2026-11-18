@@ -256,12 +256,72 @@ test('worktree par ticket : travail isolé, réunion après tests, node_modules 
   assert.ok(g.commitWorktree(wt, 'T-1 : readme'));
   assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), '# test\n', 'main pas touché avant la réunion');
   assert.deepEqual(g.changedFiles(repo, 'T-1').map((f) => f.path), ['README.md']);
+
+  // Audit LBA-11, point 1 : jamais de réunion hors de main, ni avec des changements non enregistrés.
+  git('checkout', '-q', '-b', 'autre');
+  assert.throws(() => g.mergeTicket(repo, 'T-1', 'readme'), /branche « autre »/);
+  assert.deepEqual(g.changedFiles(repo, 'T-1').map((f) => f.path), ['README.md'], 'comparé à main, pas à la branche ouverte');
+  git('checkout', '-q', 'main');
+  writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.lba/\n# modifié\n');
+  assert.throws(() => g.mergeTicket(repo, 'T-1', 'readme'), /pas enregistré/);
+  git('checkout', '--', '.gitignore');
+
   const m = g.mergeTicket(repo, 'T-1', 'readme');
   assert.ok(m.before && m.merge && m.before !== m.merge);
   assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /Ajout du ticket/);
+
+  // Audit LBA-11, point 2 : une réunion se défait par un commit d'annulation, sans rien effacer.
+  const rev = g.revertMerge(repo, m.merge);
+  assert.equal(readFileSync(join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# test\n', 'main revenu à son état d’avant');
+  assert.match(execFileSync('git', ['log', '--format=%h', '-3'], { cwd: repo, encoding: 'utf8' }), new RegExp(m.merge), 'la réunion reste dans l’historique');
+  assert.ok(rev);
+
   g.removeWorktree(repo, 'T-1');
   assert.ok(!existsSync(wt), 'espace supprimé');
   assert.ok(existsSync(join(repo, 'node_modules', 'pkg', 'keep.txt')), 'node_modules d’origine intact');
+});
+
+test('Git en schéma : main, branche du ticket, réunion ; « Repartir d’ici » ne touche pas main', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync } = await import('node:fs');
+  const g = await import('./git.ts');
+  const pd = await import('./projectData.ts');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-graph-'));
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'test'); git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(repo, '.gitignore'), '.lba/\n'); writeFileSync(join(repo, 'a.txt'), 'a\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'départ');
+  const wt = g.ensureWorktree(repo, 'T-1');
+  writeFileSync(join(wt, 'b.txt'), 'b\n'); g.commitWorktree(wt, 'T-1 : ajout de b');
+  const m = g.mergeTicket(repo, 'T-1', 'ajout de b');
+  const graph = pd.gitGraph(repo);
+  assert.deepEqual(graph.lanes.map((l) => [l.ticket, l.merged]), [['T-1', true]]);
+  assert.equal(graph.nodes.find((n) => n.kind === 'reunion')?.ticket, 'T-1');
+  assert.equal(graph.nodes.find((n) => n.kind === 'branche')?.lane, 1);
+  assert.deepEqual(pd.commitInfo(repo, git('rev-parse', 'HEAD')).files.map((f) => f.path), ['b.txt'], 'une réunion montre ce que le ticket a apporté');
+  const first = graph.nodes.find((n) => n.subject === 'départ')!.hash;
+  const headBefore = git('rev-parse', 'main');
+  assert.match(pd.branchFrom(repo, first), /reprise\//);
+  assert.equal(git('rev-parse', 'main'), headBefore, 'main n’a pas bougé');
+  assert.equal(git('rev-parse', `reprise/${first.slice(0, 7)}`), first);
+  assert.throws(() => pd.branchFrom(repo, 'pas-un-hash; rm -rf /'), /invalide/);
+  g.revertMerge(repo, m.merge);
+  assert.ok(pd.gitGraph(repo).nodes.some((n) => n.kind === 'annulation'), 'l’annulation apparaît dans le schéma');
+  g.removeWorktree(repo, 'T-1');
+});
+
+test('interdits : un push ou une réunion déguisés sont refusés (audit LBA-11, point 3)', () => {
+  for (const c of ['git -C . push', 'git -c user.name=x push origin main', 'git --no-pager merge x', 'git push']) assert.throws(() => checkCommand(c), /refusée/, c);
+  assert.doesNotThrow(() => checkCommand('git status'));
+  assert.doesNotThrow(() => checkCommand('npm test'));
+});
+
+test('définition de fini : « non vérifié » est dit clairement mais ne bloque pas ; un échec bloque', () => {
+  const e = fresh();
+  proveAll(e, 'T-12');
+  const unknown = { ...OK, checks: { ...OK.checks, 'Aucune nouvelle faille': 'non-verifie' as const, 'Documentation à jour': 'non-verifie' as const } };
+  assert.match(e.agentDone('T-12', unknown), /prêt à tester/);
+  assert.equal(e.ticket('T-12').done.find((d) => d.label === 'Aucune nouvelle faille')?.state, 'non-verifie');
 });
 
 test('création d’un ticket : plan proposé, à valider', () => {
@@ -308,6 +368,17 @@ test('recherche : rôle Éclaireur, mode agent (web), pas d’étape de tests ; 
   assert.ok(!isResearch(e.ticket('LBA-6')));
 });
 
+test('plan : chaque critère reçoit une preuve qui lui correspond, et le bon rôle', () => {
+  const e = fresh();
+  const a = e.createTicket('lba', { title: 'Audit de l’architecture de LBA', expected: 'Un rapport', criteria: ['Tests du projet lancés et résultat noté', 'Un schéma SVG de l’architecture', 'PDF créé avec npm run pdf', 'Points faibles classés par gravité'] });
+  assert.ok(a.steps.every((s) => s.role === 'architecte'));
+  assert.deepEqual(a.steps.slice(1).map((s) => s.proof.check ?? s.proof.kind), ['tests', 'svg', 'pdf', 'md']);
+  assert.ok(!a.steps.some((s) => s.label === 'Écrire et faire passer les tests'), 'un document n’écrit pas de tests en plus');
+  const code = e.createTicket('lba', { title: 'Ajouter le filtre par jour', expected: 'Filtre', criteria: ['Le filtre garde le choix'] });
+  assert.equal(code.steps[1].proof.kind, 'commande');
+  assert.ok(code.steps.some((s) => s.proof.kind === 'tests'));
+});
+
 test('réclamation : toutes les preuves sont à refaire', () => {
   const e = fresh();
   proveAll(e, 'T-12');
@@ -325,4 +396,27 @@ test('LBA-11 : le rapport d’audit a son schéma, ses trois gravités, et chaqu
   assert.ok(cited.length >= 5);
   for (const f of cited) assert.ok(existsSync(join(root, f)), `${f} existe`);
   assert.ok(existsSync(join(root, 'docs/rapports/cadrage-audit.pdf')), 'PDF créé');
+});
+
+test('validation : la 1re ligne de git status (rognée) garde son chemin entier ; .lba/ ne bloque pas la réunion', async () => {
+  const { statusPaths } = await import('./git.ts');
+  assert.deepEqual(statusPaths('M .lba/projet.yaml\n M src/a.ts\n?? docs/x.md\nR  old.ts -> new.ts'), ['.lba/projet.yaml', 'src/a.ts', 'docs/x.md', 'new.ts']);
+});
+
+test('pilote : un plan validé démarre tout de suite si une place est libre ; pilote arrêté, il attend', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false });
+  const t = e.createTicket('zz', { title: 'Petit correctif du formulaire', expected: 'Le formulaire marche', criteria: ['Formulaire envoyé'] });
+  assert.match(e.validatePlan(t.id), /Pilote automatique : /);
+  assert.equal(e.ticket(t.id).status, 'en-cours');
+  const u = e.createTicket('zz', { title: 'Autre correctif', expected: 'x', criteria: ['y'] });
+  assert.match(e.validatePlan(u.id), /dès qu’une place se libère/);
+  assert.equal(e.ticket(u.id).status, 'a-faire');
+  e.setPilot({ on: false });
+  const v = e.createTicket('yy', { title: 'Encore un correctif', expected: 'x', criteria: ['y'] });
+  e.validatePlan(v.id);
+  assert.equal(e.ticket(v.id).status, 'a-faire');
+  e.setPilot({ on: true });
+  assert.match(e.kickPilot('yy'), /yy|Pilote automatique/);
+  assert.equal(e.ticket(v.id).status, 'en-cours');
 });

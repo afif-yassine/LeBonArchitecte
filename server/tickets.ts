@@ -27,8 +27,9 @@ export function assertMove(t: Ticket, to: TicketStatus): void {
 export type EventType =
   | 'ticket-cree' | 'ticket-lance' | 'ticket-arrete' | 'agent-termine' | 'ticket-a-tester'
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
-  | 'plan-valide' | 'etape-commencee' | 'etape-annoncee' | 'direct'
-  | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni';
+  | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
+  | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee';
 
 export interface EngineEvent {
   id?: number;
@@ -56,7 +57,7 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return {
         ...t,
         criteria: e.data.criteriaOk ? t.criteria.map((c) => ({ ...c, done: true })) : t.criteria,
-        done: t.done.map((d) => ({ ...d, state: (e.data.checks as Record<string, 'ok' | 'echec'> | undefined)?.[d.label] ?? d.state })),
+        done: t.done.map((d) => ({ ...d, state: (e.data.checks as Record<string, 'ok' | 'echec' | 'non-verifie'> | undefined)?.[d.label] ?? d.state })),
       };
     case 'ticket-a-tester':
       return { ...t, status: 'a-tester', needAction: undefined };
@@ -77,6 +78,12 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, priority: Number(e.data.priority) };
     case 'plan-valide':
       return { ...t, planOk: true, steps: (e.data.steps as TicketStep[] | undefined) ?? t.steps };
+    case 'exigences-liees':
+      // Exigences du cahier couvertes par ce ticket : « E2 » en entier, « E2~ » en partie.
+      return { ...t, description: { ...t.description, cdcRefs: e.data.refs as string[] } };
+    case 'plan-refait':
+      // Nouveau plan écrit par les règles (ou l'Architecte) : la validation déjà donnée reste.
+      return { ...t, steps: e.data.steps as TicketStep[] };
     case 'etape-commencee':
       return { ...t, steps: t.steps.map((s) => (s.id === e.data.step && s.state !== 'prouve' ? { ...s, state: 'en-cours' } : s)) };
     case 'etape-annoncee':

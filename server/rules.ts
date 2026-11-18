@@ -9,7 +9,8 @@ export function checkDone(t: Ticket): { ok: boolean; missing: string[] } {
   const missing = [
     ...t.criteria.filter((c) => !c.done).map((c) => `critère « ${c.text} »`),
     ...(t.steps ?? []).filter((s) => s.state !== 'prouve').map((s) => `étape « ${s.label} » non prouvée`),
-    ...t.done.filter((d) => d.state !== 'ok').map((d) => d.label.toLowerCase()),
+    // « non vérifié » ne bloque pas : c'est dit clairement et regardé à la recette.
+    ...t.done.filter((d) => d.state === 'echec' || d.state === 'attente').map((d) => d.label.toLowerCase()),
   ];
   return { ok: missing.length === 0, missing };
 }

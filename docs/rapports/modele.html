@@ -1,63 +1,77 @@
 <!doctype html>
-<!-- Modèle de rapport Le Bon Architecte. Copier, remplir, puis : npm run pdf -- docs/rapports/<nom>.html -->
+<!-- Modèle de rapport Le Bon Architecte. Le plus simple : écrire le rapport en Markdown (.md),
+     puis npm run pdf -- docs/rapports/<nom>.md (page de garde, sommaire et numéros de page faits par le programme).
+     Ce fichier garde le style commun de tous les rapports PDF. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <title>Titre du rapport</title>
 <style>
-  @page { size: A4; margin: 18mm 16mm 20mm; }
-  :root { --ink: #1d2433; --soft: #5b6475; --line: #d5d9e0; --accent: #2f5d8a; --ok: #2e7d4f; --ko: #b3412e; --wait: #a66a00; }
-  body { font: 10.5pt/1.55 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fff; margin: 0; }
-  h1 { font: 600 24pt/1.15 Georgia, serif; margin: 0 0 6pt; }
-  h2 { font: 600 14pt/1.25 Georgia, serif; margin: 22pt 0 6pt; padding-top: 6pt; border-top: 1px solid var(--line); break-after: avoid; }
-  h3 { font-size: 11pt; margin: 14pt 0 4pt; break-after: avoid; }
+  @page { size: A4; margin: 20mm 18mm 22mm;
+    @bottom-left { content: "Le Bon Architecte"; font: 8pt "Segoe UI", sans-serif; color: #7a8394; }
+    @bottom-right { content: counter(page) " / " counter(pages); font: 8pt "Segoe UI", sans-serif; color: #7a8394; } }
+  @page cover { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+  :root { --ink: #16202e; --soft: #5d6778; --faint: #8a93a3; --line: #dfe3ea; --tint: #f4f6f9; --accent: #1f4e79; --accent-2: #3b7cb8; --ok: #2b7a4b; --ko: #b23a2a; --wait: #9a6400; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font: 10pt/1.6 "Segoe UI", "Segoe UI Variable Text", system-ui, sans-serif; color: var(--ink); background: #fff; margin: 0; }
+  h1, h2, h3, .cover__title { font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.01em; }
+
+  .cover { page: cover; height: 297mm; padding: 0; position: relative; break-after: page; display: grid; grid-template-columns: 14mm 1fr; }
+  .cover__band { background: var(--accent); }
+  .cover__in { padding: 34mm 22mm 24mm 18mm; display: flex; flex-direction: column; }
+  .cover__brand { font-size: 10pt; font-weight: 600; color: var(--accent); margin: 0; }
+  .cover__kind { font-size: 9.5pt; color: var(--soft); margin: 2pt 0 0; }
+  .cover__title { font-size: 30pt; line-height: 1.12; font-weight: 600; margin: 70mm 0 10pt; color: var(--ink); max-width: 150mm; }
+  .cover__meta { font-size: 10pt; color: var(--soft); margin: 0; }
+  .cover__sum { margin-top: auto; border-top: 2pt solid var(--accent); padding-top: 10pt; font-size: 10.5pt; line-height: 1.55; max-width: 155mm; }
+  .cover__sum b { display: block; font-size: 9pt; color: var(--accent); margin-bottom: 4pt; }
+
+  .toc { break-after: page; }
+  .toc h2 { border: 0; margin-top: 0; }
+  .toc ol { list-style: none; padding: 0; margin: 0; counter-reset: t; }
+  .toc li { counter-increment: t; display: flex; gap: 10pt; padding: 7pt 0; border-bottom: 1px solid var(--line); font-size: 10.5pt; }
+  .toc li::before { content: counter(t); color: var(--accent); font-weight: 600; width: 14pt; }
+  .toc a { color: var(--ink); text-decoration: none; }
+
+  h1 { font-size: 22pt; line-height: 1.15; font-weight: 600; margin: 0 0 6pt; }
+  h2 { font-size: 15pt; line-height: 1.25; font-weight: 600; color: var(--accent); margin: 24pt 0 8pt; padding-bottom: 5pt; border-bottom: 1px solid var(--line); break-after: avoid; }
+  h3 { font-size: 11.5pt; font-weight: 600; margin: 16pt 0 5pt; break-after: avoid; }
+  h4 { font-size: 10pt; font-weight: 600; margin: 12pt 0 4pt; color: var(--soft); }
+  p { margin: 0 0 7pt; orphans: 3; widows: 3; }
   p, li { max-width: 165mm; }
-  .meta { color: var(--soft); margin-bottom: 18pt; }
-  .resume { border-left: 3px solid var(--accent); padding: 6pt 12pt; background: #f3f6fa; }
-  table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9.5pt; break-inside: avoid; }
-  th, td { text-align: left; vertical-align: top; padding: 5pt 6pt; border-bottom: 1px solid var(--line); }
-  th { background: #f3f6fa; }
-  .ok { color: var(--ok); } .ko { color: var(--ko); } .wait { color: var(--wait); }
-  figure { margin: 10pt 0; break-inside: avoid; } figcaption { color: var(--soft); font-size: 9pt; }
-  svg text { font: 9pt "Segoe UI", sans-serif; fill: var(--ink); }
-  .sources li { font-size: 9pt; color: var(--soft); }
+  ul, ol { margin: 0 0 9pt; padding-left: 15pt; } li { margin: 2.5pt 0; } li::marker { color: var(--accent-2); }
+  a { color: var(--accent-2); text-decoration: none; }
+  strong { font-weight: 600; }
+  code { font-family: "Cascadia Code", Consolas, monospace; font-size: 8.6pt; background: var(--tint); border: 1px solid var(--line); border-radius: 3px; padding: 0 3pt; }
+  pre { font: 8.6pt/1.5 "Cascadia Code", Consolas, monospace; background: var(--tint); border: 1px solid var(--line); border-radius: 4px; padding: 8pt 10pt; white-space: pre-wrap; break-inside: avoid; }
+  .meta { color: var(--soft); margin-bottom: 16pt; }
+  .resume, blockquote { margin: 4pt 0 12pt; padding: 9pt 12pt; border-left: 3pt solid var(--accent); background: var(--tint); border-radius: 0 4px 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt; font-size: 9pt; break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; vertical-align: bottom; padding: 6pt 7pt; background: var(--accent); color: #fff; font-weight: 600; }
+  td { text-align: left; vertical-align: top; padding: 6pt 7pt; border-bottom: 1px solid var(--line); }
+  tbody tr:nth-child(even) td { background: var(--tint); }
+  .ok { color: var(--ok); font-weight: 600; } .ko { color: var(--ko); font-weight: 600; } .wait { color: var(--wait); font-weight: 600; }
+  figure { margin: 8pt 0 14pt; padding: 10pt; border: 1px solid var(--line); border-radius: 4px; break-inside: avoid; text-align: center; }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--soft); font-size: 8.5pt; margin-top: 6pt; }
+  svg text { font-family: "Segoe UI", sans-serif; }
+  .check { list-style: none; padding-left: 0; } .check li::before { content: "☐"; color: var(--soft); margin-right: 6pt; } .check li.on::before { content: "☑"; color: var(--ok); }
+  .sources li, .sources p { font-size: 8.5pt; color: var(--soft); }
 </style>
 </head>
 <body>
 <h1>Titre du rapport</h1>
-<p class="meta">Le Bon Architecte · ticket LBA-X · date · écrit par l’agent …</p>
-
-<p class="resume"><strong>En bref :</strong> trois phrases simples. Ce qu’on a cherché, ce qu’on a trouvé, ce qu’on recommande.</p>
-
+<p class="meta">Le Bon Architecte, ticket LBA-X, date, écrit par l’agent …</p>
+<blockquote><strong>En bref :</strong> trois phrases simples. Ce qu’on a cherché, ce qu’on a trouvé, ce qu’on recommande.</blockquote>
 <h2>1. Contexte</h2>
 <p>Pourquoi cette question se pose.</p>
-
-<h2>2. Schéma</h2>
-<figure>
-  <!-- Schémas en SVG directement dans la page : boîtes, flèches, légendes. -->
-  <svg viewBox="0 0 520 110" width="100%" role="img" aria-label="Exemple : propriétaire, moteur, agent">
-    <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2f5d8a"/></marker></defs>
-    <rect x="10" y="30" width="130" height="50" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="75" y="60" text-anchor="middle">Propriétaire</text>
-    <rect x="195" y="30" width="130" height="50" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="260" y="60" text-anchor="middle">Moteur LBA</text>
-    <rect x="380" y="30" width="130" height="50" rx="6" fill="#f3f6fa" stroke="#2f5d8a"/><text x="445" y="60" text-anchor="middle">Agent</text>
-    <line x1="140" y1="55" x2="193" y2="55" stroke="#2f5d8a" marker-end="url(#f)"/>
-    <line x1="325" y1="55" x2="378" y2="55" stroke="#2f5d8a" marker-end="url(#f)"/>
-  </svg>
-  <figcaption>Figure 1 — légende courte.</figcaption>
-</figure>
-
-<h2>3. Scénarios comparés</h2>
-<table>
-  <tr><th>Scénario</th><th>Avantages</th><th>Risques</th><th>Coût (tokens)</th><th>Avis</th></tr>
-  <tr><td>A</td><td>…</td><td>…</td><td>…</td><td class="ok">Recommandé</td></tr>
-  <tr><td>B</td><td>…</td><td>…</td><td>…</td><td class="wait">Possible</td></tr>
-  <tr><td>C</td><td>…</td><td>…</td><td>…</td><td class="ko">Déconseillé</td></tr>
-</table>
-
-<h2>4. Meilleure stratégie</h2>
-<p>Ce qu’on fait, dans quel ordre, et ce que ça coûte.</p>
-
+<h2>2. Scénarios comparés</h2>
+<table><thead><tr><th>Scénario</th><th>Avantages</th><th>Risques</th><th>Coût</th><th>Avis</th></tr></thead>
+<tbody><tr><td>A</td><td>…</td><td>…</td><td>…</td><td class="ok">Recommandé</td></tr><tr><td>B</td><td>…</td><td>…</td><td>…</td><td class="wait">Possible</td></tr></tbody></table>
 <h2>Sources</h2>
-<ol class="sources"><li>Titre — lien — date de consultation</li></ol>
+<ol class="sources"><li>Titre, lien, date de consultation</li></ol>
 </body>
 </html>

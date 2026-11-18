@@ -18,7 +18,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   type Profile = { scannedAt: string; files: number; languages: { name: string; files: number }[]; frameworks: string[]; commands: Record<string, string | undefined>; sensitive: string[]; git: { branch?: string; remote?: string } };
   const [profile, setProfile] = useState<Profile | null>(null);
   const [scanErr, setScanErr] = useState('');
-  const load = (fresh: boolean) => fetch(`/api/projects/${projectId}/${fresh ? 'scan' : 'profile'}`, { method: fresh ? 'POST' : 'GET' })
+  const load = (fresh: boolean) => fetch(`/api/projects/${projectId}/${fresh ? 'scan' : 'profile'}`, fresh ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' } : undefined)
     .then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.message); setProfile(fresh ? j.profile : j); setScanErr(''); if (fresh) notify(j.message); })
     .catch((e: Error) => { setProfile(null); setScanErr(e.message); });
   useEffect(() => { load(false); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps

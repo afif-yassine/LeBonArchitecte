@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useStore } from '../store';
-import { Markdown } from '../components/FileViewer';
+import { headings, Markdown } from '../components/Markdown';
 import { fmtTokens } from '../components/ui';
 
 interface DocEntry { path: string; title: string; size: number; at: string }
@@ -19,7 +19,7 @@ interface Usage {
 }
 
 // Relit à chaque changement du moteur (rev) : l'écran suit le travail sans actualiser.
-function useApi<T>(path: string): { data?: T; error?: string } {
+export function useApi<T>(path: string) /* partagé avec le cahier des charges */: { data?: T; error?: string } {
   const { rev } = useStore();
   const [s, setS] = useState<{ data?: T; error?: string }>({});
   useEffect(() => {
@@ -38,38 +38,115 @@ const day = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'n
 const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const Wait = ({ error }: { error?: string }) => <p className={error ? 'small' : 'faint small'}>{error ?? 'Lecture…'}</p>;
 
-function DocReader({ projectId, path }: { projectId: string; path: string }) {
-  const { data, error } = useApi<{ content: string }>(`/projects/${projectId}/doc?path=${encodeURIComponent(path)}`);
-  return data ? <Markdown text={data.content} /> : <Wait error={error} />;
+// ---------- Bibliothèque de documents ----------
+const GROUPS: { id: string; label: string; test: (p: string) => boolean }[] = [
+  { id: 'cdc', label: 'Cahier des charges', test: (p) => p.startsWith('docs/cahier-des-charges/') },
+  { id: 'dec', label: 'Décisions', test: (p) => p.startsWith('docs/decisions/') },
+  { id: 'rap', label: 'Rapports', test: (p) => p.startsWith('docs/rapports/') },
+  { id: 'rec', label: 'Recherches', test: (p) => p.startsWith('docs/recherche/') },
+  { id: 'jou', label: 'Journal', test: (p) => /JOURNAL\.md$/i.test(p) },
+  { id: 'aut', label: 'Autres', test: () => true },
+];
+
+interface Item { key: string; title: string; md?: DocEntry; pdf?: DocEntry; at: string; group: string }
+
+// Un document = son texte (.md) et, s'il existe, son PDF du même nom.
+function itemsOf(docs: DocEntry[]): Item[] {
+  const by = new Map<string, Item>();
+  for (const d of docs) {
+    const key = d.path.replace(/\.(md|pdf)$/, '');
+    const it = by.get(key) ?? { key, title: '', at: d.at, group: GROUPS.find((g) => g.test(d.path))!.id };
+    if (d.path.endsWith('.pdf')) it.pdf = d; else { it.md = d; it.title = d.title; }
+    if (!it.title) it.title = key.split('/').pop()!.replace(/^\d+-/, '').replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    if (d.at > it.at) it.at = d.at;
+    by.set(key, it);
+  }
+  return [...by.values()];
 }
 
-export function RealDocs({ projectId, title, lead, prefix }: { projectId: string; title: string; lead: string; prefix?: string }) {
-  const { data, error } = useApi<DocEntry[]>(`/projects/${projectId}/docs`);
-  const docs = (data ?? []).filter((d) => !prefix || d.path.startsWith(prefix));
-  const [open, setOpen] = useState<string | null>(null);
-  const cur = open ?? docs.find((d) => d.path.endsWith('.md'))?.path ?? null;
+const pdfUrl = (projectId: string, path: string) => `/api/projects/${projectId}/raw?path=${encodeURIComponent(path)}`;
+const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
+
+function DocPage({ projectId, item, onLink }: { projectId: string; item: Item; onLink: (href: string) => void }) {
+  const { data, error } = useApi<{ content: string }>(item.md ? `/projects/${projectId}/doc?path=${encodeURIComponent(item.md.path)}` : '/health');
+  const body = item.md && data?.content ? data.content.replace(/^\s*# .+\r?\n/, '') : '';
+  const toc = headings(body).filter((h) => h.level === 2);
+  const minutes = Math.max(1, Math.round(body.split(/\s+/).length / 220));
+  const group = GROUPS.find((g) => g.id === item.group)!.label;
   return (
-    <div className="page">
+    <article className="doc" aria-labelledby="doc-title">
+      <header className="doc__head">
+        <p className="doc__kind">{group}</p>
+        <h2 id="doc-title" className="doc__title">{item.title}</h2>
+        <div className="doc__meta">
+          <span>Mis à jour le {day(item.at)}</span>
+          {item.md && <span>{minutes} min de lecture</span>}
+          <span className="mono">{(item.md ?? item.pdf)!.path}</span>
+        </div>
+        {item.pdf && (
+          <a className="btn btn--sm doc__pdf" href={pdfUrl(projectId, item.pdf.path)} target="_blank" rel="noopener">
+            <FileText size={14} aria-hidden="true" /> Ouvrir le PDF <span className="faint">{size(item.pdf.size)}</span>
+          </a>
+        )}
+      </header>
+      {!item.md ? (
+        <p className="muted doc__nomd">Ce rapport existe seulement en PDF. Il s’ouvre dans un nouvel onglet du navigateur.</p>
+      ) : !data ? <Wait error={error} /> : (
+        <div className={`doc__body ${toc.length >= 3 ? 'has-toc' : ''}`}>
+          <Markdown text={body} onLink={onLink} />
+          {toc.length >= 3 && (
+            <nav className="doc__toc" aria-label="Sommaire">
+              <p className="doc__toclabel">Sommaire</p>
+              <ol>{toc.map((h) => <li key={h.id}><a href={`#${h.id}`} onClick={(e) => { e.preventDefault(); document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{h.text}</a></li>)}</ol>
+            </nav>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+export function RealDocs({ projectId, title, lead, prefix, exclude }: { projectId: string; title: string; lead: string; prefix?: string; exclude?: string }) {
+  const { data, error } = useApi<DocEntry[]>(`/projects/${projectId}/docs`);
+  // Une information = un seul endroit : pas de fichier sommaire (README) ni de doublon d'un autre onglet.
+  const items = itemsOf((data ?? []).filter((d) => (!prefix || d.path.startsWith(prefix)) && (!exclude || !d.path.startsWith(exclude)) && !/\/README\.md$/i.test(d.path)));
+  const [open, setOpen] = useState<string | null>(null);
+  const cur = items.find((i) => i.key === open) ?? items.find((i) => i.md) ?? items[0];
+  // Lien entre documents (ex. « voir la décision 0003 ») : on l'ouvre ici.
+  const onLink = (href: string) => {
+    const k = href.replace(/^\.?\//, '').replace(/\.(md|pdf)$/, '');
+    const hit = items.find((i) => i.key.endsWith(k.replace(/^(\.\.\/)+/, '')));
+    if (hit) setOpen(hit.key);
+  };
+  const pick = (it: Item) => (it.md ? setOpen(it.key) : window.open(pdfUrl(projectId, it.pdf!.path), '_blank', 'noopener'));
+  return (
+    <div className="page page--lib">
       <h1>{title}</h1>
       <p className="lead">{lead}</p>
-      {!data ? <Wait error={error} /> : docs.length === 0 ? <p className="muted">Aucun document ici pour l’instant.</p> : (
-        <div style={{ marginTop: 18 }}>
-          <ul className="files" aria-label="Documents">
-            {docs.map((d) => (
-              <li key={d.path}>
-                {d.path.endsWith('.pdf')
-                  ? <span className="fileopen" title="PDF : à ouvrir sur votre PC"><FileText size={14} aria-hidden="true" /><span className="mono">{d.path}</span></span>
-                  : <button className={`fileopen ${cur === d.path ? 'is-open' : ''}`} onClick={() => setOpen(d.path)} aria-pressed={cur === d.path}><FileText size={14} aria-hidden="true" /><span className="mono">{d.title}</span></button>}
-                <span className="faint xsmall" style={{ marginLeft: 'auto' }}>{d.path.endsWith('.pdf') ? 'PDF, ' : ''}{day(d.at)}</span>
-              </li>
-            ))}
-          </ul>
-          {cur && (
-            <div className="fileview">
-              <div className="fileview__head"><span className="mono small">{cur}</span></div>
-              <div className="fileview__body"><DocReader projectId={projectId} path={cur} /></div>
-            </div>
-          )}
+      {!data ? <Wait error={error} /> : items.length === 0 ? <p className="muted">Aucun document ici pour l’instant.</p> : (
+        <div className="lib">
+          <nav className="lib__nav" aria-label="Documents">
+            {GROUPS.map((g) => {
+              const list = items.filter((i) => i.group === g.id).sort((a, b) => (g.id === 'rap' || g.id === 'rec' ? b.at.localeCompare(a.at) : a.key.localeCompare(b.key)));
+              if (!list.length) return null;
+              return (
+                <section key={g.id} className="lib__group">
+                  <h3>{g.label} <span className="faint">{list.length}</span></h3>
+                  <ul>
+                    {list.map((it) => (
+                      <li key={it.key}>
+                        <button className={`lib__item ${cur?.key === it.key ? 'is-on' : ''}`} onClick={() => pick(it)} aria-current={cur?.key === it.key ? 'page' : undefined}>
+                          <span className="lib__title">{it.title}</span>
+                          <span className="lib__sub">{day(it.at)}{it.pdf && <span className="lib__pdf">PDF</span>}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </nav>
+          {cur && <DocPage key={cur.key} projectId={projectId} item={cur} onLink={onLink} />}
         </div>
       )}
     </div>

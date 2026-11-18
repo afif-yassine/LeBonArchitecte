@@ -1,0 +1,60 @@
+/* Git en schéma (point 3). Couleurs : main = accent ; branches de tickets = 4 teintes du thème. */
+.lane-0 { --lane: var(--accent); }
+.lane-1 { --lane: var(--ok); }
+.lane-2 { --lane: var(--wait); }
+.lane-3 { --lane: var(--sec, var(--danger)); }
+.lane-4 { --lane: var(--danger); }
+
+.gl { list-style: none; margin: 18px 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .86rem; }
+.gl li { display: flex; align-items: center; gap: 7px; }
+.gl__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--lane); }
+.gl__t { border: 0; background: none; padding: 0; font: inherit; font-weight: 650; color: var(--text-strong); cursor: pointer; }
+.gl__t:hover { color: var(--accent); }
+
+.gg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.gg.has-detail { grid-template-columns: minmax(0, 1fr) 360px; }
+.gg__scroll { border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--surface); overflow: auto; max-height: calc(100vh - 260px); }
+.gg__graph { position: relative; min-width: 560px; }
+.gg__svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.gg__line { fill: none; stroke: var(--lane); stroke-width: 2; opacity: .85; }
+.gg__dot { fill: var(--surface); stroke: var(--lane); stroke-width: 2.4; }
+.gg__dot.is-main { fill: var(--lane); }
+.gg__dot.is-reunion { fill: var(--surface); stroke-width: 3; }
+.gg__dot.is-annulation { stroke: var(--danger); fill: var(--danger-soft); }
+.gg__dot.is-sel { stroke-width: 4; r: 7; }
+.gg__dirty { fill: none; stroke: var(--wait); stroke-width: 2; stroke-dasharray: 3 3; }
+.gg__rows { list-style: none; margin: 0; padding-right: 10px; position: relative; }
+.gg__rows li { height: 44px; }
+.gg__row { height: 44px; width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: none; text-align: left; padding: 0 8px; border-radius: var(--r-m); color: var(--text); cursor: pointer; font: inherit; }
+.gg__row:hover { background: var(--sunken); }
+.gg__row.is-sel { background: var(--accent-soft); }
+.gg__row.is-dirty { cursor: default; color: var(--wait); font-style: italic; }
+.gg__ico { flex: none; color: var(--muted); }
+.gg__ico.is-danger { color: var(--danger); }
+.gg__subj { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; }
+.gg__tk { flex: none; font-size: .74rem; font-weight: 650; padding: 1px 7px; border-radius: 7px; background: var(--sunken); border: 1px solid var(--line); }
+.gg__hash { flex: none; font-family: var(--mono); font-size: .76rem; color: var(--faint); }
+.gg__at { flex: none; width: 104px; text-align: right; font-size: .76rem; color: var(--faint); }
+
+.gd { border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--surface); padding: 16px 18px; position: sticky; top: 16px; max-height: calc(100vh - 140px); overflow: auto; }
+.gd__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.gd__kind { font-size: .76rem; font-weight: 650; padding: 2px 8px; border-radius: 8px; background: var(--sunken); color: var(--muted); }
+.gd__kind.is-reunion { background: var(--ok-soft); color: var(--ok); }
+.gd__kind.is-branche { background: var(--accent-soft); color: var(--accent); }
+.gd__kind.is-annulation { background: var(--danger-soft); color: var(--danger); }
+.gd__title { margin: 0 0 6px; font-size: 1.02rem; line-height: 1.35; color: var(--text-strong); }
+.gd__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: .8rem; color: var(--faint); margin: 0 0 10px; }
+.gd__body { white-space: pre-wrap; font-size: .86rem; color: var(--muted); margin: 0 0 10px; }
+.gd__h { margin: 12px 0 6px; font-size: .84rem; color: var(--muted); }
+.gd__files { list-style: none; margin: 0; padding: 0; font-size: .8rem; }
+.gd__files li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.gd__files .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.gd__confirm { width: 100%; font-size: .86rem; }
+.gd__confirm p { margin: 0 0 8px; }
+.gd__confirm.is-danger p { color: var(--text-strong); }
+.gd__danger { background: var(--danger); border-color: var(--danger); color: var(--bg); }
+@media (max-width: 1100px) {
+  .gg.has-detail { grid-template-columns: minmax(0, 1fr); }
+  .gd { position: static; max-height: none; }
+}

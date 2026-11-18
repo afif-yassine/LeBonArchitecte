@@ -427,6 +427,7 @@ h3 { font-size: 1rem; font-weight: 600; margin: 0; color: var(--text-strong); le
 .check.is-ok .check__mark { background: var(--ok); border-color: var(--ok); color: var(--bg); }
 .check.is-ok > span:last-child { color: var(--muted); }
 .check.is-fail .check__mark { border-color: var(--danger); color: var(--danger); }
+.check.is-unknown .check__mark { border-color: var(--wait); color: var(--wait); font-size: .7rem; font-weight: 700; }
 .lockfile { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: .8rem; color: var(--text); padding: 2px 0; }
 .lockfile svg { color: var(--faint); flex: none; }
 .tk__actions { display: flex; flex-direction: column; gap: 6px; margin-top: 22px; }
@@ -988,14 +989,77 @@ select:hover, .input:hover { border-color: var(--faint); }
 .md { max-width: 72ch; line-height: 1.65; color: var(--text); }
 .md p { margin: 0 0 10px; }
 .md__h { color: var(--text-strong); font-weight: var(--wght-head); margin: 20px 0 8px; line-height: 1.3; }
-.md h2.md__h { font-size: 1.35rem; margin-top: 0; }
+.md h2.md__h { font-size: 1.32rem; margin: 30px 0 10px; letter-spacing: var(--track); }
+.md > h2.md__h:first-child { margin-top: 0; }
 .md h3.md__h { font-size: 1.08rem; }
 .md h4.md__h, .md h5.md__h { font-size: .98rem; }
-.md__ul { margin: 0 0 12px; padding-left: 20px; }
-.md__ul li { margin: 3px 0; }
 .md code { font-family: var(--mono); font-size: .86em; background: var(--sunken); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
 .md__code { font-family: var(--mono); font-size: .84rem; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diffview { font-family: var(--mono); font-size: .82rem; line-height: 1.6; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diffview .is-add { color: var(--ok); background: var(--ok-soft); display: block; }
 .diffview .is-del { color: var(--danger); background: var(--danger-soft); display: block; }
 .diffview .is-hunk { color: var(--faint); display: block; margin-top: 8px; }
+
+/* ---------- Texte des documents (Markdown, composant Markdown.tsx) ---------- */
+.md em { font-style: italic; }
+.md a, .md__link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.md__link { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+.md strong { color: var(--text-strong); font-weight: 650; }
+.md__list { margin: 0 0 14px; padding-left: 22px; }
+.md__list li { margin: 4px 0; padding-left: 2px; }
+.md__list li::marker { color: var(--faint); }
+.md__list--check { list-style: none; padding-left: 0; }
+.md__list--check li { display: flex; gap: 10px; align-items: flex-start; }
+.md__list--check li.is-done > span:last-child { color: var(--muted); }
+.md__box { flex: none; width: 16px; height: 16px; margin-top: 4px; border-radius: 4px; border: 1.5px solid var(--line-strong); background: var(--bg); position: relative; }
+.md__box.is-on { background: var(--ok); border-color: var(--ok); }
+.md__box.is-on::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.md__quote { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid var(--accent-line); background: var(--accent-soft); border-radius: 0 var(--r-m) var(--r-m) 0; color: var(--text-strong); }
+.md__hr { border: 0; border-top: 1px solid var(--line); margin: 26px 0; }
+.md__table { overflow-x: auto; margin: 4px 0 18px; border: 1px solid var(--line); border-radius: var(--r-m); }
+.md__table table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.md__table th { text-align: left; font-weight: 600; color: var(--text-strong); background: var(--sunken); padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.md__table td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.md__table tr:last-child td { border-bottom: 0; }
+.md__fig { margin: 8px 0 20px; padding: 16px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-m); }
+.md__fig img { display: block; width: 100%; height: auto; }
+
+/* ---------- Bibliothèque de documents (Documents, Cahier des charges) ---------- */
+.page--lib { max-width: 1340px; }
+.lib { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 28px; margin-top: 22px; align-items: start; }
+.lib__nav { position: sticky; top: 16px; max-height: calc(100vh - 140px); overflow: auto; padding-right: 6px; display: flex; flex-direction: column; gap: 18px; }
+.lib__group h3 { font-size: .8rem; font-weight: 600; color: var(--muted); margin: 0 0 6px 10px; display: flex; gap: 6px; }
+.lib__group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.lib__item { width: 100%; text-align: left; border: 0; background: none; border-radius: var(--r-m); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--text); transition: background var(--dur) var(--ease); }
+.lib__item:hover { background: var(--surface); }
+.lib__item.is-on { background: var(--accent-soft); }
+.lib__item.is-on .lib__title { color: var(--text-strong); }
+.lib__title { font-size: .9rem; font-weight: 550; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lib__sub { font-size: .76rem; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+.lib__pdf { font-size: .68rem; font-weight: 650; color: var(--danger); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 1.4; }
+.doc { container-type: inline-size; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-s); min-width: 0; }
+.doc__head { padding: 30px 44px 22px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; }
+.doc__kind { grid-column: 1; margin: 0 0 6px; font-size: .82rem; font-weight: 600; color: var(--accent); }
+.doc__title { grid-column: 1; margin: 0; font-size: 1.85rem; line-height: 1.18; letter-spacing: -.02em; color: var(--text-strong); font-weight: var(--wght-head); }
+.doc__meta { grid-column: 1; display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: .82rem; color: var(--faint); }
+.doc__meta .mono { font-size: .76rem; }
+.doc__pdf { grid-column: 2; grid-row: 1 / span 3; align-self: start; text-decoration: none; }
+.doc__nomd { padding: 28px 44px; margin: 0; }
+.doc__body { padding: 30px 44px 44px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+.doc__body .md { font-size: 1rem; line-height: 1.72; max-width: 74ch; }
+.doc__toc { display: none; }
+@container (min-width: 880px) {
+  .doc__body.has-toc { grid-template-columns: minmax(0, 1fr) 200px; }
+  .doc__body.has-toc .doc__toc { display: block; position: sticky; top: 20px; align-self: start; border-left: 1px solid var(--line); padding-left: 16px; }
+}
+.doc__toclabel { margin: 0 0 8px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.doc__toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.doc__toc a { font-size: .82rem; color: var(--muted); text-decoration: none; line-height: 1.35; display: block; }
+.doc__toc a:hover { color: var(--accent); }
+@media (max-width: 900px) {
+  .lib { grid-template-columns: minmax(0, 1fr); }
+  .lib__nav { position: static; max-height: none; }
+  .doc__head, .doc__body, .doc__nomd { padding-left: 20px; padding-right: 20px; }
+  .doc__head { grid-template-columns: minmax(0, 1fr); }
+  .doc__pdf { grid-column: 1; grid-row: auto; margin-top: 14px; justify-self: start; }
+}

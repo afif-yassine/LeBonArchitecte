@@ -129,7 +129,8 @@ export interface Project {
 
 export interface DoneCheck {
   label: string;
-  state: 'ok' | 'echec' | 'attente';
+  // non-verifie : aucun outil ne l'a contrôlé ; à regarder à la recette (jamais affiché « ok » à tort).
+  state: 'ok' | 'echec' | 'attente' | 'non-verifie';
 }
 
 export interface Ticket {
@@ -171,7 +172,8 @@ export interface TicketStep {
   role: string; // rôle de l'agent qui la fait (id de Role)
   helper?: string; // agent d'aide appelé pour cette étape (id de Role)
   skills: string[];
-  proof: { kind: ProofKind; text: string };
+  // check : ce que le programme vérifie lui-même pour une preuve « fichier » (pdf, svg, liens, md).
+  proof: { kind: ProofKind; text: string; check?: 'pdf' | 'svg' | 'liens' | 'md' };
   state: 'a-faire' | 'en-cours' | 'annonce' | 'prouve';
   evidence?: string; // ce que le programme a vérifié, ou pourquoi la preuve manque
 }

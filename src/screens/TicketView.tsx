@@ -184,9 +184,10 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                 <h3>Définition de fini, vérifiée par le programme</h3>
                 <ul className="checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
                   {t.done.map((d) => (
-                    <li key={d.label} className={`check ${d.state === 'ok' ? 'is-ok' : d.state === 'echec' ? 'is-fail' : ''}`}>
-                      <span className="check__mark" aria-hidden="true">{d.state === 'ok' ? <Check size={11} strokeWidth={3.5} /> : d.state === 'echec' ? <X size={11} strokeWidth={3.5} /> : null}</span>
-                      <span>{d.label}</span>
+                    <li key={d.label} className={`check ${d.state === 'ok' ? 'is-ok' : d.state === 'echec' ? 'is-fail' : d.state === 'non-verifie' ? 'is-unknown' : ''}`}
+                      title={d.state === 'non-verifie' ? 'Aucun outil ne l’a contrôlé : à regarder à la recette.' : undefined}>
+                      <span className="check__mark" aria-hidden="true">{d.state === 'ok' ? <Check size={11} strokeWidth={3.5} /> : d.state === 'echec' ? <X size={11} strokeWidth={3.5} /> : d.state === 'non-verifie' ? '?' : null}</span>
+                      <span>{d.label}{d.state === 'non-verifie' && <span className="faint xsmall"> : non vérifié</span>}</span>
                     </li>
                   ))}
                 </ul>
