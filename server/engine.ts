@@ -329,11 +329,12 @@ export class Engine {
     return msg;
   }
 
-  reject(id: string, problem: string): string {
+  // small : petite correction ciblée (conflit, test rouge) demandée par « Demander à l'agent de résoudre ».
+  reject(id: string, problem: string, small = false): string {
     const t = this.ticket(id);
     assertMove(t, 'en-cours');
     if (!problem.trim()) throw new Refused('Décrivez ce qui ne marche pas : l’agent en a besoin pour corriger.');
-    this.record({ project: t.projectId, ticket: id, type: 'reclamation', actor: 'vous', data: { problem } });
+    this.record({ project: t.projectId, ticket: id, type: 'reclamation', actor: 'vous', data: small ? { problem, small } : { problem } });
     this.closeReunion(id);
     this.changed();
     return `Réclamation enregistrée sur ${id}. Le même agent reprend avec votre description.`;

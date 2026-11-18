@@ -21,7 +21,7 @@ import type { Go } from '../view';
 const effortOf = (t: Ticket) => (t.model === 'Haiku' || t.effort === 'bas' ? 'bas' : t.effort === 'haut' || t.model === 'Opus' ? 'haut' : 'moyen');
 
 // Contexte de l'agent : ce qu'il avait en tête, lu dans le journal de sa session (aucun token).
-interface Ctx { exists: boolean; kept: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number }
+interface Ctx { exists: boolean; kept: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number; reloads?: number; reloadTokens?: number }
 function ContextCard({ id, running }: { id: string; running: boolean }) {
   const { data } = useApi<Ctx>(`/tickets/${id}/context`);
   const [open, setOpen] = useState(false);
@@ -44,6 +44,11 @@ function ContextCard({ id, running }: { id: string; running: boolean }) {
           <polyline points={`0,30 ${pts} 100,30`} className="sd-spark__area" />
           <polyline points={pts} className="sd-spark__line" />
         </svg>
+      )}
+      {!!data.reloads && (
+        <p className="sd-line sd-line--warn" title="Après plus de 5 minutes sans échange, le cache expire : reprendre la conversation la réécrit en entier, au plein tarif.">
+          Rechargée {data.reloads} fois après une pause : {fmtTokens(data.reloadTokens ?? 0)} payés pour rien.
+        </p>
       )}
       <p className="sd-line">{data.compactions ? `Compacté ${data.compactions} fois. ` : ''}Conversation {data.kept ? 'gardée : il peut reprendre où il en était.' : 'non gardée.'}</p>
       <button className="sd-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>

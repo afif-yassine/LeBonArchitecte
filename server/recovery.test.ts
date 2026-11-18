@@ -9,7 +9,7 @@ import { backupDb, openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { startSupervisor } from './supervisor.ts';
-import { transcriptOf } from './claude.ts';
+import { contextOf, transcriptOf } from './claude.ts';
 import { ensureWorktree, worktreeOf } from './git.ts';
 
 const engine = () => { const e = new Engine(openDb(':memory:')); e.setPilot({ on: false, maxParallel: 5 }); return e; };
@@ -164,4 +164,67 @@ test('sauvegarde de l’état : copie lisible, au plus une par heure, 10 gardée
   assert.equal(kept.length, 10);
   assert.ok(!kept.includes('lba-2026-11-18T08-00-00.db'), 'les plus anciennes partent d’abord');
   assert.ok(!readdirSync(backups).some((f) => f.endsWith('.tmp')));
+});
+
+test('petite correction : session reprise si le cache est chaud, nouvel agent avec passation après une longue pause', async () => {
+  const home = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+  const fake = mkdtempSync(join(tmpdir(), 'lba-home-'));
+  process.env.USERPROFILE = fake; process.env.HOME = fake;
+  try {
+    const e = engine();
+    const repo = gitRepo();
+    const { calls, run } = fakeAgent();
+    const sup2 = startSupervisor(e, { p: repo }, profile, run);
+    const setup = (ageMs: number) => {
+      const t = ticket(e);
+      e.launch(t.id);
+      e.setSession(t.id, `s-${t.id}`);
+      ensureWorktree(repo, t.id);
+      const log = transcriptOf(worktreeOf(repo, t.id), `s-${t.id}`);
+      mkdirSync(dirname(log), { recursive: true });
+      writeFileSync(log, '');
+      const at = new Date(Date.now() - ageMs);
+      utimesSync(log, at, at);
+      e.needsAction(t.id, 'Conflit dans a.ts');
+      return t.id;
+    };
+    const warm = setup(60_000);
+    sup2.fix(warm);
+    await until(() => calls.some((c) => c.id === warm));
+    const w = calls.find((c) => c.id === warm)!;
+    assert.equal(w.session, `s-${warm}`, 'cache encore chaud : on reprend la conversation');
+
+    const cold = setup(30 * 60_000);
+    sup2.fix(cold);
+    await until(() => calls.some((c) => c.id === cold));
+    const c = calls.find((x) => x.id === cold)!;
+    assert.equal(c.session, undefined, 'pause longue : pas de rechargement de toute la conversation');
+    assert.equal(c.why, 'correction');
+    assert.match(c.handoff ?? '', /Passation/);
+  } finally {
+    process.env.USERPROFILE = home.USERPROFILE; process.env.HOME = home.HOME;
+  }
+});
+
+test('contexte : les rechargements après une pause de plus de 5 minutes sont comptés', () => {
+  const home = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+  const fake = mkdtempSync(join(tmpdir(), 'lba-home-'));
+  process.env.USERPROFILE = fake; process.env.HOME = fake;
+  try {
+    const cwd = mkdtempSync(join(tmpdir(), 'lba-ctx-'));
+    const log = transcriptOf(cwd, 's');
+    mkdirSync(dirname(log), { recursive: true });
+    const msg = (id: string, at: string, write: number) => JSON.stringify({ type: 'assistant', timestamp: at, message: { id, content: [], usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: write, cache_read_input_tokens: 0 } } });
+    writeFileSync(log, [
+      msg('a', '2026-01-01T10:00:00Z', 10_000),
+      msg('b', '2026-01-01T10:01:00Z', 2_000),
+      msg('c', '2026-01-01T11:30:00Z', 80_000),
+      msg('d', '2026-01-01T11:31:00Z', 1_000),
+    ].join('\n'));
+    const ctx = contextOf(cwd, 's');
+    assert.equal(ctx.reloads, 1);
+    assert.equal(ctx.reloadTokens, 80_000);
+  } finally {
+    process.env.USERPROFILE = home.USERPROFILE; process.env.HOME = home.HOME;
+  }
 });

@@ -5,7 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
-import { isResearch, runClaude, transcriptOf, type RunOutcome } from './claude.ts';
+import { isResearch, runClaude, transcriptOf, type RunOutcome, type Why } from './claude.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { canAutoRepair, pickMode } from './rules.ts';
@@ -35,6 +35,14 @@ export function checkFiles(repo: string, wt: string, id: string, check: 'pdf' | 
 // Une session encore écrite il y a moins de 90 s : son agent tourne peut-être encore, on ne la double pas.
 function recentlyActive(cwd: string, session: string): boolean {
   try { return Date.now() - statSync(transcriptOf(cwd, session)).mtimeMs < 90_000; } catch { return false; }
+}
+
+// Le cache de Claude expire après ~5 minutes sans échange. Au-delà, reprendre une session réécrit toute la
+// conversation au plein tarif (mesuré sur LBA-15 : 83 k pour régler 2 conflits). Pour une petite correction,
+// un nouvel agent avec la passation coûte bien moins (~15 k).
+const CACHE_MS = 5 * 60_000;
+export function cacheWarm(cwd: string, session: string, now = Date.now()): boolean {
+  try { return now - statSync(transcriptOf(cwd, session)).mtimeMs < CACHE_MS; } catch { return false; }
 }
 
 export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile, runAgent: typeof runClaude = runClaude) {
@@ -90,13 +98,16 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
         // « Pas bon » ou demande de modification : le même agent reprend SA conversation (il sait ce qu'il a fait).
         const s = engine.sessionOf(t.id);
         const same = s && pickMode(t) === 'agent' && existsSync(worktreeOf(dirs[t.projectId], t.id));
+        if (same && e.data.small && !cacheWarm(worktreeOf(dirs[t.projectId], t.id), s)) { freshFix(t.id, String(e.data.problem ?? '')); continue; }
         if (same) engine.live(t.id, { kind: 'systeme', text: 'L’agent qui a fait le travail reprend sa conversation avec votre demande.' }, 'programme');
         start(t.id, String(e.data.problem ?? ''), same ? s : undefined, same ? 'message' : 'redemarrage');
         continue;
       }
       if (e.type === 'reparation') {
+        const s = engine.sessionOf(t.id);
+        if (s && !cacheWarm(worktreeOf(dirs[t.projectId], t.id), s)) { freshFix(t.id, String(e.data.cause ?? '')); continue; }
         engine.live(t.id, { kind: 'systeme', text: 'Réparation automatique : l’agent reprend sa session, une seule fois.', detail: String(e.data.cause ?? '') }, 'programme');
-        start(t.id, String(e.data.cause ?? ''), engine.sessionOf(t.id), 'reparation');
+        start(t.id, String(e.data.cause ?? ''), s, 'reparation');
         continue;
       }
       // Relancé après un arrêt (limite d'abonnement, arrêt par vous, « Pas fini ») : il reprend sa
@@ -117,6 +128,12 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const handoff = handoffOf(id);
     engine.live(id, { kind: 'systeme', text: same ? 'Reprise de sa session Claude, avec la passation.' : 'Session introuvable : un nouvel agent repart de la passation.', detail: `.lba/passations/${id}.md` }, 'programme');
     start(id, engine.openComplaint(id), same, 'redemarrage', handoff);
+  }
+
+  // Petite correction après une longue pause : nouvel agent, consigne courte + passation (pas toute la conversation).
+  function freshFix(id: string, problem: string) {
+    engine.live(id, { kind: 'systeme', text: 'Petite correction après une pause : un nouvel agent part de la passation, sans recharger toute la conversation.', detail: 'Économie : environ 15 k au lieu de 80 k' }, 'programme');
+    start(id, problem, undefined, 'correction', handoffOf(id));
   }
 
   function resume(id: string): string {
@@ -147,7 +164,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     return engine.messagesSince(id, mark);
   };
 
-  function start(id: string, complaint?: string, session?: string, why: 'redemarrage' | 'reprise' | 'reparation' | 'message' = 'redemarrage', handoff?: string) {
+  function start(id: string, complaint?: string, session?: string, why: Why = 'redemarrage', handoff?: string) {
     const t = engine.ticket(id);
     // Messages écrits avant le lancement : ils partent avec la consigne.
     const inbox = pendingMessages(id);
@@ -337,7 +354,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       test ? `Relance « ${test} » jusqu’à ce que tout soit vert.` : '',
     ].filter(Boolean).join(' ');
     engine.setActivity(id, null);
-    engine.reject(id, problem);
+    engine.reject(id, problem, true);
     return `L’agent de ${id} reprend sa conversation pour résoudre : ${conflicts.length ? `${conflicts.length} conflit(s) à régler` : 'le problème indiqué'}.`;
   }
 

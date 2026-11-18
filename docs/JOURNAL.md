@@ -258,3 +258,9 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Budget : prévu réaliste par modèle (Opus ~250 k, Sonnet ~120 k, Haiku ~40 k) au lieu de 40 k fixe ; plus de rouge sans raison, aussi sur les cartes du kanban. Entrée, sortie et cache écrit enregistrés séparément à partir de maintenant.
 - Au démarrage, chaque ticket est recalculé depuis son journal (vérifié sur une copie de la base : 42 tickets, 0 différence). Bandeau d'état sur une ligne ; gros cadre « Recette » retiré (doublon). 53 tests verts.
 - Bloc « Contexte de l'agent » (lu dans le journal de sa session, sans token) : taille au départ et à la fin avec un petit graphique par échange, compactages, conversation gardée ou non, fichiers du projet lus et fichiers de mémoire lus. Constat : les agents lisent aussi la mémoire du propriétaire (owner-working-rules.md, project-le-bon-architecte.md), hors du projet.
+
+## Consommation : moins de rechargements et de relectures (18 nov. 2026)
+- Mesure sur LBA-15 : base de l'agent déjà économe (10 k au départ), mais 2 rechargements complets après des pauses = 149 k payés pour rien (58 % du cache écrit), et un tiers de lectures inutiles.
+- Petite correction après plus de 5 minutes de pause : un nouvel agent part de la passation (~15 k) au lieu de recharger toute la conversation (~80 k). Pause courte ou gros travail : on reprend la session comme avant. Décision 0011.
+- Consigne d'économie renforcée : ne jamais relire un fichier déjà lu ; JOURNAL et décisions seulement si le ticket les nomme.
+- Fiche ticket : « Rechargée n fois après une pause : X payés pour rien » dans le bloc Contexte (LBA-15 : 2 fois, 149 k). 55 tests verts. Vérifié dans le navigateur.

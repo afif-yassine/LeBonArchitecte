@@ -44,6 +44,26 @@ export function quotaReset(text: string, now = new Date()): string | undefined {
   return at.toISOString();
 }
 
+// Mesuré sur LBA-15 : un tiers des lectures étaient des fichiers déjà lus ou affichés en entier.
+const ECONOMY = 'Économise les tokens : lis seulement les fichiers utiles au ticket, par morceaux (Read avec offset/limit, ou Grep). Ne relis jamais un fichier déjà lu dans cette conversation : tu l’as déjà en mémoire. N’affiche jamais un fichier entier avec cat ni un long git diff. Pour les tests, garde seulement la fin de la sortie (| tail -15).';
+
+// Pourquoi un agent est lancé. 'correction' : nouvel agent (sans reprendre la session) pour une petite
+// correction après une longue pause, avec la passation : bien moins cher que recharger toute la conversation.
+export type Why = 'redemarrage' | 'reprise' | 'reparation' | 'message' | 'correction';
+
+function correctionPrompt(t: Ticket, problem?: string): string {
+  return [
+    `Ticket ${t.id} : ${t.title}`,
+    'Le travail de ce ticket est déjà fait et enregistré dans cette branche. Il reste seulement une correction :',
+    problem ?? '',
+    '',
+    'Ne refais pas le ticket et ne relis pas tout le projet : ouvre seulement les fichiers concernés par la correction.',
+    ECONOMY,
+    'Ne fais ni push ni merge. Lance les tests du projet jusqu’à ce qu’ils soient verts.',
+    `Puis annonce chaque étape du plan sur une ligne seule (« ÉTAPE n : faite », de 1 à ${t.steps.length}) et termine par un résumé en français simple de la correction.`,
+  ].join('\n');
+}
+
 function promptFor(t: Ticket, complaint?: string): string {
   return [
     ...(complaint ? [`RÉCLAMATION du propriétaire après sa recette : « ${complaint} ». Corrige d’abord cela.`, ''] : []),
@@ -55,7 +75,8 @@ function promptFor(t: Ticket, complaint?: string): string {
     'Plan (chaque étape sera vérifiée par le programme après toi) :', ...t.steps.map((s, i) => `${i + 1}. ${s.label} (preuve : ${s.proof.text})`),
     '',
     'Travaille seulement dans ce dossier. Fais des changements petits et lisibles. Lance les tests du projet avant de finir.',
-    'Économise les tokens : lis seulement les fichiers utiles au ticket, par morceaux (Read avec offset/limit, ou Grep). N’affiche jamais un fichier entier avec cat. Pour les tests, garde seulement la fin de la sortie (| tail -15).',
+    ECONOMY,
+    'Ne lis docs/JOURNAL.md et docs/decisions/ que si le ticket les nomme, et alors seulement la partie utile (Grep).',
     'Ne fais ni push ni merge : le programme réunit ton travail dans main après des tests verts.',
     ...(isResearch(t) ? [
       `Ticket de recherche : tu peux utiliser WebSearch et WebFetch. Écris seulement dans ${RESEARCH_DIRS.join(' ou ')} ; tout autre fichier modifié bloque la réunion.`,
@@ -102,14 +123,19 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
 
 // Contexte de l'agent, lu dans le journal de sa session (aucun token) : sa taille à chaque échange
 // (entrée + cache lu + cache écrit), les fichiers lus, la mémoire et les règles chargées, les compactages.
-export function contextOf(cwd: string, session: string): { exists: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number } {
+// reloads : conversation entière réécrite dans le cache après une pause de plus de 5 minutes (cache expiré),
+// payée au plein tarif. C'est la part « perdue » de la consommation.
+export function contextOf(cwd: string, session: string): { exists: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number; reloads: number; reloadTokens: number } {
   let lines: string[] = [];
-  try { lines = readFileSync(transcriptOf(cwd, session), 'utf8').split('\n'); } catch { return { exists: false, series: [], start: 0, end: 0, peak: 0, read: [], memory: [], compactions: 0 }; }
+  try { lines = readFileSync(transcriptOf(cwd, session), 'utf8').split('\n'); } catch { return { exists: false, series: [], start: 0, end: 0, peak: 0, read: [], memory: [], compactions: 0, reloads: 0, reloadTokens: 0 }; }
   const series: number[] = [];
   const seen = new Set<string>();
   const read = new Set<string>();
   const memory = new Set<string>();
   let compactions = 0;
+  let reloads = 0;
+  let reloadTokens = 0;
+  let last = 0;
   for (const l of lines) {
     let m: Record<string, any>;
     try { m = JSON.parse(l); } catch { continue; }
@@ -124,12 +150,16 @@ export function contextOf(cwd: string, session: string): { exists: boolean; seri
     if (u && m.message.id && !seen.has(m.message.id)) {
       seen.add(m.message.id);
       series.push((u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0));
+      const at = Date.parse(m.timestamp ?? '') || 0;
+      const written = u.cache_creation_input_tokens ?? 0;
+      if (last && at - last > 5 * 60_000 && written >= 10_000) { reloads++; reloadTokens += written; }
+      if (at) last = at;
     }
   }
   // Au plus 48 points pour le petit graphique : on garde le maximum de chaque tranche.
   const step = Math.ceil(series.length / 48) || 1;
   const small = Array.from({ length: Math.ceil(series.length / step) }, (_, i) => Math.max(...series.slice(i * step, i * step + step)));
-  return { exists: true, series: small, start: series[0] ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions };
+  return { exists: true, series: small, start: series[0] ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions, reloads, reloadTokens };
 }
 
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
@@ -139,7 +169,7 @@ export function contextOf(cwd: string, session: string): { exists: boolean; seri
 // why = 'message' : le propriétaire parle à l'agent (« Pas bon », demande de modification, message pendant
 // le travail) ; l'agent reprend sa propre conversation, il sait déjà ce qu'il a fait.
 // handoff : passation écrite par le programme (reprise après panne), jointe à la consigne.
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' | 'message' = 'redemarrage', handoff?: string): ChildProcess {
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: Why = 'redemarrage', handoff?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -163,9 +193,11 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     ? `Le propriétaire t’écrit : « ${complaint} ». Fais ce qu’il demande dans ton travail, sans refaire ce qui est déjà bon. Toutes les étapes sont à prouver de nouveau : annonce-les (« ÉTAPE n : faite »), lance les tests, puis résume en français simple ce que tu as changé.`
     : resume
     ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le PC ou le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
+    : why === 'correction' ? correctionPrompt(t, complaint)
     : promptFor(t, complaint);
   // Passation (reprise après panne) : ce que le programme a constaté, jointe à la consigne.
-  child.stdin.end(handoff ? `${brief}\n\n${handoff}` : brief);
+  const text = resume ? `${brief} Ne relis pas un fichier déjà lu dans cette conversation.` : brief;
+  child.stdin.end(handoff ? `${text}\n\n${handoff}` : text);
 
   const live = (kind: Parameters<Engine['live']>[1]['kind'], text: string, detail?: string, ok?: boolean) => {
     try { engine.live(t.id, { kind, text, detail, ok }, who); } catch { /* ticket supprimé ou arrêté : on ignore */ }
