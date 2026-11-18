@@ -100,6 +100,38 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
   return { read: [...out.read], used: out.used, cacheRead: out.cacheRead, turns: out.turns };
 }
 
+// Contexte de l'agent, lu dans le journal de sa session (aucun token) : sa taille à chaque échange
+// (entrée + cache lu + cache écrit), les fichiers lus, la mémoire et les règles chargées, les compactages.
+export function contextOf(cwd: string, session: string): { exists: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number } {
+  let lines: string[] = [];
+  try { lines = readFileSync(transcriptOf(cwd, session), 'utf8').split('\n'); } catch { return { exists: false, series: [], start: 0, end: 0, peak: 0, read: [], memory: [], compactions: 0 }; }
+  const series: number[] = [];
+  const seen = new Set<string>();
+  const read = new Set<string>();
+  const memory = new Set<string>();
+  let compactions = 0;
+  for (const l of lines) {
+    let m: Record<string, any>;
+    try { m = JSON.parse(l); } catch { continue; }
+    if (m.type === 'system' && m.subtype === 'compact_boundary') compactions++;
+    if (m.type !== 'assistant' || !m.message) continue;
+    for (const b of m.message.content ?? []) {
+      if (b.type !== 'tool_use' || b.name !== 'Read' || !b.input?.file_path) continue;
+      const p = relative(cwd, b.input.file_path).replaceAll('\\', '/');
+      if (/(^|\/)(\.claude\/|memory\/|CLAUDE\.md$)/.test(p)) memory.add(p.split('/').pop()!); else read.add(p);
+    }
+    const u = m.message.usage;
+    if (u && m.message.id && !seen.has(m.message.id)) {
+      seen.add(m.message.id);
+      series.push((u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0));
+    }
+  }
+  // Au plus 48 points pour le petit graphique : on garde le maximum de chaque tranche.
+  const step = Math.ceil(series.length / 48) || 1;
+  const small = Array.from({ length: Math.ceil(series.length / step) }, (_, i) => Math.max(...series.slice(i * step, i * step + step)));
+  return { exists: true, series: small, start: series[0] ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions };
+}
+
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
 // resume : session Claude à reprendre. why = 'redemarrage' (moteur coupé en route : tokens pas encore comptés)
 // ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés)

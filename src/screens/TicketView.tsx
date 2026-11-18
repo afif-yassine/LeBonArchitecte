@@ -14,10 +14,50 @@ import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
+import { useApi } from './RealSpaces';
 import type { Go } from '../view';
 
 // Effort réel donné à l'agent (même règle que server/claude.ts : Opus = haut, Haiku = bas).
 const effortOf = (t: Ticket) => (t.model === 'Haiku' || t.effort === 'bas' ? 'bas' : t.effort === 'haut' || t.model === 'Opus' ? 'haut' : 'moyen');
+
+// Contexte de l'agent : ce qu'il avait en tête, lu dans le journal de sa session (aucun token).
+interface Ctx { exists: boolean; kept: boolean; series: number[]; start: number; end: number; peak: number; read: string[]; memory: string[]; compactions: number }
+function ContextCard({ id, running }: { id: string; running: boolean }) {
+  const { data } = useApi<Ctx>(`/tickets/${id}/context`);
+  const [open, setOpen] = useState(false);
+  if (!data) return null;
+  if (!data.exists) return (
+    <section className="sd-card"><h4 className="sd-label">Contexte de l’agent</h4><p className="sd-line">Pas encore de conversation : elle commence au lancement.</p></section>
+  );
+  const max = Math.max(1, ...data.series);
+  const pts = data.series.map((v, i) => `${(i / Math.max(1, data.series.length - 1)) * 100},${28 - (v / max) * 26}`).join(' ');
+  return (
+    <section className="sd-card">
+      <h4 className="sd-label">Contexte de l’agent</h4>
+      <div className="sd-ctx">
+        <span><span className="num">{fmtTokens(data.start)}</span> au départ</span>
+        <span className="sd-ctx__arrow" aria-hidden="true">→</span>
+        <span><span className="num">{fmtTokens(data.end)}</span> {running ? 'maintenant' : 'à la fin'}</span>
+      </div>
+      {data.series.length > 1 && (
+        <svg className="sd-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label={`Taille du contexte à chaque échange, de ${fmtTokens(data.start)} à ${fmtTokens(data.end)}, au plus ${fmtTokens(data.peak)}`}>
+          <polyline points={`0,30 ${pts} 100,30`} className="sd-spark__area" />
+          <polyline points={pts} className="sd-spark__line" />
+        </svg>
+      )}
+      <p className="sd-line">{data.compactions ? `Compacté ${data.compactions} fois. ` : ''}Conversation {data.kept ? 'gardée : il peut reprendre où il en était.' : 'non gardée.'}</p>
+      <button className="sd-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {data.read.length} fichier{data.read.length > 1 ? 's' : ''} du projet lu{data.read.length > 1 ? 's' : ''}{data.memory.length ? `, ${data.memory.length} de mémoire` : ''} {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <ul className="sd-files">
+          {data.memory.map((f) => <li key={`m${f}`} className="is-mem" title="Mémoire et règles du propriétaire">{f}</li>)}
+          {data.read.map((f) => <li key={f} title={f}>{f}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 type Tab = 'deroule' | 'description' | 'realise' | 'journal' | 'diff' | 'tests';
 interface RawEvent { id: number; at: string; type: string; actor: string; data: Record<string, unknown> }
@@ -337,6 +377,8 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           <p className="sd-line">{t.loops > 1 ? `${t.loops} passages de l’agent` : t.status === 'a-faire' ? 'Pas encore lancé' : '1 passage de l’agent'}{t.usage?.turns ? ` · ${t.usage.turns} échanges` : ''}</p>
           {t.interrupted && <p className="sd-line sd-line--warn">Dernière étape prouvée : {t.interrupted.lastProved ?? 'aucune'}</p>}
         </section>
+
+        {!demo && <ContextCard id={t.id} running={t.status === 'en-cours'} />}
 
         <section className="sd-card">
           <h4 className="sd-label">Consommation</h4>

@@ -8,6 +8,7 @@ import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
+import { contextOf } from './claude.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -104,6 +105,15 @@ app.post<Id>('/api/tickets/:id/test', async (req) => {
   return { message: `${r.ok ? 'Tests verts' : 'Tests rouges'} : ${where.toLowerCase()} : ${first}`, result: r };
 });
 app.post<Id>('/api/tickets/:id/fix', async (req) => ({ message: supervisor.fix(req.params.id) }));
+// Contexte de l'agent du ticket, lu dans le journal de sa session (le chemin dépend du dossier du ticket,
+// même s'il a été retiré après la réunion).
+app.get<Id>('/api/tickets/:id/context', async (req) => {
+  const t = engine.ticket(req.params.id);
+  const repo = PROJECT_DIRS[t.projectId];
+  const session = engine.sessionOf(t.id);
+  if (!repo || !session) return { exists: false, kept: false };
+  return { ...contextOf(worktreeOf(repo, t.id), session), kept: true };
+});
 // Pour le lanceur : le moteur ne redémarre (mise à jour de son code) que s'il est libre.
 app.get('/api/busy', async () => {
   const running = supervisor.running();
