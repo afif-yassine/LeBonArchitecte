@@ -7,8 +7,9 @@ import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
-import { diffFile, fileAt, fileBytesAt } from './git.ts';
-import { gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
+import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge } from './git.ts';
+import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
+import { runCommand } from './executor.ts';
 import { architectBusy, askArchitect, CDC_PATH, readCdc } from './architect.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
@@ -141,6 +142,21 @@ app.get<Id & { Querystring: { path?: string } }>('/api/tickets/:id/raw', async (
   const body = fileBytesAt(repoOf(t.projectId), t.id, path);
   if (!body) throw new Refused(`${path} n’existe plus dans la branche du ticket.`);
   return pdf(reply, body, path.split('/').pop() ?? 'document.pdf');
+});
+// Git en schéma (point 3) : graphe, détail d'un commit, « Repartir d'ici », annuler un ticket réuni.
+app.get<Id>('/api/projects/:id/graph', async (req) => gitGraph(repoOf(req.params.id)));
+app.get<Id & { Querystring: { hash?: string } }>('/api/projects/:id/commit', async (req) => commitInfo(repoOf(req.params.id), req.query.hash ?? ''));
+app.post<Id & { Body: { hash: string } }>('/api/projects/:id/git/branch', async (req) => ({ message: branchFrom(repoOf(req.params.id), String(req.body?.hash ?? '')) }));
+// Annuler un ticket déjà réuni : un commit d'annulation dans main (jamais d'effacement), puis les tests.
+app.post<Id & { Body: { hash: string } }>('/api/projects/:id/git/revert', async (req) => {
+  const repo = repoOf(req.params.id);
+  const node = gitGraph(repo, 200).nodes.find((n) => n.hash === req.body?.hash);
+  if (!node || node.kind !== 'reunion') throw new Refused('Seule la réunion d’un ticket dans main peut être annulée ici.');
+  assertMainReady(repo);
+  const rev = revertMerge(repo, node.hash);
+  const test = profileOf(req.params.id).commands.test;
+  const r = test ? await runCommand(test, { cwd: repo }) : undefined;
+  return { message: `Réunion ${node.short}${node.ticket ? ` (${node.ticket})` : ''} annulée par le commit ${rev} ; l’historique est gardé.${r ? (r.ok ? ' Tests verts.' : ` Attention, tests rouges : ${r.summary.split('\n')[0]}`) : ''}` };
 });
 app.get<Id>('/api/projects/:id/git', async (req) => gitInfo(repoOf(req.params.id)));
 // Cahier des charges (point 2) : exigences lues dans le cahier, liens avec les tickets, discussion avec l'Architecte.

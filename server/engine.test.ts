@@ -281,6 +281,35 @@ test('worktree par ticket : travail isolé, réunion après tests, node_modules 
   assert.ok(existsSync(join(repo, 'node_modules', 'pkg', 'keep.txt')), 'node_modules d’origine intact');
 });
 
+test('Git en schéma : main, branche du ticket, réunion ; « Repartir d’ici » ne touche pas main', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync } = await import('node:fs');
+  const g = await import('./git.ts');
+  const pd = await import('./projectData.ts');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-graph-'));
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'test'); git('config', 'user.email', 'test@example.invalid');
+  writeFileSync(join(repo, '.gitignore'), '.lba/\n'); writeFileSync(join(repo, 'a.txt'), 'a\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'départ');
+  const wt = g.ensureWorktree(repo, 'T-1');
+  writeFileSync(join(wt, 'b.txt'), 'b\n'); g.commitWorktree(wt, 'T-1 : ajout de b');
+  const m = g.mergeTicket(repo, 'T-1', 'ajout de b');
+  const graph = pd.gitGraph(repo);
+  assert.deepEqual(graph.lanes.map((l) => [l.ticket, l.merged]), [['T-1', true]]);
+  assert.equal(graph.nodes.find((n) => n.kind === 'reunion')?.ticket, 'T-1');
+  assert.equal(graph.nodes.find((n) => n.kind === 'branche')?.lane, 1);
+  assert.deepEqual(pd.commitInfo(repo, git('rev-parse', 'HEAD')).files.map((f) => f.path), ['b.txt'], 'une réunion montre ce que le ticket a apporté');
+  const first = graph.nodes.find((n) => n.subject === 'départ')!.hash;
+  const headBefore = git('rev-parse', 'main');
+  assert.match(pd.branchFrom(repo, first), /reprise\//);
+  assert.equal(git('rev-parse', 'main'), headBefore, 'main n’a pas bougé');
+  assert.equal(git('rev-parse', `reprise/${first.slice(0, 7)}`), first);
+  assert.throws(() => pd.branchFrom(repo, 'pas-un-hash; rm -rf /'), /invalide/);
+  g.revertMerge(repo, m.merge);
+  assert.ok(pd.gitGraph(repo).nodes.some((n) => n.kind === 'annulation'), 'l’annulation apparaît dans le schéma');
+  g.removeWorktree(repo, 'T-1');
+});
+
 test('interdits : un push ou une réunion déguisés sont refusés (audit LBA-11, point 3)', () => {
   for (const c of ['git -C . push', 'git -c user.name=x push origin main', 'git --no-pager merge x', 'git push']) assert.throws(() => checkCommand(c), /refusée/, c);
   assert.doesNotThrow(() => checkCommand('git status'));

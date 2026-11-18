@@ -202,3 +202,8 @@
 - Lien ticket → exigences dans le ticket (« E2 » en entier, « E2~ » en partie). Les 14 tickets LBA sont liés. Couverture actuelle : 4 faites, 15 en partie, 1 en cours, 3 prévues, 11 sans ticket.
 - Discussion avec l'Architecte (Opus, effort haut, un appel sans outils, contexte préparé par le programme). Ses propositions deviennent des tickets « à faire » seulement si vous les acceptez. Premier essai, revue complète : 13 334 tokens mesurés, 5 propositions et 9 points à enlever ou reporter.
 - Tests : 29 verts. Écran vérifié dans le navigateur.
+
+## Git en schéma, point 3 (18 nov. 2026)
+- Onglet Git : main et une colonne par branche de ticket, départs et réunions dessinés, annulations en rouge, point « changements pas encore enregistrés ». Légende des branches : réunie, en travail, pas réunie.
+- Clic sur un point : message, fichiers changés (pour une réunion : ce que le ticket a apporté). « Repartir d'ici » crée une branche reprise/<commit> sans toucher main. « Annuler ce ticket dans main » ajoute un commit d'annulation (main propre exigé), puis relance les tests. Confirmation dans la page, jamais de boîte du navigateur.
+- Tests : 30 verts (dont un dépôt jetable : schéma, reprise, annulation). Écran vérifié dans le navigateur.

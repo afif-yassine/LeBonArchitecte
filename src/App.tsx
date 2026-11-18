@@ -3,6 +3,7 @@ import { Bell, ChevronRight, CircleHelp, Focus, Lock, Moon, PanelRightOpen, Sear
 import { projects } from './mock/data';
 import { RealDocs, RealGit, RealRules } from './screens/RealSpaces';
 import { CahierScreen } from './screens/Cahier'; // cahier des charges réel (point 2)
+import { GitGraphScreen } from './screens/GitGraph'; // Git en schéma (point 3)
 import { Soon } from './components/ui';
 
 // Onglets pas encore branchés sur les vraies données : ce qu'il manque, en clair (au lieu de faux contenu).
@@ -135,7 +136,7 @@ function Shell() {
         case 'cdc': return <CahierScreen projectId={pid} go={go} />;
         case 'docs': return <RealDocs projectId={pid} title="Documents" exclude="docs/cahier-des-charges/" lead="Décisions, rapports, recherches et journal du projet. Un PDF s’ouvre dans un nouvel onglet. Le cahier des charges a son propre onglet." />;
         case 'regles': return <RealRules projectId={pid} />;
-        case 'git': return <RealGit projectId={pid} />;
+        case 'git': return <GitGraphScreen projectId={pid} go={go} />;
       }
       const later = NOT_PLUGGED[space];
       if (later) return <div className="page"><Soon title="Pas encore branché sur ce projet" text={later} /></div>;
