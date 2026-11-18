@@ -283,3 +283,7 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Journal brut : rangé par jour, heure / qui (vous, agent, programme) / quoi ; le direct et les compteurs de tokens (déjà dans le Déroulé) sont cachés par défaut, une case les remet.
 - Ancien « à rapporter / CR-n » retiré des cartes du kanban et du panneau : remplacé par les comptes rendus calculés (décision 0012).
 - Contexte de l'agent : la taille de départ ignore un premier échange vide (LBA-17 affichait « 0 au départ »). 58 tests verts. Vérifié dans le navigateur.
+
+## Points non vérifiés signalés avant « Valider » (18 nov. 2026)
+- Constat (LBA-17) : l'agent avait écrit dans son résumé que 2 choses n'étaient pas vérifiées (écrans, réparation avec un vrai agent), mais rien ne le montrait avant « Valider ». Vérifié après coup : l'écran Quotas et budgets est bon ; la réparation automatique n'a encore jamais eu lieu en vrai (0 dans le journal), risque faible (une seule tentative, puis « Besoin d'action »).
+- Le programme repère dans le résumé les phrases « pas vérifié / pas pu / pas essayé / pas regardé » (src/shared/claims.ts, sans IA). À tester : bandeau orange avec la liste, « Valider » demande « Valider quand même » ; sur le kanban, « Voir avant de valider » ouvre la fiche. Les points vont aussi dans « Limites et suite » du compte rendu. 59 tests verts. Vérifié dans le navigateur (compte rendu de LBA-17).

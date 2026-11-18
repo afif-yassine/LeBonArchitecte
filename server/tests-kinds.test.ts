@@ -40,3 +40,13 @@ test('compte rendu : ticket léger par défaut, pas de compte rendu de lot tant 
   assert.equal(r.heavy.filter((h) => !/Opus/.test(h)).length, 0, 'aucune autre raison d’être lourd');
   assert.equal(reportDocs(e, 'p').length, 0, 'rien de fini : aucun compte rendu');
 });
+
+test('points que l’agent dit ne pas avoir vérifiés (cas LBA-17), sans fausse alerte', async () => {
+  const { unverifiedClaims } = await import('../src/shared/claims.ts');
+  const s = 'LBA-17 est terminé, mais deux choses n’ont pas pu être vérifiées. Je n’ai pas regardé les nouveaux écrans dans un navigateur, car je n’ai pas le droit de lancer le moteur ici. La réparation automatique n’a pas non plus été essayée avec un vrai agent : sa règle est testée. ## Ce qui a été fait Les 53 tests passent.';
+  const c = unverifiedClaims(s);
+  assert.equal(c.length, 3);
+  assert.match(c[1], /navigateur/);
+  assert.match(c[2], /réparation automatique/);
+  assert.deepEqual(unverifiedClaims('Les tests passent. Je n’ai pas cassé les tests existants. Tout est vérifié dans le navigateur.'), []);
+});

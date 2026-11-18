@@ -6,6 +6,7 @@
 // - Compte rendu du jour : les tickets validés ce jour-là.
 import type { Ticket } from '../src/shared/contract.ts';
 import { TEST_KINDS, isTestCommand, testKinds } from '../src/shared/tests.ts';
+import { unverifiedClaims } from '../src/shared/claims.ts';
 import type { Engine } from './engine.ts';
 
 export const REPORTS_DIR = 'lba/comptes-rendus/';
@@ -19,6 +20,7 @@ export interface TicketReport {
   status: Ticket['status'];
   validatedAt?: string;
   heavy: string[]; // raisons ; vide = ticket léger
+  unverified: string[]; // ce que l'agent dit ne pas avoir vérifié
   problem: string;
   solution: string;
   why?: string;
@@ -101,6 +103,7 @@ export function ticketReport(engine: Engine, t: Ticket): TicketReport {
 
   return {
     id: t.id, title: t.title, lot: t.lot, status: t.status, validatedAt, heavy,
+    unverified: unverifiedClaims(main),
     problem: s.problem ?? t.description.context,
     solution: s.solution ?? '', why: s.why, limits: s.limits,
     how: { branch: r?.branch, commits: r?.commits ?? [], files, decisions },
@@ -135,6 +138,7 @@ export function ticketMarkdown(r: TicketReport): string {
     ...(r.calls.yourMessages.length ? ['- Vos messages et réclamations :', ...r.calls.yourMessages.map((m) => `  - « ${m.slice(0, 300)} »`)] : ['- Aucun message de votre part.']),
     ...(r.calls.problems.length ? ['- Problèmes en route :', ...r.calls.problems.map((p) => `  - ${p.slice(0, 300)}`)] : []), '',
     '## 7. Limites et suite', r.limits ?? '_Rien de signalé._',
+    ...(r.unverified.length ? ['', '**Non vérifié, d’après l’agent :**', ...r.unverified.map((u) => `- ${u}`)] : []),
     ...(r.how.decisions.length ? ['', `Décisions liées : ${r.how.decisions.map((d) => `\`${d}\``).join(', ')}.`] : []),
   ].join('\n');
 }

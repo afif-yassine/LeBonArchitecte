@@ -1,7 +1,9 @@
 // Bandeau d'état en haut de la fiche d'un ticket : en une phrase, ce qui se passe et ce qu'on attend de vous.
 // Les étapes d'une validation (ou de tests) s'y affichent pendant qu'elles se font, et l'erreur y reste écrite.
 import { AlertTriangle, Check, CircleDot, Loader2, Pause, Play, RotateCcw, Wrench, X } from 'lucide-react';
+import { useState } from 'react';
 import type { Ticket, TicketActivity } from '../shared/contract';
+import { unverifiedClaims } from '../shared/claims';
 import '../ticket-status.css';
 
 type Tone = 'run' | 'ok' | 'wait' | 'danger' | 'calm';
@@ -28,6 +30,8 @@ export function TicketStatus({ t, busy, ready, onValidate, onReject, onFix, onPa
   onValidate: () => void; onReject: () => void; onFix: () => void; onPause: () => void; onResume: () => void; onLaunch: () => void; onLook: () => void;
 }) {
   const a = t.activity;
+  const unverified = t.status === 'a-tester' ? unverifiedClaims(t.realized?.summary) : [];
+  const [sure, setSure] = useState(false);
   const running = a?.steps.some((s) => s.state === 'en-cours') || busy;
   const proven = t.steps.filter((s) => s.state === 'prouve').length;
   const current = t.steps.find((s) => s.state !== 'prouve');
@@ -62,11 +66,14 @@ export function TicketStatus({ t, busy, ready, onValidate, onReject, onFix, onPa
     text = current ? `Étape ${proven + 1} sur ${t.steps.length} : ${current.label}` : 'Toutes les étapes sont prouvées : le programme vérifie la fin.';
     actions = <button className="btn btn--sm" onClick={onPause} title="Son travail et sa conversation sont gardés"><Pause size={14} />Pause</button>;
   } else if (t.status === 'a-tester') {
-    tone = 'ok';
-    title = 'Prêt à tester';
+    tone = unverified.length ? 'wait' : 'ok';
+    title = unverified.length ? `Prêt à tester, mais l’agent signale ${unverified.length} point${unverified.length > 1 ? 's' : ''} non vérifié${unverified.length > 1 ? 's' : ''}` : 'Prêt à tester';
     text = `${proven} étape${proven > 1 ? 's' : ''} sur ${t.steps.length} prouvée${proven > 1 ? 's' : ''} par le programme. Valider relance les tests, réunit dans main, puis reteste main.`;
+    // Points non vérifiés : premier clic = « Valider quand même ? », deuxième clic = valider.
     actions = (<>
-      <button className="btn btn--primary btn--sm" onClick={onValidate}><Check size={14} />Valider</button>
+      {unverified.length && !sure
+        ? <button className="btn btn--sm" onClick={() => setSure(true)}><Check size={14} />Valider</button>
+        : <button className="btn btn--primary btn--sm" onClick={onValidate}><Check size={14} />{unverified.length ? 'Valider quand même' : 'Valider'}</button>}
       <button className="btn btn--sm" onClick={onReject}><X size={14} />Ça ne marche pas</button>
     </>);
   } else if (t.status === 'termine') {
@@ -97,6 +104,12 @@ export function TicketStatus({ t, busy, ready, onValidate, onReject, onFix, onPa
         {actions && <div className="ts__acts">{actions}</div>}
       </div>
       {a && a.steps.length > 0 && <Steps a={a} />}
+      {unverified.length > 0 && (
+        <div className="ts__warn">
+          <p>{sure ? 'Vous validez sans que ces points soient vérifiés. Regardez-les vous-même ou cliquez « Ça ne marche pas » pour les faire vérifier :' : 'Écrit par l’agent dans son résumé, à regarder avant de valider :'}</p>
+          <ul>{unverified.map((u) => <li key={u}>{u}</li>)}</ul>
+        </div>
+      )}
     </section>
   );
 }

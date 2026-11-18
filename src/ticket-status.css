@@ -31,6 +31,12 @@
 @media (prefers-reduced-motion: reduce) { .ts .spin { animation: none; } }
 
 /* Onglet Tests : chaque passage réel des tests, du plus récent au plus ancien. */
+/* Points que l'agent dit ne pas avoir vérifiés. */
+.ts__warn { margin: 10px 0 0 34px; padding: 8px 12px; border-radius: 8px; background: var(--wait-soft, var(--sunken)); font-size: .84rem; color: var(--text); }
+.ts__warn p { margin: 0 0 4px; color: var(--wait); font-weight: 550; }
+.ts__warn ul { margin: 0; padding-left: 18px; }
+.ts__warn li { margin: 2px 0; line-height: 1.45; }
+
 /* Onglet Tests : un bloc par type de test. */
 .tt { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .tt-kinds { list-style: none; margin: 0; padding: 0; width: 100%; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); }

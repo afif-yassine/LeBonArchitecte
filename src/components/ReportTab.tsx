@@ -7,7 +7,7 @@ import '../report.css';
 
 // Même forme que server/reports.ts (TicketReport).
 interface Report {
-  id: string; lot: number; status: string; validatedAt?: string; heavy: string[];
+  id: string; lot: number; status: string; validatedAt?: string; heavy: string[]; unverified?: string[];
   problem: string; solution: string; why?: string; limits?: string;
   how: { branch?: string; commits: string[]; files: { path: string }[]; decisions: string[] };
   tests: { kind: string; ok: boolean; result: string; command: string; failures: string[] }[];
@@ -86,7 +86,13 @@ export function ReportTab({ ticketId, files, onDocs, onTests }: { ticketId: stri
         </dl>
       </Part>
       <Part n={7} title="Limites et suite">
-        {r.limits ? <div className="cr-text"><Markdown text={r.limits} /></div> : <Missing>{old ? 'Pas écrit : ce ticket a été fait avant la nouvelle consigne.' : 'Rien de signalé.'}</Missing>}
+        {r.limits ? <div className="cr-text"><Markdown text={r.limits} /></div> : !r.unverified?.length && <Missing>{old ? 'Pas écrit : ce ticket a été fait avant la nouvelle consigne.' : 'Rien de signalé.'}</Missing>}
+        {!!r.unverified?.length && (
+          <div className="ts__warn" style={{ marginLeft: 0 }}>
+            <p>Non vérifié, d’après l’agent :</p>
+            <ul>{r.unverified.map((u) => <li key={u}>{u}</li>)}</ul>
+          </div>
+        )}
         {r.how.decisions.length > 0 && <p className="cr-meta">Décisions liées : {r.how.decisions.map((d) => <code key={d}>{d.split('/').pop()}</code>)}</p>}
       </Part>
     </div>

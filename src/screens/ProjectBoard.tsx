@@ -7,6 +7,7 @@ import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
 import type { Go } from '../view';
+import { unverifiedClaims } from '../shared/claims';
 import '../plans.css';
 
 // « Valider les plans et lancer » : vous cochez, les plans sont validés d'un coup, le pilote lance
@@ -71,6 +72,7 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
   const doing = (what: 'valider' | 'tester') => { setBusy(what); (what === 'valider' ? validate : test)(t.id).finally(() => setBusy(null)); };
   const agent = agents.find((a) => a.id === t.agentId);
   const open = () => go({ kind: 'ticket', ticketId: t.id });
+  const unverified = t.status === 'a-tester' ? unverifiedClaims(t.realized?.summary) : [];
 
   if (t.status === 'termine') {
     return (
@@ -106,6 +108,7 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         {t.status === 'a-faire' && !t.planOk && <span className="flag"><ListChecks size={14} aria-hidden="true" />Plan à valider</span>}
         {t.status === 'en-cours' && current && <span className="flag"><ListChecks size={14} aria-hidden="true" />Étape {proven + 1} sur {t.steps.length} : {current.label}</span>}
         {t.status === 'a-tester' && <span className="flag flag--ok"><CheckCircle2 size={14} aria-hidden="true" />{okCount}/{t.criteria.length} critères, tests verts</span>}
+        {unverified.length > 0 && <span className="flag flag--wait"><ShieldAlert size={14} aria-hidden="true" />L’agent signale {unverified.length} point{unverified.length > 1 ? 's' : ''} non vérifié{unverified.length > 1 ? 's' : ''}</span>}
         {agent && t.status === 'en-cours' && <span className={`flag ${agent.lastAction.includes('sans retour') ? 'flag--danger' : 'flag--accent'}`}>{agent.state === 'attend' ? <Hand size={14} /> : <Clock size={14} />}{agent.lastAction}</span>}
         {t.used > 0 && (
           <span className="card__foot">
@@ -129,9 +132,12 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
       )}
       {t.status === 'a-tester' && (
         <div className="card__acts">
-          <button className="btn btn--sm" disabled={busy !== null} onClick={() => doing('valider')} title="Tests dans sa branche, réunion dans main, puis tests dans main">
-            <Check size={12} />{busy === 'valider' ? 'Validation… tests puis réunion' : 'Valider'}
-          </button>
+          {/* Points non vérifiés : on ouvre la fiche pour les lire avant de valider. */}
+          {unverified.length > 0
+            ? <button className="btn btn--sm" onClick={open}><Check size={12} />Voir avant de valider</button>
+            : <button className="btn btn--sm" disabled={busy !== null} onClick={() => doing('valider')} title="Tests dans sa branche, réunion dans main, puis tests dans main">
+                <Check size={12} />{busy === 'valider' ? 'Validation… tests puis réunion' : 'Valider'}
+              </button>}
           <button className="btn btn--sm btn--ghost" disabled={busy !== null} onClick={() => doing('tester')} title="Lance les tests du projet dans la branche de ce ticket">
             {busy === 'tester' ? 'Tests en cours…' : 'Tester'}
           </button>
