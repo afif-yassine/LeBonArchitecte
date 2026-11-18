@@ -453,6 +453,22 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return msg;
   }
 
+  // « Valider les plans et lancer » : vous cochez les tickets, leurs plans sont validés d'un coup,
+  // puis le pilote remplit les places libres. Ceux qui attendent un autre ticket attendent seuls.
+  validatePlans(project: string, ids: string[]): string {
+    const ok: string[] = [];
+    for (const id of ids) {
+      const t = this.ticket(id);
+      if (t.projectId !== project || t.status !== 'a-faire' || t.planOk) continue;
+      this.record({ project, ticket: id, type: 'plan-valide', actor: 'vous', data: {} });
+      ok.push(id);
+    }
+    if (!ok.length) throw new Refused('Aucun plan à valider parmi ces tickets.');
+    const go = this.pilot().on ? this.kickPilot(project) : '';
+    this.changed();
+    return `Plans validés : ${ok.join(', ')}.${go || (this.pilot().on ? ' Aucune place libre ou ils attendent un autre ticket : le pilote les lancera ensuite.' : ' Pilote arrêté : allumez-le pour qu’ils partent.')}`;
+  }
+
   // Pilote allumé : il démarre tout de suite les tickets prêts du lot en cours (le plus petit lot pas fini).
   kickPilot(project: string): string {
     const open = this.tickets(project).filter((t) => t.status !== 'termine');

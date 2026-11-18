@@ -1,0 +1,12 @@
+/* Panneau « Valider les plans et lancer » du tableau. */
+.plans { margin-top: 10px; padding: 14px 16px; border-radius: var(--r-l); background: var(--surface); border: 1px solid var(--accent); }
+.plans__head h3 { margin: 0 0 2px; font-size: .98rem; color: var(--text-strong); }
+.plans__head p { margin: 0 0 10px; }
+.plans__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.plans__row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-m); cursor: pointer; font-size: .88rem; }
+.plans__row:hover { background: var(--sunken); }
+.plans__row input { accent-color: var(--accent); width: 15px; height: 15px; }
+.plans__title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plans__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.plans__foot select { margin-left: 6px; }
+.plans__foot .grow { flex: 1; }

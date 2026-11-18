@@ -66,6 +66,7 @@ app.get('/api/pilot', async () => engine.pilot());
 app.get('/api/actions', async () => engine.actions());
 app.post<Id & { Body: { label?: string } }>('/api/actions/:id/resolve', async (req) => ({ message: engine.resolveAction(req.params.id, req.body?.label ?? 'Fait') }));
 app.post<Id & { Body: { dir?: -1 | 1 | 'tete' } }>('/api/tickets/:id/priority', async (req) => ({ message: engine.reorder(req.params.id, req.body?.dir ?? 'tete') }));
+app.post<Id & { Body: { ids?: string[] } }>('/api/projects/:id/plans/validate', async (req) => ({ message: engine.validatePlans(req.params.id, req.body?.ids ?? []) }));
 app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
   const s = engine.setPilot(req.body as never);
   // Allumer le pilote démarre tout de suite les tickets prêts des vrais projets (pas les démos).

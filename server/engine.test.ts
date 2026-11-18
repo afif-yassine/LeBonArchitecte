@@ -420,3 +420,16 @@ test('pilote : un plan validé démarre tout de suite si une place est libre ; p
   assert.match(e.kickPilot('yy'), /yy|Pilote automatique/);
   assert.equal(e.ticket(v.id).status, 'en-cours');
 });
+
+test('valider les plans d’un coup : places remplies, le reste attend, rien hors du projet', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 2, stopAtLotEnd: false });
+  const [a, b, c] = ['Un', 'Deux', 'Trois'].map((n) => e.createTicket('ww', { title: `Correctif ${n}`, expected: 'x', criteria: ['y'] }));
+  const d = e.createTicket('ww', { title: 'Correctif suivant', expected: 'x', criteria: ['y'], deps: [a.id] });
+  const msg = e.validatePlans('ww', [a.id, b.id, c.id, d.id, 'T-3']);
+  assert.match(msg, /Plans validés/);
+  assert.equal([a, b, c].filter((t) => e.ticket(t.id).status === 'en-cours').length, 2);
+  assert.equal(e.ticket(d.id).status, 'a-faire');
+  assert.ok(e.ticket(d.id).planOk);
+  assert.throws(() => e.validatePlans('ww', [a.id]), /Aucun plan/);
+});

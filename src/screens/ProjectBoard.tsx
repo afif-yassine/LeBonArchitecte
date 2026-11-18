@@ -7,6 +7,62 @@ import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
 import type { Go } from '../view';
+import '../plans.css';
+
+// « Valider les plans et lancer » : vous cochez, les plans sont validés d'un coup, le pilote lance
+// autant d'agents que de places (chacun sur sa branche) ; ceux qui attendent un autre ticket attendent seuls.
+function PlansPanel({ projectId, todo, onClose }: { projectId: string; todo: Ticket[]; onClose: () => void }) {
+  const notify = useNotify();
+  const { tickets, autopilot, setAutopilot } = useStore();
+  const [pick, setPick] = useState<Set<string>>(() => new Set(todo.map((t) => t.id)));
+  const [busy, setBusy] = useState(false);
+  const waits = (t: Ticket) => t.deps.filter((d) => tickets.find((x) => x.id === d)?.status !== 'termine');
+  const flip = (id: string) => setPick((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/projects/${projectId}/plans/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [...pick] }) });
+      notify(((await r.json()) as { message?: string }).message ?? 'Fait.');
+      if (r.ok) onClose();
+    } finally { setBusy(false); }
+  };
+  return (
+    <section className="plans" aria-label="Valider les plans et lancer">
+      <div className="plans__head">
+        <h3>Valider les plans et lancer</h3>
+        <p className="muted small">Chaque ticket coché part sur sa propre branche, sans toucher à main. Rien n’est réuni avant votre « Valider ».</p>
+      </div>
+      <ul className="plans__list">
+        {todo.map((t) => {
+          const w = waits(t);
+          // Il attend un ticket dont le plan n'est pas validé et que vous n'avez pas coché : il ne partira pas.
+          const blockedForever = w.some((d) => { const x = tickets.find((y) => y.id === d); return !pick.has(d) && x?.status === 'a-faire' && !x.planOk; });
+          return (
+            <li key={t.id}>
+              <label className="plans__row">
+                <input type="checkbox" checked={pick.has(t.id)} onChange={() => flip(t.id)} />
+                <b>{t.id}</b><span className="plans__title">{t.title}</span>
+                <span className="faint xsmall">{t.steps.length} étapes</span>
+                {w.length > 0 && <span className={`pill ${blockedForever && pick.has(t.id) ? 'pill--danger' : 'pill--wait'}`}>{blockedForever && pick.has(t.id) ? `bloqué : ${w.join(', ')} pas coché` : `attend ${w.join(', ')}`}</span>}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="plans__foot">
+        <label className="small">Agents en même temps{' '}
+          <select value={autopilot.maxParallel} onChange={(e) => setAutopilot({ maxParallel: Number(e.target.value) })} aria-label="Agents en même temps">
+            {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        {!autopilot.on && <span className="pill pill--wait">Pilote coupé : les plans seront validés sans lancement</span>}
+        <span className="grow" />
+        <button className="btn btn--ghost btn--sm" onClick={onClose}>Fermer</button>
+        <button className="btn btn--primary btn--sm" disabled={busy || pick.size === 0} onClick={go}><Play size={13} /> Valider {pick.size} plan{pick.size > 1 ? 's' : ''} et lancer</button>
+      </div>
+    </section>
+  );
+}
 
 function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) => void }) {
   const { stop, simulate, isReady, validate } = useStore();
@@ -80,8 +136,10 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
   const notify = useNotify();
   const { tickets, autopilot, setAutopilot, queue, running, isReady } = useStore();
   const [launching, setLaunching] = useState<string | null>(null);
+  const [plans, setPlans] = useState(false);
   const p = projects.find((x) => x.id === projectId)!;
   const ts = tickets.filter((t) => t.projectId === projectId);
+  const unplanned = ts.filter((t) => t.status === 'a-faire' && !t.planOk).sort((a, b) => a.priority - b.priority);
   const lot = ts.filter((t) => t.lot === p.lot.n);
   const lotDone = lot.filter((t) => t.status === 'termine' || t.status === 'a-tester').length;
   const q = queue(projectId);
@@ -95,7 +153,9 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
             <Switch checked={autopilot.on} label="Pilote automatique" onChange={(v) => setAutopilot({ on: v })} />
             <div>
               <div className="pilot__title">Pilote automatique</div>
-              <div className="pilot__sub">{autopilot.on ? `Un ticket fini lance le suivant prêt. ${run.length} sur ${autopilot.maxParallel} en cours.` : 'Coupé : vous lancez les tickets vous-même.'}</div>
+              <div className="pilot__sub">{autopilot.on
+                ? `${run.length} sur ${autopilot.maxParallel} en cours.${unplanned.length ? ` ${unplanned.length} plan${unplanned.length > 1 ? 's' : ''} à valider : le pilote ne lance que les plans validés.` : ' Un ticket fini lance le suivant prêt.'}`
+                : 'Coupé : vous lancez les tickets vous-même.'}</div>
             </div>
           </div>
           <div className="queue" aria-label="File d’attente du pilote">
@@ -109,8 +169,10 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
             ))}
             {q.length === 0 && <span className="queue__label">File vide</span>}
           </div>
+          {unplanned.length > 0 && !plans && <button className="btn btn--sm btn--primary" onClick={() => setPlans(true)}><Play size={13} /> Valider les plans et lancer</button>}
           <button className="btn btn--sm btn--ghost" onClick={() => go({ kind: 'projet', projectId, space: 'parametres' })}>Règles</button>
         </div>
+        {plans && unplanned.length > 0 && <PlansPanel projectId={projectId} todo={unplanned} onClose={() => setPlans(false)} />}
 
         <div className="lotline">
           <span>Lot {p.lot.n} <strong>« {p.lot.name} »</strong></span>
