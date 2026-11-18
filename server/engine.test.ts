@@ -387,6 +387,17 @@ test('réclamation : toutes les preuves sont à refaire', () => {
   assert.ok(e.ticket('T-12').steps.every((s) => s.state === 'a-faire'));
 });
 
+test('LBA-11 : le rapport d’audit a son schéma, ses trois gravités, et chaque fichier cité existe', () => {
+  const root = join(import.meta.dirname, '..');
+  const html = readFileSync(join(root, 'docs/rapports/cadrage-audit.html'), 'utf8');
+  assert.ok(html.includes('<svg'), 'schéma SVG présent');
+  for (const g of ['Élevé', 'Moyen', 'Faible']) assert.ok(html.includes(g), `gravité ${g}`);
+  const cited = [...new Set(html.match(/server\/[\w.]+\.ts/g) ?? [])];
+  assert.ok(cited.length >= 5);
+  for (const f of cited) assert.ok(existsSync(join(root, f)), `${f} existe`);
+  assert.ok(existsSync(join(root, 'docs/rapports/cadrage-audit.pdf')), 'PDF créé');
+});
+
 test('validation : la 1re ligne de git status (rognée) garde son chemin entier ; .lba/ ne bloque pas la réunion', async () => {
   const { statusPaths } = await import('./git.ts');
   assert.deepEqual(statusPaths('M .lba/projet.yaml\n M src/a.ts\n?? docs/x.md\nR  old.ts -> new.ts'), ['.lba/projet.yaml', 'src/a.ts', 'docs/x.md', 'new.ts']);
