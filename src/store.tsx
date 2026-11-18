@@ -66,15 +66,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Flux en direct : le moteur prévient à chaque changement, on relit.
+  // Si le moteur redémarre, le navigateur ferme le flux pour de bon (réponse d'erreur du proxy) :
+  // on le rouvre nous-mêmes toutes les 2 s, et on relit aussi toutes les 10 s par sécurité.
+  // Plus besoin d'actualiser la page pour voir avancer le travail.
   useEffect(() => {
-    reload();
     let es: EventSource | null = null;
-    try {
+    let retry: number | undefined;
+    let stopped = false;
+    const connect = () => {
+      if (stopped) return;
       es = new EventSource('/api/stream');
+      es.onopen = () => { reload(); };
       es.onmessage = () => { reload(); };
-      es.onerror = () => setOnline(false);
-    } catch { /* pas de flux : on garde la lecture simple */ }
-    return () => es?.close();
+      es.onerror = () => {
+        setOnline(false);
+        es?.close();
+        es = null;
+        window.clearTimeout(retry);
+        retry = window.setTimeout(connect, 2000);
+      };
+    };
+    reload();
+    connect();
+    const poll = window.setInterval(reload, 10_000);
+    return () => { stopped = true; es?.close(); window.clearTimeout(retry); window.clearInterval(poll); };
   }, [reload]);
 
   // Toute action passe par le moteur ; ses refus arrivent avec une explication en clair.

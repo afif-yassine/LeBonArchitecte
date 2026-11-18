@@ -27,6 +27,7 @@ function promptFor(t: Ticket, complaint?: string): string {
     'Plan (chaque étape sera vérifiée par le programme après toi) :', ...t.steps.map((s, i) => `${i + 1}. ${s.label} (preuve : ${s.proof.text})`),
     '',
     'Travaille seulement dans ce dossier. Fais des changements petits et lisibles. Lance les tests du projet avant de finir.',
+    'Économise les tokens : lis seulement les fichiers utiles au ticket, par morceaux (Read avec offset/limit, ou Grep). N’affiche jamais un fichier entier avec cat. Pour les tests, garde seulement la fin de la sortie (| tail -15).',
     'Ne fais ni push ni merge : le programme réunit ton travail dans main après des tests verts.',
     'Termine par un résumé en français simple : ce qui a été fait, ce qui a été ajouté, les tests.',
   ].join('\n');
@@ -44,6 +45,10 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','),
     '--max-budget-usd', '3',
+    // Contexte minimal (mesuré : 34 210 tokens fixes au 1er tour sans ces options, ~12 300 avec) :
+    // pas de connecteurs MCP, pas de liste de skills, seulement les 6 outils utiles à un ticket.
+    '--strict-mcp-config', '--disable-slash-commands', '--tools', 'Read,Edit,Write,Glob,Grep,Bash',
+    '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' ? 'high' : 'medium',
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
   child.stdin.end(promptFor(t, complaint));
