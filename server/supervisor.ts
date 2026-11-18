@@ -14,8 +14,7 @@ import { assertMainReady, branchOf, changedFiles, commitWorktree, diffOf, ensure
 import type { TicketActivity } from '../src/shared/contract.ts';
 import { handoffText, writeHandoff } from './recovery.ts';
 import { Refused } from './tickets.ts';
-
-const SECRET = /(sk-ant-[\w-]{10,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+import { envNotIgnored, hasAbuseTest, newRiskyPackages, quickScan, sensitiveZones } from './securite.ts';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -241,8 +240,21 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     }
 
     const files = changedFiles(repo, id);
-    const leaked = SECRET.test(diffOf(repo, id));
-    if (leaked) engine.live(id, { kind: 'bug', ok: false, text: 'Un secret semble écrit dans les changements : réunion bloquée.' }, 'programme');
+    // Gardes de sécurité gratuites (décision 0016) : secrets dans chaque commit, fichiers interdits, .env pas ignoré.
+    const sec = quickScan(repo, id);
+    const envOpen = envNotIgnored(repo, wt);
+    const gitignoreBroken = envOpen.length > 0 && files.some((f) => f.path === '.gitignore');
+    const leaked = sec.blocked || gitignoreBroken;
+    if (sec.blocked) engine.live(id, { kind: 'bug', ok: false, text: sec.cause!, detail: `Contrôlé par : ${sec.tool}.` }, 'programme');
+    if (gitignoreBroken) engine.live(id, { kind: 'bug', ok: false, text: `Le ticket a changé .gitignore et ${envOpen.join(', ')} n’est plus ignoré par git : réunion bloquée.` }, 'programme');
+    else if (envOpen.length) engine.live(id, { kind: 'systeme', text: `Attention : ${envOpen.join(', ')} existe mais n’est pas ignoré par git. Ajoutez-le à .gitignore pour qu’il ne parte jamais dans git.` }, 'programme');
+    if (!leaked) engine.live(id, { kind: 'systeme', ok: true, text: `Aucun secret ni fichier interdit dans les commits du ticket (${sec.tool}).` }, 'programme');
+    // Failles : paquets à risque (si la liste a changé) et zones sensibles (connexion, quotas, paiement…).
+    const pkgs = await newRiskyPackages(repo, wt, files.map((f) => f.path));
+    if (pkgs.risky.length) engine.live(id, { kind: 'bug', ok: false, text: `Paquets avec une faille grave ajoutés : ${pkgs.risky.join(', ')}.`, detail: 'Contrôlé par npm audit, comparé à main.' }, 'programme');
+    const zones = sensitiveZones(files.map((f) => f.path), diffOf(repo, id));
+    if (zones.length) engine.live(id, { kind: 'systeme', text: `Zone sensible touchée : ${zones.join(', ')}. ${hasAbuseTest(t.criteria) ? 'Le test d’abus du ticket a tourné avec les tests.' : 'Aucun critère « Test d’abus » : une triche (quota remis à zéro, droits contournés…) ne serait pas vue.'} Relecture sécurité conseillée à la recette.` }, 'programme');
+    const faille = pkgs.risky.length ? 'echec' : zones.length || (pkgs.why && !/inchangée/.test(pkgs.why)) ? 'non-verifie' : 'ok';
     // Un ticket de recherche lit Internet : il n'a le droit d'écrire que dans ses dossiers.
     const outside = isResearch(t) ? files.filter((f) => !RESEARCH_DIRS.some((d) => f.path.startsWith(d))).map((f) => f.path) : [];
     if (outside.length) engine.live(id, { kind: 'bug', ok: false, text: `Recherche : fichiers modifiés hors de ${RESEARCH_DIRS.join(' et ')}. Réunion à refuser.`, detail: outside.join(', ') }, 'programme');
@@ -258,12 +270,12 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       engine.live(id, { kind: 'test', ok: r.ok, text: `${prof.commands.test} : ${r.ok ? 'vert' : 'en échec'}`, detail: r.summary.split('\n').slice(0, 9).join('\n') }, 'programme');
     }
     // Audit LBA-11, point 4 : ce qu'aucun outil ne contrôle est affiché « non vérifié », jamais « ok ».
-    engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : nouvelles failles, documentation à jour' + (isResearch(t) ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');
+    engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : ' + (faille === 'non-verifie' ? 'nouvelles failles, ' : '') + 'documentation à jour' + (isResearch(t) ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');
     engine.agentDone(id, {
       criteriaOk: o.ok,
       checks: {
         'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === true ? 'ok' : testsOk === false ? 'echec' : 'non-verifie',
-        'Périmètre respecté': outside.length ? 'echec' : isResearch(t) ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'non-verifie', 'Documentation à jour': 'non-verifie',
+        'Périmètre respecté': outside.length ? 'echec' : isResearch(t) ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': faille, 'Documentation à jour': 'non-verifie',
       },
     }, { repair: canAutoRepair(engine.ticket(id), prof.commands, { agentOk: o.ok, hasSession: !!engine.sessionOf(id), leaked, outside: outside.length }) });
   }
@@ -285,6 +297,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const test = profileOf(t.projectId).commands.test;
     // Chaque étape est affichée en haut de la fiche pendant qu'elle se fait ; l'erreur y reste écrite.
     const steps: TicketActivity['steps'] = [
+      { label: 'Contrôle sécurité', state: 'attente' },
       ...(test ? [{ label: 'Tests dans sa branche', state: 'attente' as const }] : []),
       { label: 'Réunion dans main', state: 'attente' },
       ...(test ? [{ label: 'Tests dans main', state: 'attente' as const }] : []),
@@ -306,6 +319,16 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       throw err;
     }
     let i = 0;
+    // Refait juste avant la réunion : la branche a pu changer depuis la fin de l'agent (conflit résolu…).
+    // Un secret dans l'historique ne se répare pas par l'agent : c'est à vous de décider.
+    show(i, 'en-cours');
+    const sec = quickScan(repo, id);
+    if (sec.blocked) {
+      show(i, 'echec', sec.forbidden.length ? `fichier interdit : ${sec.forbidden.join(', ')}` : `secret possible dans ${sec.secrets.map((s) => s.file).join(', ')}`, sec.cause, false);
+      engine.needsAction(id, sec.cause!);
+      throw new Refused(sec.cause!);
+    }
+    show(i++, 'ok', `aucun secret ni fichier interdit (${sec.tool})`);
     if (test) {
       show(i, 'en-cours');
       const r = await runCommand(test, { cwd: worktreeOf(repo, id), ticket: id });

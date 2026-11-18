@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { simulateRun } from './simulate.ts';
 import './recovery.test.ts'; // « npm test » ne lance que ce fichier
 import './tests-kinds.test.ts';
+import './securite.test.ts';
 
 const fresh = () => { const e = new Engine(openDb(':memory:')); e.seed(tickets, humanActions); return e; };
 const OK = { criteriaOk: true, checks: { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } } as const;

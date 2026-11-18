@@ -22,7 +22,9 @@ const ALLOWED = ['Read', 'Edit', 'Write', 'Glob', 'Grep',
   'Bash(ls)', 'Bash(ls *)', 'Bash(tail *)', 'Bash(head *)', 'Bash(wc *)', 'Bash(grep *)'];
 const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git -C *)', 'Bash(git -c *)',
   'Bash(node *)', 'Bash(npx *)', 'Bash(npm install *)', 'Bash(npm i *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npm publish *)',
-  'Read(**/.env*)', 'Read(**/*.pem)',
+  'Read(**/.env*)', 'Read(**/*.pem)', 'Write(**/.env*)', 'Edit(**/*.pem)', 'Write(**/*.pem)', 'Read(**/*.key)', 'Read(**/id_rsa*)',
+  // tail, head et grep sont permis : sans ceci, « tail .env » lirait un secret (lot S, décision 0016).
+  'Bash(* .env*)', 'Bash(*/.env*)', 'Bash(*.pem*)', 'Bash(*id_rsa*)',
   // Mémoire personnelle du propriétaire et journaux des sessions (~/.claude) : hors du projet, jamais lus ni écrits.
   'Read(~/.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
 
@@ -78,6 +80,8 @@ function promptFor(t: Ticket, complaint?: string): string {
     'Plan (chaque étape sera vérifiée par le programme après toi) :', ...t.steps.map((s, i) => `${i + 1}. ${s.label} (preuve : ${s.proof.text})`),
     '',
     'Travaille seulement dans ce dossier. Fais des changements petits et lisibles. Lance les tests du projet avant de finir.',
+    ...(t.criteria.some((c) => /test d.abus/i.test(c.text)) ? ['Pour un critère « Test d’abus » : écris un test qui ESSAIE la triche décrite (comme un tricheur le ferait) et qui vérifie qu’elle échoue. Corrige le code jusqu’à ce que ce test passe.'] : []),
+    'Jamais de secret dans le code : une clé ou un mot de passe se lit depuis une variable d’environnement. Une fausse valeur de test porte le commentaire lba:pas-un-secret sur sa ligne.',
     ECONOMY,
     'Ne lis docs/JOURNAL.md et docs/decisions/ que si le ticket les nomme, et alors seulement la partie utile (Grep).',
     'Ne fais ni push ni merge : le programme réunit ton travail dans main après des tests verts.',

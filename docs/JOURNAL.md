@@ -331,3 +331,13 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Vérifié en vrai : chaque commande répond, la carte trouve `askArchitectAgent` et `refreshMap`. L'Architecte a utilisé la carte sur une vraie question, mais avec un mot français, et la carte n'a rien trouvé. Sa règle dit maintenant : un nom du code, ou un seul Grep pour le trouver.
 - Écran vérifié dans un Chrome sans fenêtre, sur PC (1 280 px) et sur téléphone (390 px) : les commandes s'affichent, aucune erreur, pas de défilement de côté. 64 tests verts, compilation sans erreur.
 - Remarque : sur un petit écran, le tiroir « Orchestrateur » couvre le chat à l'ouverture. C'était déjà comme ça avant, et il se ferme avec ».
+
+## Lot S : gardes de sécurité gratuites (18 nov. 2026)
+- Votre question : un `.env` dans git, une faille comme le quota remis à zéro. Réponse : le programme vérifie ce qu'une machine peut vérifier (0 token), et l'IA réfléchit au reste. Décision 0016.
+- Secrets cherchés dans **chaque commit** du ticket : un secret ajouté puis effacé est trouvé quand même. Fichiers interdits (`.env`, clés) bloqués. Un `.env` pas ignoré par git est signalé. Aucune valeur de secret n'est jamais affichée.
+- Le contrôle est refait juste avant chaque réunion dans main : c'est la première étape de la validation, « Contrôle sécurité ».
+- Paquets à risque : `npm audit` compare la branche à main quand la liste des paquets change.
+- Failles de logique : le programme repère les zones sensibles (connexion, quotas, paiement, envoi de fichiers). L'Architecte ajoute un critère « Test d'abus », et l'agent écrit un test qui essaie la triche.
+- Deux trous fermés chez les agents : ils pouvaient écrire un `.env`, et lire un `.env` avec `tail`, `head` ou `grep`.
+- Vérifié : 68 tests verts, compilation sans erreur. Tout l'historique de LBA est propre : 0 secret, 0 fichier interdit, après la correction d'une fausse alerte.
+- En attente de votre « oui » : installer gitleaks (8,4 Mo, depuis GitHub). Sans lui, les règles du programme tournent seules.
