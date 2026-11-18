@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowLeftRight, Check, ChevronDown, FileCheck2, FileClock, GitBranch, GitCommitHorizontal,
-  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, SendHorizontal, Settings2, Square, X,
+  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, RotateCcw, SendHorizontal, Settings2, Square, X,
 } from 'lucide-react';
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
 import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
@@ -19,6 +19,7 @@ const EV_LABEL: Record<string, string> = {
   'ticket-cree': 'Ticket créé', 'ticket-lance': 'Lancé', 'ticket-arrete': 'Arrêté', 'agent-termine': 'Fin de l’agent', 'ticket-a-tester': 'Passé à tester',
   'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', reparation: 'Réparation automatique', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
   'etape-commencee': 'Étape commencée', 'etape-annoncee': 'Étape annoncée', direct: 'Direct',
+  'ticket-interrompu': 'Interrompu', 'ticket-repris': 'Repris',
 };
 const evText = (d: Record<string, unknown>) => String(d.text ?? d.cause ?? d.problem ?? d.evidence ?? d.model ?? d.report ?? d.step ?? '');
 
@@ -311,6 +312,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <div className="kv"><span>État</span><span>{agent ? <span className={`pill pill--dot pill--${paused ? '' : STATE[agent.state].tone}`}>{paused ? 'En pause' : STATE[agent.state].label}</span> : <span className="pill">{t.status === 'a-faire' ? 'À faire' : t.status === 'a-tester' ? 'À tester' : t.status === 'termine' ? 'Fini' : 'Sans agent'}</span>}</span></div>
         {agent && <div className="kv"><span>Agent</span><span>{agent.name}<span className="faint xsmall"> {role?.name}</span></span></div>}
         <div className="kv"><span>Étapes</span><span className="num">{proven} sur {t.steps.length} prouvées{!t.planOk && <span className="faint xsmall">, plan à valider</span>}</span></div>
+        {t.interrupted && <div className="kv"><span>Dernière preuve</span><span>{t.interrupted.lastProved ?? 'Aucune étape prouvée'}</span></div>}
         <div className="kv"><span>Outil</span><span>{TOOLS[conf.tool].label}</span></div>
         <div className="kv"><span>Compte</span><span>{account?.label}<span className="faint xsmall"> 5 h : {account?.quota5h} %</span></span></div>
         <div className="kv"><span>Modèle</span><span>{conf.model}, effort {conf.effort}</span></div>
@@ -339,6 +341,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           {t.status === 'a-faire' && (t.paused
             ? <button className="btn btn--primary" onClick={() => resume(t.id)}><Play size={15} />Reprendre</button>
             : <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>)}
+          {t.status === 'action' && t.interrupted && <button className="btn btn--primary" onClick={() => resume(t.id)}><RotateCcw size={15} />Reprendre</button>}
           {t.status === 'a-tester' && (<>
             <button className="btn btn--primary" onClick={() => validate(t.id)}><Check size={15} />Valider</button>
             <button className="btn" onClick={() => { setTab('realise'); setRejecting(true); }}><X size={15} />Ça ne marche pas</button>

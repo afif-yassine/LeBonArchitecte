@@ -2,7 +2,7 @@
 import Fastify from 'fastify';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { openDb } from './db.ts';
+import { backupDb, openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
@@ -17,7 +17,12 @@ import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 const PORT = Number(process.env.LBA_PORT ?? 4317);
 // Dossier de chaque vrai projet. Les projets d'exemple n'en ont pas.
 const PROJECT_DIRS: Record<string, string> = { lba: process.cwd() };
-const engine = new Engine(openDb(join(process.cwd(), '.lba', 'lba.db')));
+const db = openDb(join(process.cwd(), '.lba', 'lba.db'));
+// Sauvegarde de l'état de l'outil : au démarrage (avant tout changement), puis chaque heure.
+const saveState = () => { try { backupDb(db, join(process.cwd(), '.lba', 'sauvegardes')); } catch (err) { console.error(`Sauvegarde impossible : ${(err as Error).message}`); } };
+saveState();
+setInterval(saveState, 3_600_000).unref();
+const engine = new Engine(db);
 if (engine.isEmpty()) engine.seed(seedTickets, humanActions); // premier démarrage : tickets de démonstration
 else engine.seedActionsOnce(humanActions);
 
@@ -78,7 +83,8 @@ app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
 app.post<Id & { Body: { replace?: string; manual?: boolean; who?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace, manual: req.body?.manual, actor: req.body?.who }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
 app.post<Id>('/api/tickets/:id/pause', async (req) => ({ message: engine.pause(req.params.id) }));
-app.post<Id>('/api/tickets/:id/resume', async (req) => ({ message: engine.resume(req.params.id) }));
+// Reprendre : un ticket en pause, ou interrompu par une panne (avec sa passation, LBA-16).
+app.post<Id>('/api/tickets/:id/resume', async (req) => ({ message: supervisor.resume(req.params.id) }));
 app.post<Id>('/api/tickets/:id/validate', async (req) => ({ message: await supervisor.validate(req.params.id) }));
 // « Tester » : les tests du projet lancés dans la branche du ticket (son dossier), pas dans main.
 app.post<Id>('/api/tickets/:id/test', async (req) => {

@@ -2,7 +2,7 @@
 // transaction, puis applique les règles (0 token). Aucune IA ici.
 import type { DatabaseSync } from 'node:sqlite';
 import type { HumanAction, LiveItem, LiveKind, Ticket } from '../src/shared/contract.ts';
-import { Refused, assertMove, reduce, type EngineEvent } from './tickets.ts';
+import { Refused, assertMove, lastProvedStep, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
 import { budgetReached, checkDone, DAY_BUDGET, isReady, MAX_REPAIRS, nextReady, pickModel, running, type PilotSettings } from './rules.ts';
@@ -167,9 +167,16 @@ export class Engine {
   }
 
   // Reprendre : il repart tout de suite s'il y a une place (dans sa session s'il en a une), sinon en tête de file.
+  // Un seul « Reprendre » : un ticket mis en pause par vous, ou interrompu par une panne (LBA-16).
   resume(id: string): string {
     const t = this.ticket(id);
-    if (t.status !== 'a-faire' || !t.paused) throw new Refused(`${id} n’est pas en pause.`);
+    if (t.status === 'action' && t.interrupted) return this.resumeInterrupted(id);
+    return this.resumePaused(id);
+  }
+
+  private resumePaused(id: string): string {
+    const t = this.ticket(id);
+    if (t.status !== 'a-faire' || !t.paused) throw new Refused(`${id} n’est ni en pause ni interrompu : rien à reprendre.`);
     this.record({ project: t.projectId, ticket: id, type: 'ticket-pause', actor: 'vous', data: { paused: false } });
     this.record({ project: t.projectId, ticket: id, type: 'priorite', actor: 'vous', data: { priority: 0 } });
     try {
@@ -179,6 +186,42 @@ export class Engine {
       this.changed();
       return `${id} repris : il attend en tête de file (${err.message})`;
     }
+  }
+
+  // Plus aucun agent ne travaille sur ce ticket (PC éteint, panne, espace de travail impossible) :
+  // il ne reste pas « en cours » ; il attend votre « Reprendre », avec sa dernière étape prouvée.
+  interrupt(id: string, reason: string): string {
+    const t = this.inProgress(id);
+    const lastProved = lastProvedStep(t)?.label;
+    const cause = `${reason} ${lastProved ? `Dernière étape prouvée : « ${lastProved} ».` : 'Aucune étape prouvée pour l’instant.'}`;
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-interrompu', actor: 'programme', data: { cause, ...(lastProved ? { lastProved } : {}) } });
+    this.changed();
+    return cause;
+  }
+
+  // « Reprendre » après une panne : le ticket repart avec ses preuves ; le superviseur lui donne sa passation.
+  private resumeInterrupted(id: string): string {
+    const t = this.ticket(id);
+    if (t.status !== 'action' || !t.interrupted) throw new Refused(`${id} n’a pas été interrompu : rien à reprendre.`);
+    const until = this.quotaUntil();
+    if (until) throw new Refused(`Limite de l’abonnement jusqu’à ${new Date(until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : reprenez ${id} après cette heure.`);
+    const busy = running(this.tickets(t.projectId), t.projectId);
+    if (busy.length >= this.pilot().maxParallel) throw new Refused(`Plus de place : ${busy.map((b) => b.id).join(' et ')} ${busy.length > 1 ? 'sont' : 'est'} en cours. Arrêtez-en un ou attendez sa fin pour reprendre ${id}.`);
+    this.record({ project: t.projectId, ticket: id, type: 'ticket-repris', actor: 'vous', data: {} });
+    this.changed();
+    return `${id} reprend avec sa passation, sans refaire les étapes prouvées.`;
+  }
+
+  // Dernier départ d'un ticket. Requête dédiée : un long direct ne doit jamais le faire disparaître.
+  lastStart(id: string): EngineEvent | undefined {
+    const r = this.db.prepare("SELECT * FROM events WHERE ticket = ? AND type IN ('ticket-lance', 'reclamation', 'reparation', 'ticket-repris') ORDER BY id DESC LIMIT 1").get(id) as (Omit<EngineEvent, 'data'> & { data: string }) | undefined;
+    return r ? { ...r, data: JSON.parse(r.data) } : undefined;
+  }
+
+  // Réclamation pas encore traitée : aucun passage « à tester » depuis qu'elle a été écrite.
+  openComplaint(id: string): string | undefined {
+    const r = this.db.prepare("SELECT type, data FROM events WHERE ticket = ? AND type IN ('reclamation', 'ticket-a-tester') ORDER BY id DESC LIMIT 1").get(id) as { type: string; data: string } | undefined;
+    return r?.type === 'reclamation' ? String(JSON.parse(r.data).problem ?? '') : undefined;
   }
 
   // Limite d'abonnement atteinte (ex. « 5-hour limit ») : ce n'est pas un échec du ticket.
@@ -529,6 +572,8 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
         case 'direct': return [{ ...base, kind: d.kind as LiveKind, text: String(d.text), detail: d.detail as string | undefined, ok: d.ok as boolean | undefined, step: d.step as string | undefined }];
         case 'ticket-lance': return [{ ...base, kind: 'agent', text: `Lancé sur ${d.model}`, detail: String(d.reason ?? '') }];
         case 'ticket-arrete': return [{ ...base, kind: 'systeme', text: 'Arrêté proprement, passation écrite' }];
+        case 'ticket-interrompu': return [{ ...base, kind: 'systeme', ok: false, text: String(d.cause) }];
+        case 'ticket-repris': return [{ ...base, kind: 'systeme', text: 'Repris par vous, avec sa passation' }];
         case 'plan-valide': return [{ ...base, kind: 'etape', text: 'Plan validé', ok: true }];
         case 'etape-commencee': return [{ ...base, kind: 'etape', text: `Commence : ${label(d.step)}`, step: String(d.step) }];
         case 'etape-annoncee': return [{ ...base, kind: 'etape', ok: Boolean(d.proofOk), step: String(d.step), text: d.proofOk ? `Prouvé : ${label(d.step)}` : `Annoncé, pas prouvé : ${label(d.step)}`, detail: String(d.evidence ?? '') }];

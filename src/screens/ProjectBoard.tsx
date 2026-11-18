@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
 import { COLUMNS, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
@@ -126,6 +126,9 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
                 <button className="btn btn--sm btn--ghost" onClick={() => pause(t.id)} title="Le pilote ne le lancera pas avant « Reprendre »"><Pause size={12} />Pause</button>
               </>}
         </div>
+      )}
+      {t.status === 'action' && t.interrupted && (
+        <div className="card__acts"><button className="btn btn--sm" onClick={() => resume(t.id)}><RotateCcw size={12} />Reprendre</button></div>
       )}
       {t.status === 'a-tester' && (
         <div className="card__acts">

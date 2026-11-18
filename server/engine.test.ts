@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { simulateRun } from './simulate.ts';
+import './recovery.test.ts'; // « npm test » ne lance que ce fichier
 
 const fresh = () => { const e = new Engine(openDb(':memory:')); e.seed(tickets, humanActions); return e; };
 const OK = { criteriaOk: true, checks: { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } } as const;
@@ -574,7 +575,7 @@ test('pause et reprise : le pilote respecte la pause, « Reprendre » relance to
   assert.equal(e.ticket(a.id).status, 'en-cours');
   assert.match(e.resume(b.id), /attend en tête de file/); // plus de place : il attend sans pause
   assert.ok(!e.ticket(b.id).paused);
-  assert.throws(() => e.resume(b.id), /pas en pause/);
+  assert.throws(() => e.resume(b.id), /ni en pause ni interrompu/);
 });
 
 test('parler à l’agent : à tester = demande de modification (il reprend), en cours = gardé, fini = refusé', () => {

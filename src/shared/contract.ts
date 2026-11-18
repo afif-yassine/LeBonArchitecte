@@ -142,6 +142,7 @@ export interface Ticket {
   status: TicketStatus;
   securityBlock?: string;
   needAction?: string;
+  interrupted?: { at: string; lastProved?: string }; // coupé par un redémarrage ou une panne : à reprendre
   waitingFor?: string; // ce que la carte attend, en mots simples
   paused?: boolean; // mis en pause par vous : le pilote ne le lance pas
   part: string;
