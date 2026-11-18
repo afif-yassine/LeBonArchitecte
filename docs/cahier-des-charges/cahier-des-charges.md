@@ -45,6 +45,12 @@ Cette partie 1 est **le seul endroit où les règles sont écrites** ; l'onglet 
 | 25 | Le moteur n'obéit qu'à l'interface de ce PC. | Décision 0008 | Programme |
 | 26 | Un rôle n'existe que s'il a un besoin écrit, un déclencheur décidé par le programme et une preuve vérifiable. | Partie 2, LBA-12 | À la main |
 | 27 | Une économie de tokens se mesure sur 5 tickets réels avant d'être généralisée. | LBA-10 | À la main |
+| 28 | Si deux règles se contredisent : la sécurité d'abord, puis le choix écrit le plus récent du propriétaire, puis l'ordre de la partie 3. Sinon, l'agent s'arrête et demande. | Décision 0010 | À la main |
+| 29 | Un avis, un coût et un « oui » par lot, pas par ticket. Ce « oui » valide les plans du lot, puis le pilote enchaîne. | Décision 0010 | À la main |
+| 30 | L'orchestrateur reçoit des ordres et répond par règles, sans IA. Une conversation se fait avec l'Architecte ou l'agent du ticket. | Décision 0010 | Programme |
+| 31 | Une seule ambiance active, avec un seul accent et une seule police. Une nouvelle ambiance demande une maquette validée. | Décision 0010 | À la main |
+| 32 | Sans « oui », le programme ne retire que ce qu'il a créé lui-même et qui ne contient aucun travail unique. | Décision 0010 | Programme |
+| 33 | Réparation automatique : une seule reprise de l'agent, dans le périmètre de son ticket, sur un manque que le programme sait revérifier. Toutes les preuves sont refaites. | Décision 0010, LBA-17 | Programme |
 
 ## 2. Échecs passés à ne jamais refaire (Escouade, fork, couche « Studio »)
 - Tokens : 3 à 59 M par ticket ; chef orchestrateur IA permanent très coûteux ; sorties de tests lues en entier ; agents en parallèle.
@@ -203,3 +209,29 @@ Il n'y a pas d'équipe fixe : pour chaque projet (A12), le programme n'appelle q
 1. **Cibles** : confirmer ou changer les cibles C4, C6, C9, C10 et C11, qui ne reposent encore sur aucune série de mesures.
 2. **Agents en même temps** : la partie 2 cite les agents en parallèle comme un échec, alors que la règle 17 en autorise deux. Avis : garder deux, car chacun a son worktree et main est retesté après chaque réunion.
 3. **Relecteur design** : l'accepter, une fois les captures faites par le programme. Avis : oui, c'est le seul ajout qui répond à un manque constaté.
+
+---
+
+## Ajouts du 18 nov. 2026 (décision 0010)
+Quand deux règles de ce cahier se contredisent, `docs/decisions/0010-contradictions-du-cahier.md` dit laquelle gagne. Elle range aussi A9 dans E12 et E17, et A11 dans E11.
+
+### Ordre de construction : état réel
+Ce tableau remplace la lecture de la partie 5, dont le texte d'origine reste en place. Le travail n'a pas suivi l'ordre prévu : le « J1 » du journal a construit le moteur, pas le scan. L'état vient du code et du journal au 18 nov. 2026.
+
+| Jalon | Exigences | État | Ce qui manque |
+|---|---|---|---|
+| J0 Avis, architecture, maquettes | A1, A2 | Fait | Validation finale de la maquette, non notée au journal |
+| J1 Scan | E0, E18 | En partie | Graphify, outils de sécurité et de qualité, `.lba/scan/`, démarrage depuis un dépôt, modèles de projets |
+| J2 Moteur | E6, E9, E10, E11, E16, A3, A4, A11 | En grande partie | Contrôle des doublons, bibliothèque de skills, Docker, aperçu, suivi des incidents |
+| J3 Agents | E2, E1 | En partie | Codex (LBA-7), changement d'outil, de modèle ou de compte en cours de route, plusieurs comptes, bascule automatique |
+| J4 Orchestrateur et démarche | E4, E5, E12, A5, A7, A8, A9 (chiffres), A12 | En partie | Règles 5a et 21 à brancher, Flux réel, comptes rendus du jour, import de briques évaluées |
+| J5 Espace de travail | E7, E13, E14, E15, E19, E20, A6, A10, A13 | En partie | Plusieurs vrais projets, notifications Windows, images et fichiers joints, onglets Backlog, Équipe, Santé et Flux |
+| J6 Mémoire et contexte | E8 | Étudié, pas construit | Mémoire partagée, Graphify, paquet de contexte par ticket |
+| J7 Avancé | E3, E17, A9 (actions) | E3 pas commencé, E17 en partie | Coordination entre agents, nettoyage, nombre d'agents selon les quotas |
+
+Suite proposée, à confirmer par le propriétaire :
+1. Brancher les garde-fous déjà écrits : règles 5a et 21, bascule de quota (J3 et J4).
+2. Finir les onglets réels et les comptes rendus du jour (J4 et J5).
+3. Ajouter Codex (J3).
+4. Compléter le scan (J1).
+5. Construire la mémoire (J6), puis le jalon avancé (J7).
