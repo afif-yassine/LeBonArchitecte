@@ -237,3 +237,10 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Incident : 2 à 3 minutes après le départ, la limite de 5 h de l'abonnement est atteinte (« resets 5:50am »). Le moteur l'a pris pour une fin normale : les 4 tickets en « Pas fini », et le pilote a lancé LBA-17 qui s'est arrêté aussitôt.
 - Corrigé : la limite est reconnue. Le travail est gardé dans la branche, le ticket attend en tête de file avec sa session, le pilote se met en pause jusqu'à l'heure de retour (gardée même si le moteur redémarre), puis reprend. Un ticket relancé reprend sa session Claude au lieu de tout relire. 35 tests verts.
 - Relancés à 12 h : LBA-12, 15, 16 reprennent leur session (branches mises à jour avec la correction) ; LBA-17 attend une place.
+
+## Pause, Reprendre, Valider, Tester et parler à l'agent (18 nov. 2026)
+- Cause du « Valider ne marche pas » : réunir LBA-17 a changé le code du moteur, et node --watch l'a redémarré au milieu de la validation (réponse coupée). Trois anciens surveillants --watch tournaient encore en même temps. Nouveau lanceur (scripts/dev.mjs) : le moteur redémarre seulement quand il est libre (/api/busy : aucun agent, aucune validation).
+- Valider et Tester affichent leur progression. Tester lance les tests dans la branche du ticket (avant : dans main).
+- Pause réelle (avant : simple affichage) : un ticket en cours est arrêté, son travail et sa conversation sont gardés ; le pilote ne relance pas un ticket en pause. Reprendre relance dans sa session.
+- Parler à l'agent : à tester ou en besoin d'action, un message est une demande de modification, et l'agent qui a fait le travail reprend sa propre conversation. En cours, le message lui arrive à la fin de son tour. Une fois réuni dans main, la conversation reste lisible et une modification devient un nouveau ticket.
+- LBA-16 en conflit avec main (il avait aussi un « Reprendre », après panne) : fusionné, un seul bouton pour les deux cas. 50 tests verts dans sa branche ; LBA-12 et 15 sans conflit.
