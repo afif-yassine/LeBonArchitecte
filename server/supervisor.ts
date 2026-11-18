@@ -32,6 +32,7 @@ export function checkFiles(repo: string, wt: string, id: string, check: 'pdf' | 
 }
 
 // Une session encore écrite il y a moins de 90 s : son agent tourne peut-être encore, on ne la double pas.
+// (Le dossier des sessions de Claude Code est le chemin du travail, avec : \ / . remplacés par -.)
 function recentlyActive(cwd: string, session: string): boolean {
   const dir = join(homedir(), '.claude', 'projects', cwd.replace(/[:\\/.]/g, '-'));
   try { return Date.now() - statSync(join(dir, `${session}.jsonl`)).mtimeMs < 90_000; } catch { return false; }

@@ -95,6 +95,7 @@ app.get<Id & { Querystring: { path?: string; diff?: string } }>('/api/tickets/:i
   return { path, content };
 });
 app.get<Id>('/api/tickets/:id/live', async (req) => engine.liveFeed(req.params.id));
+app.post<Id>('/api/tickets/:id/plan/redo', async (req) => ({ message: engine.replan(req.params.id) }));
 app.post<Id>('/api/tickets/:id/plan/validate', async (req) => ({ message: engine.validatePlan(req.params.id) }));
 app.post<Id & { Body: { text?: string } }>('/api/tickets/:id/message', async (req) => ({ message: engine.message(req.params.id, req.body?.text ?? '') }));
 // Démonstration tant que les adaptateurs ne sont pas branchés (LBA-6, LBA-7) : joue un déroulé sur un projet d'exemple.

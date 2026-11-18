@@ -180,6 +180,17 @@ export class Engine {
     return ids;
   }
 
+  // Refaire le plan avec les règles à jour, tant qu'aucune étape n'est prouvée (rien n'est perdu).
+  replan(id: string): string {
+    const t = this.ticket(id);
+    if (t.status === 'termine' || t.status === 'a-tester') throw new Refused(`${id} est fini : son plan ne change plus.`);
+    if (t.steps.some((s) => s.state === 'prouve')) throw new Refused(`${id} a déjà des étapes prouvées : son plan ne change plus.`);
+    const steps = draftPlan(t);
+    this.record({ project: t.projectId, ticket: id, type: 'plan-refait', actor: 'programme', data: { steps } });
+    this.changed();
+    return `Plan de ${id} refait : ${steps.length} étapes.`;
+  }
+
   validatePlan(id: string): string {
     const t = this.ticket(id);
     if (t.planOk) return `Le plan de ${id} est déjà validé.`;
