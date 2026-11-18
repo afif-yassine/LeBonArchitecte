@@ -97,3 +97,23 @@ test('Architecte autonome : modèle choisi par règle, état préparé sans toke
   assert.equal(e.architectThread('p').length, 1);
   assert.equal(e.spentToday(), 5000, 'les tokens de l’Architecte comptent dans le budget du jour');
 });
+
+test('carnet de l’Architecte : vos consignes passées, ses actions et le titre des décisions (pour voir une contradiction)', async () => {
+  const { notebook } = await import('./architectAgent.ts');
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-carnet-'));
+  mkdirSync(join(repo, 'docs', 'decisions'), { recursive: true });
+  writeFileSync(join(repo, 'docs', 'decisions', '0012-comptes-rendus.md'), '# Décision 0012 : comptes rendus selon le poids\n\nTexte long…');
+  const e = new Engine(openDb(':memory:'));
+  e.architectSay('p', 'vous', 'Les tickets légers sont regroupés par lot.');
+  e.architectSay('p', 'action', 'lba creer --titre X');
+  const n = notebook(e, 'p', repo);
+  assert.match(n, /Consignes passées[\s\S]*regroupés par lot/);
+  assert.match(n, /Tes dernières actions[\s\S]*lba creer/);
+  assert.match(n, /Décisions prises[\s\S]*Décision 0012 : comptes rendus selon le poids/);
+  assert.doesNotMatch(n, /Texte long/, 'seulement le titre, pas le texte');
+});

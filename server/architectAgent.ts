@@ -9,6 +9,9 @@
 //   le programme), au lieu de recharger une longue conversation au plein tarif.
 // - Sonnet pour une consigne simple, Opus pour l'architecture et les décisions (décision 0007).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { contextOf } from './claude.ts';
 import type { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { cacheWarm } from './supervisor.ts';
@@ -27,6 +30,7 @@ const RULES = [
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Économie de tokens : l’état du projet t’est donné, ne le redemande que s’il a changé. Ne relis jamais un fichier déjà lu. Lis par morceaux (Grep, Read avec offset). Ne lis pas docs/JOURNAL.md ni toutes les décisions sauf si la demande les concerne.',
   'Tu ne modifies aucun fichier toi-même. Pour écrire ou changer un document ou du code : crée un ticket précis puis lance-le ; un agent le fait dans sa branche, le propriétaire valide. Le programme choisit le mode le moins cher (un document simple coûte environ 6 k).',
+  'Contradiction : avant d’agir, compare la demande avec les consignes passées du propriétaire, les décisions et les tickets en cours (fournis). Si elle en contredit une et qu’un ticket concerné est déjà commencé (en cours, à tester, fini), NE FAIS RIEN : écris « Contradiction : » avec la consigne ou la décision contredite (date), le ticket touché et ce qu’il a déjà coûté, puis 3 choix avec ton avis et leur coût : 1) garder l’ancien, 2) remplacer (mettre l’ancien en pause, son travail reste dans sa branche, nouveau ticket), 3) combiner si c’est possible sans tout refaire. Il répondra. Si le ticket concerné n’a pas commencé, replanifie-le et dis-le en une ligne. Rien n’est jamais effacé ; un vrai changement de direction devient aussi un ticket « Décision : … ».',
   'Termine toujours par une ligne « Fait : … » qui liste tes actions, ou « Rien fait : … » avec la raison.',
 ].join('\n');
 
@@ -64,11 +68,27 @@ export function projectDigest(engine: Engine, project: string): string {
   ].filter(Boolean).join('\n');
 }
 
-// Carnet : ses dernières actions, écrites par le programme. Sert de mémoire courte quand il repart à neuf.
-function notebook(engine: Engine, project: string): string {
-  const acts = engine.architectThread(project, 60).filter((m) => m.who === 'action').slice(-12);
-  return acts.length ? ['Ton carnet (tes dernières actions) :', ...acts.map((a) => `- ${a.at.slice(5, 16).replace('T', ' ')} ${a.text}`)].join('\n') : '';
+// Carnet, écrit par le programme (0 token) : mémoire courte quand il repart à neuf.
+// Vos 10 dernières consignes + ses 12 dernières actions + le titre de chaque décision : de quoi voir une contradiction.
+export function notebook(engine: Engine, project: string, repo?: string): string {
+  const fil = engine.architectThread(project, 120);
+  const when = (at: string) => at.slice(5, 16).replace('T', ' ');
+  const asks = fil.filter((m) => m.who === 'vous').slice(-10);
+  const acts = fil.filter((m) => m.who === 'action').slice(-12);
+  let decisions: string[] = [];
+  if (repo) try {
+    decisions = readdirSync(join(repo, 'docs', 'decisions')).filter((f) => /^\d{4}-.*\.md$/.test(f)).sort()
+      .map((f) => readFileSync(join(repo, 'docs', 'decisions', f), 'utf8').split('\n')[0].replace(/^#\s*/, '').slice(0, 110));
+  } catch { /* pas de dossier de décisions */ }
+  return [
+    asks.length ? ['Consignes passées du propriétaire :', ...asks.map((a) => `- ${when(a.at)} ${String(a.text).slice(0, 200)}`)].join('\n') : '',
+    acts.length ? ['Tes dernières actions :', ...acts.map((a) => `- ${when(a.at)} ${a.text}`)].join('\n') : '',
+    decisions.length ? ['Décisions prises (titres ; lis un fichier seulement si la demande le touche) :', ...decisions.map((d) => `- ${d}`)].join('\n') : '',
+  ].filter(Boolean).join('\n\n');
 }
+
+// Au-delà de cette taille, reprendre la conversation coûte plus que repartir avec le carnet (mesuré sur LBA-15).
+const MAX_RESUME_CONTEXT = 60_000;
 
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const running = new Map<string, ChildProcess>();
@@ -82,7 +102,10 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   const cwd = repo; // lecture seule : il voit main tel qu'il est maintenant
   const key = `${ARCHITECT_ID}-${project}`;
   const prev = engine.sessionOf(key);
-  const resume = prev && cacheWarm(cwd, prev) ? prev : undefined;
+  // Reprendre seulement si le cache est chaud (moins de 5 min) ET la conversation encore courte.
+  const size = prev ? contextOf(cwd, prev).end : 0;
+  const resume = prev && cacheWarm(cwd, prev) && size < MAX_RESUME_CONTEXT ? prev : undefined;
+  const fresh = prev && !resume ? (size >= MAX_RESUME_CONTEXT ? `conversation trop longue (${Math.round(size / 1000)} k)` : 'pause de plus de 5 min') : '';
 
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[model],
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
@@ -92,10 +115,13 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
     '--effort', model === 'Opus' ? 'high' : 'medium',
     '--append-system-prompt', RULES];
   if (resume) args.push('--resume', resume);
-  const prompt = [resume ? '' : notebook(engine, project), projectDigest(engine, project), '', `Demande du propriétaire : ${ask}`].filter((x) => x !== '').join('\n\n');
+  // Carnet lu AVANT d'écrire la nouvelle demande dans le fil (sinon elle s'y trouverait deux fois).
+  const prompt = [resume ? '' : notebook(engine, project, repo), projectDigest(engine, project), '', `Demande du propriétaire : ${ask}`].filter((x) => x !== '').join('\n\n');
 
   engine.architectSay(project, 'vous', ask, { model });
-  engine.architectSay(project, 'systeme', resume ? `Reprend sa conversation (moins de 5 min) sur ${model}.` : `Nouvelle conversation sur ${model}, avec son carnet et l’état du projet.`);
+  engine.architectSay(project, 'systeme', resume
+    ? `Reprend sa conversation (${Math.round(size / 1000)} k, moins de 5 min) sur ${model}.`
+    : `Nouvelle conversation sur ${model}, avec son carnet et l’état du projet${fresh ? ` (${fresh})` : ''}.`);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   running.set(project, child);
   child.stdin.end(prompt);
@@ -126,6 +152,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
       engine.architectTokens(project, { used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, model });
       engine.architectSay(project, 'architecte', String(m.result ?? (m.is_error ? 'Erreur sans message.' : '')).slice(0, 6000), {
         model, tokens: used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, ok: m.subtype === 'success' && !m.is_error,
+        context: m.session_id ? contextOf(cwd, String(m.session_id)).end : undefined, // taille de sa conversation après ce tour
       });
     }
   };

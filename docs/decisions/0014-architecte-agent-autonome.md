@@ -21,3 +21,9 @@ Réunir dans main (Valider), git (revenir, brancher), pilote et budget du jour, 
 - Sonnet pour une consigne, Opus pour architecture, décisions, risques, équipe (« /opus » ou « /sonnet » force le choix). Tokens comptés dans le budget du jour.
 - Lecture seule sur main (toujours à jour) : il ne modifie aucun fichier ; un document ou du code = un ticket qu'il crée et lance (branche, À tester, votre Valider). Écriture, git add/commit, npm, npx, curl, web et ~/.claude lui sont refusés.
 - Mesuré le 18 nov. (Sonnet) : 1re question 3 936 tokens + 4 768 relus du cache ; question suivante 1 374 tokens + 7 962 relus du cache.
+
+## Contradictions et taille du contexte (ajout du 18 nov.)
+- Son carnet contient aussi vos 10 dernières consignes et le titre de chaque décision (0 token, préparé par le programme).
+- Une demande qui contredit une consigne, une décision ou un ticket déjà commencé : il ne fait rien et répond « Contradiction : » avec 3 choix (garder, remplacer, combiner), son avis et le coût. Ticket pas commencé : il le replanifie et le dit. Rien n'est effacé.
+- Conversation reprise seulement si elle a moins de 60 k de contexte (et moins de 5 min) ; au-delà, nouvelle conversation avec le carnet : elle ne grossit jamais sans fin.
+- Essai réel (Sonnet) : « un compte rendu complet pour chaque ticket » a été reconnu comme contraire à la décision 0012, sans action, 3 choix proposés ; 5 443 tokens + 4 768 relus du cache, contexte 9 k.

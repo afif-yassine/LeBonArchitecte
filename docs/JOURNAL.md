@@ -308,3 +308,4 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Économie : consigne fixe en cache, état du kanban préparé par le programme, carnet de ses dernières actions, reprise seulement si moins de 5 min, Sonnet ou Opus selon la demande. Mesuré : 3 936 tokens pour une première question, 1 374 pour la suivante (le reste relu du cache, 10 fois moins cher).
 - Le moteur ne redémarre pas pendant que l'Architecte travaille (/api/busy). 62 tests verts.
 - Reste : lot C (écran Architecte : conversation en direct, actions, coût, PDF) et la construction de l'équipe d'agents par l'Architecte.
+- Ajout : l'Architecte repère une demande qui contredit vos consignes, une décision ou un travail commencé, s'arrête et propose garder / remplacer / combiner (essayé en vrai sur la décision 0012 : 5 443 tokens). Conversation limitée à 60 k de contexte, sinon nouvelle conversation avec son carnet. 63 tests verts.
