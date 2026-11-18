@@ -3,7 +3,9 @@
 // Sortie « stream-json » lue ligne par ligne et racontée dans le direct.
 // Interdits appliqués par Claude Code lui-même (règles deny), en plus du contrôle du moteur.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, relative } from 'node:path';
 import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import type { Engine } from './engine.ts';
@@ -50,6 +52,32 @@ const DENIED_MSG = /^Permission to use|was denied|denied by/i;
 
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
+// Journal d'une session Claude Code (dossier = chemin du travail, avec : \ / . remplacés par -).
+export const transcriptOf = (cwd: string, session: string) =>
+  join(homedir(), '.claude', 'projects', cwd.replace(/[:\\/.]/g, '-'), `${session}.jsonl`);
+
+// Ce que la partie coupée d'une session a lu et consommé : rien n'est perdu à la reprise.
+export function sessionSoFar(cwd: string, session: string): { read: string[]; used: number; cacheRead: number; turns: number } {
+  const out = { read: new Set<string>(), used: 0, cacheRead: 0, turns: 0 };
+  const seen = new Set<string>();
+  let lines: string[] = [];
+  try { lines = readFileSync(transcriptOf(cwd, session), 'utf8').split('\n'); } catch { /* pas de journal */ }
+  for (const l of lines) {
+    let m: Record<string, any>;
+    try { m = JSON.parse(l); } catch { continue; }
+    if (m.type !== 'assistant' || !m.message) continue;
+    for (const b of m.message.content ?? []) if (b.type === 'tool_use' && b.name === 'Read' && b.input?.file_path) out.read.add(relative(cwd, b.input.file_path).replaceAll('\\', '/'));
+    const u = m.message.usage;
+    if (u && m.message.id && !seen.has(m.message.id)) {
+      seen.add(m.message.id);
+      out.turns += 1;
+      out.used += (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      out.cacheRead += u.cache_read_input_tokens ?? 0;
+    }
+  }
+  return { read: [...out.read], used: out.used, cacheRead: out.cacheRead, turns: out.turns };
+}
+
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
 export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
@@ -77,7 +105,14 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     try { engine.live(t.id, { kind, text, detail, ok }, who); } catch { /* ticket supprimé ou arrêté : on ignore */ }
   };
   const tools = new Map<string, { name: string; cmd?: string }>();
-  const read = new Set<string>();
+  // Reprise : on garde les fichiers déjà lus avant la coupure (preuve de l'étape « relire »)
+  // et on compte les tokens de la partie coupée, qui n'avaient pas été enregistrés.
+  const before = resume ? sessionSoFar(cwd, resume) : undefined;
+  const read = new Set<string>(before?.read ?? []);
+  if (before && before.used) {
+    try { engine.tokens(t.id, { used: before.used, cacheRead: before.cacheRead, costUsd: 0, turns: before.turns }); } catch { /* ignore */ }
+    live('systeme', `Partie coupée comptée : ${before.used.toLocaleString('fr-FR')} tokens en ${before.turns} tours`, `${before.read.length} fichiers lus avant la coupure ; ${before.cacheRead.toLocaleString('fr-FR')} relus depuis le cache`);
+  }
   let testFailed = false;
   let testsGreen: boolean | undefined;
   let buf = '';

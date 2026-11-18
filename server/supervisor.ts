@@ -5,7 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
-import { isResearch, runClaude, type RunOutcome } from './claude.ts';
+import { isResearch, runClaude, transcriptOf, type RunOutcome } from './claude.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { pickMode } from './rules.ts';
@@ -17,7 +17,6 @@ const SECRET = /(sk-ant-[\w-]{10,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BE
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 
 // Preuve « fichier » vérifiée par le programme dans ce que le ticket a changé (jamais sur parole).
 export function checkFiles(repo: string, wt: string, id: string, check: 'pdf' | 'svg' | 'liens' | 'md'): { ok: boolean; evidence: string } {
@@ -32,10 +31,8 @@ export function checkFiles(repo: string, wt: string, id: string, check: 'pdf' | 
 }
 
 // Une session encore écrite il y a moins de 90 s : son agent tourne peut-être encore, on ne la double pas.
-// (Le dossier des sessions de Claude Code est le chemin du travail, avec : \ / . remplacés par -.)
 function recentlyActive(cwd: string, session: string): boolean {
-  const dir = join(homedir(), '.claude', 'projects', cwd.replace(/[:\\/.]/g, '-'));
-  try { return Date.now() - statSync(join(dir, `${session}.jsonl`)).mtimeMs < 90_000; } catch { return false; }
+  try { return Date.now() - statSync(transcriptOf(cwd, session)).mtimeMs < 90_000; } catch { return false; }
 }
 
 export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile) {
