@@ -28,6 +28,21 @@ app.setErrorHandler((err, _req, reply) => {
   return reply.code(500).send({ message: `Erreur du serveur : ${e.message}` });
 });
 
+// Audit LBA-11, point 8 : le moteur n'obéit qu'à l'interface de ce PC.
+// - Nom d'hôte local seulement (bloque un site qui se ferait passer pour « localhost » : DNS rebinding).
+// - Une page d'un autre site (Origin étranger) ne peut rien demander.
+// - Toute action (POST, PUT) doit être en JSON : un formulaire ou un envoi « texte » d'un autre site est refusé.
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+app.addHook('onRequest', async (req, reply) => {
+  const host = String(req.headers.host ?? '');
+  const origin = req.headers.origin;
+  if (!LOCAL_HOST.test(host) || (origin && !LOCAL_ORIGIN.test(origin))) return reply.code(403).send({ message: 'Refusé : le moteur ne répond qu’à l’interface de ce PC.' });
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !String(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    return reply.code(415).send({ message: 'Refusé : une action doit être envoyée en JSON par l’interface.' });
+  }
+});
+
 type Id = { Params: { id: string } };
 
 app.get('/api/health', async () => ({ ok: true }));

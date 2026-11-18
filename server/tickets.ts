@@ -56,7 +56,7 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return {
         ...t,
         criteria: e.data.criteriaOk ? t.criteria.map((c) => ({ ...c, done: true })) : t.criteria,
-        done: t.done.map((d) => ({ ...d, state: (e.data.checks as Record<string, 'ok' | 'echec'> | undefined)?.[d.label] ?? d.state })),
+        done: t.done.map((d) => ({ ...d, state: (e.data.checks as Record<string, 'ok' | 'echec' | 'non-verifie'> | undefined)?.[d.label] ?? d.state })),
       };
     case 'ticket-a-tester':
       return { ...t, status: 'a-tester', needAction: undefined };

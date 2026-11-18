@@ -10,7 +10,7 @@ import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
-import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, removeWorktree, worktreeOf } from './git.ts';
+import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, removeWorktree, revertMerge, worktreeOf } from './git.ts';
 import { Refused } from './tickets.ts';
 
 const SECRET = /(sk-ant-[\w-]{10,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
@@ -89,7 +89,16 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const onEnd = (o: RunOutcome) => {
       runs.delete(id);
       if (engine.ticket(id).status !== 'en-cours') return;
-      finish(id, wt, o).catch((err) => engine.live(id, { kind: 'systeme', ok: false, text: `Fin de l’agent mal terminée : ${(err as Error).message}` }, 'programme'));
+      // Audit LBA-11, point 5 : si la fin plante, le ticket ne reste pas « en cours » pour toujours :
+      // il passe en « Besoin d'action » avec la raison, et libère sa place.
+      finish(id, wt, o).catch((err) => {
+        engine.live(id, { kind: 'bug', ok: false, text: `Fin de l’agent mal terminée : ${(err as Error).message}` }, 'programme');
+        try {
+          if (engine.ticket(id).status === 'en-cours') {
+            engine.agentDone(id, { criteriaOk: false, checks: { 'Critères tenus': 'echec', 'Tests verts': 'non-verifie', 'Périmètre respecté': 'non-verifie', 'Aucun secret': 'non-verifie', 'Aucune nouvelle faille': 'non-verifie', 'Documentation à jour': 'non-verifie' } });
+          }
+        } catch { /* déjà sorti d'« en cours » */ }
+      });
     };
     // Tâche simple de texte : un seul appel sans outils ; sinon un agent complet.
     runs.set(id, pickMode(t) === 'direct'
@@ -134,12 +143,19 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       tests: testsOk ? `Tests verts, lancés par le programme (${prof.commands.test}).` : 'Tests pas encore verts : voir les étapes.',
       commits: hash ? [hash] : [], branch: branchOf(id),
     });
-    engine.live(id, { kind: 'systeme', text: 'Contrôles sans outil pour l’instant : périmètre, failles, documentation. À regarder à la recette.' }, 'programme');
+    // Tests du projet lancés pour tout ticket, même s'il n'a pas d'étape « tests » : un document ne doit rien casser.
+    if (testsOk === undefined && prof.commands.test) {
+      const r = await runCommand(prof.commands.test, { cwd: wt, ticket: id });
+      testsOk = r.ok;
+      engine.live(id, { kind: 'test', ok: r.ok, text: `${prof.commands.test} : ${r.ok ? 'vert' : 'en échec'}`, detail: r.summary.split('\n')[0] }, 'programme');
+    }
+    // Audit LBA-11, point 4 : ce qu'aucun outil ne contrôle est affiché « non vérifié », jamais « ok ».
+    engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : nouvelles failles, documentation à jour' + (isResearch(t) ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');
     engine.agentDone(id, {
       criteriaOk: o.ok,
       checks: {
-        'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === false ? 'echec' : 'ok',
-        'Périmètre respecté': outside.length ? 'echec' : 'ok', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok',
+        'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === true ? 'ok' : testsOk === false ? 'echec' : 'non-verifie',
+        'Périmètre respecté': outside.length ? 'echec' : isResearch(t) ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'non-verifie', 'Documentation à jour': 'non-verifie',
       },
     });
   }
@@ -156,6 +172,16 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       if (!r.ok) throw new Refused(`Tests rouges dans l’espace de ${id} : pas de réunion dans main. ${r.summary.split('\n')[0]}`);
     }
     const m = mergeTicket(repo, id, t.title);
+    // Audit LBA-11, point 2 : les tests sont relancés dans main APRÈS la réunion.
+    // Deux tickets verts chacun peuvent donner un main rouge : dans ce cas on annule la réunion.
+    if (test) {
+      const after = await runCommand(test, { cwd: repo, ticket: id });
+      if (!after.ok) {
+        const rev = revertMerge(repo, m.merge);
+        engine.live(id, { kind: 'bug', ok: false, text: 'Tests rouges dans main après la réunion : réunion annulée.', detail: `${after.summary.split('\n')[0]} ; annulée par le commit ${rev}, rien n’est effacé.` }, 'programme');
+        throw new Refused(`Tests rouges dans main après la réunion de ${id} : la réunion est annulée (commit ${rev}). Le ticket reste à tester ; son espace de travail est gardé.`);
+      }
+    }
     const msg = engine.validate(id);
     engine.live(id, { kind: 'systeme', ok: true, text: `Réuni dans main (${m.merge})`, detail: `Point de retour : ${m.before}. Pour annuler : git revert -m 1 ${m.merge}` }, 'programme');
     removeWorktree(repo, id);

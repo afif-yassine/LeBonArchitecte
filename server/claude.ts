@@ -10,10 +10,18 @@ import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import type { Engine } from './engine.ts';
 
-const ALLOWED = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm *)', 'Bash(npx *)', 'Bash(node *)',
-  'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)', 'Bash(git add *)', 'Bash(git commit *)'];
-const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(rm *)',
-  'Bash(curl *)', 'Bash(npm publish *)', 'Read(**/.env*)', 'Read(**/*.pem)', 'Edit(**/.env*)', 'WebFetch', 'WebSearch'];
+// Audit LBA-11, point 3 : plus de « npm * », « npx * » ni « node * », qui permettaient de lancer n'importe
+// quel code (donc un push ou une suppression déguisés). L'agent garde seulement les commandes du projet
+// (tests, compilation, PDF), git en lecture et commit, et quelques commandes de lecture pour filtrer une sortie.
+// Toute autre commande est refusée par Claude Code lui-même (aucune question posée : --permission-prompts none).
+// package.json est protégé : sinon un agent pourrait y cacher une commande, lancée ensuite par « npm test ».
+const ALLOWED = ['Read', 'Edit', 'Write', 'Glob', 'Grep',
+  'Bash(npm test)', 'Bash(npm test *)', 'Bash(npm run check)', 'Bash(npm run check *)', 'Bash(npm run build)', 'Bash(npm run build *)', 'Bash(npm run pdf *)',
+  'Bash(git status)', 'Bash(git status *)', 'Bash(git diff)', 'Bash(git diff *)', 'Bash(git log *)', 'Bash(git add *)', 'Bash(git commit *)',
+  'Bash(ls)', 'Bash(ls *)', 'Bash(tail *)', 'Bash(head *)', 'Bash(wc *)', 'Bash(grep *)'];
+const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git -C *)', 'Bash(git -c *)',
+  'Bash(node *)', 'Bash(npx *)', 'Bash(npm install *)', 'Bash(npm i *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npm publish *)',
+  'Read(**/.env*)', 'Read(**/*.pem)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
 
 // Le web seulement pour un ticket de recherche (rôle Éclaireur) : lecture d'Internet, écriture limitée à ses dossiers.
 export const isResearch = (t: Ticket) => t.steps.some((s) => s.role === 'eclaireur');

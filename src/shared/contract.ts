@@ -129,7 +129,8 @@ export interface Project {
 
 export interface DoneCheck {
   label: string;
-  state: 'ok' | 'echec' | 'attente';
+  // non-verifie : aucun outil ne l'a contrôlé ; à regarder à la recette (jamais affiché « ok » à tort).
+  state: 'ok' | 'echec' | 'attente' | 'non-verifie';
 }
 
 export interface Ticket {

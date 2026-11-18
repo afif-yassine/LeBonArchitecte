@@ -427,6 +427,7 @@ h3 { font-size: 1rem; font-weight: 600; margin: 0; color: var(--text-strong); le
 .check.is-ok .check__mark { background: var(--ok); border-color: var(--ok); color: var(--bg); }
 .check.is-ok > span:last-child { color: var(--muted); }
 .check.is-fail .check__mark { border-color: var(--danger); color: var(--danger); }
+.check.is-unknown .check__mark { border-color: var(--wait); color: var(--wait); font-size: .7rem; font-weight: 700; }
 .lockfile { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: .8rem; color: var(--text); padding: 2px 0; }
 .lockfile svg { color: var(--faint); flex: none; }
 .tk__actions { display: flex; flex-direction: column; gap: 6px; margin-top: 22px; }

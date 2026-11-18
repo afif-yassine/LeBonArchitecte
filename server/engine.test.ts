@@ -256,12 +256,43 @@ test('worktree par ticket : travail isolé, réunion après tests, node_modules 
   assert.ok(g.commitWorktree(wt, 'T-1 : readme'));
   assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), '# test\n', 'main pas touché avant la réunion');
   assert.deepEqual(g.changedFiles(repo, 'T-1').map((f) => f.path), ['README.md']);
+
+  // Audit LBA-11, point 1 : jamais de réunion hors de main, ni avec des changements non enregistrés.
+  git('checkout', '-q', '-b', 'autre');
+  assert.throws(() => g.mergeTicket(repo, 'T-1', 'readme'), /branche « autre »/);
+  assert.deepEqual(g.changedFiles(repo, 'T-1').map((f) => f.path), ['README.md'], 'comparé à main, pas à la branche ouverte');
+  git('checkout', '-q', 'main');
+  writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.lba/\n# modifié\n');
+  assert.throws(() => g.mergeTicket(repo, 'T-1', 'readme'), /pas enregistré/);
+  git('checkout', '--', '.gitignore');
+
   const m = g.mergeTicket(repo, 'T-1', 'readme');
   assert.ok(m.before && m.merge && m.before !== m.merge);
   assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /Ajout du ticket/);
+
+  // Audit LBA-11, point 2 : une réunion se défait par un commit d'annulation, sans rien effacer.
+  const rev = g.revertMerge(repo, m.merge);
+  assert.equal(readFileSync(join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# test\n', 'main revenu à son état d’avant');
+  assert.match(execFileSync('git', ['log', '--format=%h', '-3'], { cwd: repo, encoding: 'utf8' }), new RegExp(m.merge), 'la réunion reste dans l’historique');
+  assert.ok(rev);
+
   g.removeWorktree(repo, 'T-1');
   assert.ok(!existsSync(wt), 'espace supprimé');
   assert.ok(existsSync(join(repo, 'node_modules', 'pkg', 'keep.txt')), 'node_modules d’origine intact');
+});
+
+test('interdits : un push ou une réunion déguisés sont refusés (audit LBA-11, point 3)', () => {
+  for (const c of ['git -C . push', 'git -c user.name=x push origin main', 'git --no-pager merge x', 'git push']) assert.throws(() => checkCommand(c), /refusée/, c);
+  assert.doesNotThrow(() => checkCommand('git status'));
+  assert.doesNotThrow(() => checkCommand('npm test'));
+});
+
+test('définition de fini : « non vérifié » est dit clairement mais ne bloque pas ; un échec bloque', () => {
+  const e = fresh();
+  proveAll(e, 'T-12');
+  const unknown = { ...OK, checks: { ...OK.checks, 'Aucune nouvelle faille': 'non-verifie' as const, 'Documentation à jour': 'non-verifie' as const } };
+  assert.match(e.agentDone('T-12', unknown), /prêt à tester/);
+  assert.equal(e.ticket('T-12').done.find((d) => d.label === 'Aucune nouvelle faille')?.state, 'non-verifie');
 });
 
 test('création d’un ticket : plan proposé, à valider', () => {

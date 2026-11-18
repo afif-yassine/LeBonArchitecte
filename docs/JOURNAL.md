@@ -189,3 +189,10 @@
 - Onglets branchés sur les vraies données du projet, sans IA : Cahier des charges, Documents, Règles (partie 1 du cahier), Git, Réglages > Quotas (tokens mesurés par ticket et par jour).
 - Sur un vrai projet, un onglet pas encore branché le dit au lieu d'afficher du faux (Architecte, Flux, Backlog, Équipe, Santé, Mémoire). Fausses pastilles et faux journal de l'Orchestrateur retirés.
 - Lot 2 : Backlog, Équipe, Santé, Flux, journal du pilote.
+
+## Corrections de l'audit LBA-11 (18 nov. 2026)
+- Plans adaptés à chaque ticket : preuve vérifiable par critère (PDF, schéma, liens, document, tests, compilation), rôle Architecte pour l'architecture. Étapes annoncées en direct par l'agent (« ÉTAPE n : commencée / faite »), cochées seulement après vérification.
+- Incident : un redémarrage du moteur (mes changements) a coupé l'agent LBA-11. Correction : un agent coupé reprend sa propre session Claude (reprise LBA-11 : 2 597 tokens au lieu de tout refaire). Les fichiers lus et les tokens de la partie coupée sont repris du journal de session.
+- Décision 0008 : réunion seulement dans un main propre, tests relancés après la réunion avec annulation par revert, droits précis des agents (plus de node/npx/npm *), contrôles « non vérifié » au lieu de « ok », ticket jamais bloqué en cours, moteur fermé aux pages étrangères (vérifié : 403 et 415).
+- Tests : 29 verts. LBA-11 : 68 711 tokens (Opus), prêt à tester.
+- À vérifier au prochain vrai ticket : que les nouveaux droits suffisent à l'agent (tests, compilation, PDF).

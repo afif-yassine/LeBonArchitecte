@@ -1,4 +1,6 @@
-// Exécuteur de commandes (LBA-5). Toute commande d'un agent passe ici :
+// Exécuteur de commandes (LBA-5) : les commandes lancées par le programme et par vous (« !commande »).
+// Un agent Claude lance les siennes lui-même : ce sont alors ses droits précis (server/claude.ts) qui protègent,
+// pas cette liste. Cette liste est un second filet, pas la barrière principale (audit LBA-11, point 3).
 // - les commandes interdites sont refusées avant de partir, avec la raison ;
 // - la sortie complète est gardée dans .lba/logs (pour vous et l'audit) ;
 // - l'agent ne reçoit qu'un résumé court : c'est là que l'on économise les tokens.
@@ -9,8 +11,9 @@ import { Refused } from './tickets.ts';
 
 // Interdits par défaut (cahier des charges E16). Le propriétaire les lève au cas par cas, jamais l'agent.
 const FORBIDDEN: { re: RegExp; why: string }[] = [
-  { re: /\bgit\s+push\b/i, why: 'envoyer sur GitHub demande votre « oui »' },
-  { re: /\bgit\s+merge\b/i, why: 'réunir des branches demande votre « oui »' },
+  // Options entre « git » et la commande comprises (git -C . push, git -c x=y merge) : audit LBA-11, point 3.
+  { re: /\bgit\b(\s+-[cC]\s+\S+|\s+--?[\w-]+(=\S+)?)*\s+push\b/i, why: 'envoyer sur GitHub demande votre « oui »' },
+  { re: /\bgit\b(\s+-[cC]\s+\S+|\s+--?[\w-]+(=\S+)?)*\s+merge\b/i, why: 'réunir des branches demande votre « oui »' },
   { re: /\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f)/i, why: 'efface du travail sans retour' },
   { re: /\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r|Remove-Item\b.*-Recurse|\brd\s+\/s|\brmdir\s+\/s/i, why: 'suppression récursive' },
   { re: /(^|[\s"'/\\])\.env(\.[\w-]+)?(\s|$|["'])|id_rsa|\.pem\b/i, why: 'lire un fichier de secrets est interdit' },

@@ -133,7 +133,7 @@ export class Engine {
   }
 
   // Fin d'un agent. « result » vient de l'adaptateur (plus tard) ou d'une simulation (maquette).
-  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec'> }): string {
+  agentDone(id: string, result: { criteriaOk: boolean; checks: Record<string, 'ok' | 'echec' | 'non-verifie'> }): string {
     const t = this.ticket(id);
     if (t.status !== 'en-cours') throw new Refused(`${id} n’est pas en cours.`);
     this.record({ project: t.projectId, ticket: id, type: 'agent-termine', actor: t.agentId ?? 'agent', data: result });
