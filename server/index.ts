@@ -25,6 +25,7 @@ setInterval(saveState, 3_600_000).unref();
 const engine = new Engine(db);
 if (engine.isEmpty()) engine.seed(seedTickets, humanActions); // premier démarrage : tickets de démonstration
 else engine.seedActionsOnce(humanActions);
+engine.rebuild(); // chaque ticket recalculé depuis son journal (vérifié sans différence sur une copie de la base, 18 nov.)
 
 const app = Fastify({ logger: false });
 

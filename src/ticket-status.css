@@ -2,18 +2,20 @@
 .ts { --tone: var(--muted); --tone-soft: var(--sunken);
   border: 1px solid var(--line); border-left: 4px solid var(--tone); border-radius: var(--r-l);
   background: linear-gradient(90deg, var(--tone-soft), transparent 70%), var(--surface);
-  padding: 14px 16px; margin: 4px 0 14px; }
+  padding: 9px 12px; margin: 2px 0 10px; }
 .ts.is-run { --tone: var(--accent); --tone-soft: var(--accent-soft); }
 .ts.is-ok { --tone: var(--ok); --tone-soft: var(--ok-soft); }
 .ts.is-wait { --tone: var(--wait); --tone-soft: var(--wait-soft); }
 .ts.is-danger { --tone: var(--danger); --tone-soft: var(--danger-soft); }
-.ts__head { display: flex; align-items: flex-start; gap: 12px; }
-.ts__badge { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--tone); background: var(--tone-soft); }
-.ts__text { flex: 1; min-width: 0; }
-.ts__title { margin: 3px 0 2px; font-size: 1rem; font-weight: 650; color: var(--text-strong); }
-.ts__sub { margin: 0; font-size: .88rem; color: var(--text); line-height: 1.5; overflow-wrap: anywhere; }
+/* Une seule ligne : titre et explication côte à côte, actions à droite. */
+.ts__head { display: flex; align-items: center; gap: 10px; }
+.ts__badge { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--tone); background: var(--tone-soft); }
+.ts__text { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 10px; }
+.ts__title { margin: 0; font-size: .95rem; font-weight: 650; color: var(--text-strong); white-space: nowrap; }
+.ts__sub { margin: 0; font-size: .84rem; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; flex: 1 1 260px; }
+.ts.is-danger .ts__sub { color: var(--text); }
 .ts__acts { flex: none; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.ts__steps { list-style: none; margin: 12px 0 0 42px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.ts__steps { list-style: none; margin: 8px 0 2px 36px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .ts__step { display: flex; align-items: baseline; gap: 7px; font-size: .84rem; color: var(--muted); }
 .ts__ico { align-self: center; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--sunken); color: var(--faint); }
 .ts__step.is-ok .ts__ico { background: var(--ok-soft); color: var(--ok); }

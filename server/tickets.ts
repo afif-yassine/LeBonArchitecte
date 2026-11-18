@@ -88,8 +88,16 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
-    case 'tokens':
-      return { ...t, used: t.used + Number(e.data.used ?? 0) };
+    case 'tokens': {
+      // Le détail s'additionne tour après tour. Les anciens tours n'ont pas l'entrée/sortie séparées : « split » le dit.
+      const u = t.usage ?? { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, costUsd: 0, turns: 0, split: true };
+      const n = (k: string) => Number(e.data[k] ?? 0);
+      return { ...t, used: t.used + n('used'), usage: {
+        input: u.input + n('input'), output: u.output + n('output'), cacheWrite: u.cacheWrite + n('cacheWrite'),
+        cacheRead: u.cacheRead + n('cacheRead'), costUsd: u.costUsd + n('costUsd'), turns: u.turns + n('turns'),
+        split: u.split && e.data.input !== undefined,
+      } };
+    }
     case 'reuni':
       return { ...t, realized: (e.data.realized as Ticket['realized']) ?? t.realized };
     case 'priorite':

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
-import { COLUMNS, type Ticket } from '../shared/contract';
+import { COLUMNS, budgetFor, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
@@ -113,7 +113,7 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         {agent && t.status === 'en-cours' && <span className={`flag ${agent.lastAction.includes('sans retour') ? 'flag--danger' : 'flag--accent'}`}>{agent.state === 'attend' ? <Hand size={14} /> : <Clock size={14} />}{agent.lastAction}</span>}
         {(t.used > 0 || realized) && (
           <span className="card__foot">
-            {t.used > 0 && <span style={{ flex: 1 }}><Bar value={t.used} max={t.budget} label={`Budget de ${t.id}`} /></span>}
+            {t.used > 0 && <span style={{ flex: 1 }}><Bar value={t.used} max={budgetFor(t)} label={`Budget de ${t.id}`} /></span>}
             {t.used > 0 && <span className="num">{fmtTokens(t.used)}</span>}
             {realized && <span style={{ marginLeft: 'auto' }}>{reported}</span>}
           </span>

@@ -609,6 +609,18 @@ test('validation visible : étapes et erreur gardées sur le ticket ; échec ré
   assert.equal(e.ticket(t.id).needAction, undefined);
 });
 
+test('recalcul depuis le journal : mêmes tickets qu’en direct, détail des tokens additionné', () => {
+  const e = fresh();
+  const t = e.createTicket('rr', { title: 'Correctif recalcul', expected: 'x', criteria: ['y'] });
+  e.launch(t.id);
+  e.tokens(t.id, { used: 1000, cacheRead: 5000, costUsd: .1, turns: 3, input: 200, output: 300, cacheWrite: 500 });
+  e.tokens(t.id, { used: 500, cacheRead: 0, costUsd: .05, turns: 1, input: 100, output: 100, cacheWrite: 300 });
+  const live = JSON.stringify(e.tickets());
+  e.rebuild();
+  assert.equal(JSON.stringify(e.tickets()), live);
+  assert.deepEqual(e.ticket(t.id).usage, { input: 300, output: 400, cacheWrite: 800, cacheRead: 5000, costUsd: .15000000000000002, turns: 4, split: true });
+});
+
 test('mise à jour de la branche avec main : conflit laissé marqué pour l’agent, main jamais touché', async () => {
   const { execFileSync } = await import('node:child_process');
   const { writeFileSync } = await import('node:fs');

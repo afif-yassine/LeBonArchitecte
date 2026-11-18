@@ -1,0 +1,83 @@
+/* Déroulé : le plan en barre, puis le récit par tours. Calme et lisible : les moments utiles ressortent,
+   le travail technique reste discret. */
+.rc { max-width: 880px; display: flex; flex-direction: column; gap: 34px; padding-bottom: 8px; }
+.rc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.rc-head h3 { margin: 0; font-size: 1.06rem; font-weight: 650; letter-spacing: -.01em; color: var(--text-strong); display: flex; align-items: center; gap: 10px; }
+.rc-head__aside { font-size: .84rem; color: var(--muted); }
+.rc-live { font-size: .72rem; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 9px 2px 18px; border-radius: 999px; position: relative; }
+.rc-live::before { content: ""; position: absolute; left: 8px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+
+/* Le plan : une étape = un segment. */
+.rc-rail { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.rc-seg button { width: 100%; height: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; gap: 8px 8px; align-items: start; text-align: left;
+  padding: 0 4px 10px 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; border-radius: var(--r-m); }
+.rc-seg__bar { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--line-strong); transition: background .2s; }
+.rc-seg__n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 650; color: var(--faint); border: 1.5px solid var(--line-strong); }
+.rc-seg__label { font-size: .84rem; line-height: 1.35; padding-top: 2px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rc-seg.is-prouve .rc-seg__bar { background: var(--ok); }
+.rc-seg.is-prouve .rc-seg__n { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+.rc-seg.is-en-cours .rc-seg__bar { background: linear-gradient(90deg, var(--accent) 45%, var(--line-strong) 45%); }
+.rc-seg.is-en-cours .rc-seg__n { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.rc-seg.is-en-cours .rc-seg__label, .rc-seg.is-a-faire.is-sel .rc-seg__label { color: var(--text-strong); }
+.rc-seg.is-annonce .rc-seg__bar { background: var(--wait); }
+.rc-seg.is-annonce .rc-seg__n { border-color: var(--wait); color: var(--wait); background: var(--wait-soft); }
+.rc-seg button:hover .rc-seg__label, .rc-seg.is-sel .rc-seg__label { color: var(--text-strong); }
+.rc-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.rc-proof { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 14px; border-radius: var(--r-l); background: var(--sunken); font-size: .86rem; color: var(--text); }
+.rc-proof b { font-weight: 650; color: var(--muted); }
+.rc-proof.is-prouve b { color: var(--ok); }
+.rc-proof.is-annonce b { color: var(--wait); }
+.rc-proof span:nth-child(2) { flex: 1 1 320px; overflow-wrap: anywhere; }
+.rc-proof__who { font-size: .78rem; color: var(--faint); }
+
+/* Récit / Tout le détail. */
+.rc-switch { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--line); }
+.rc-switch button { border: 0; background: none; font: inherit; font-size: .8rem; font-weight: 550; color: var(--muted); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.rc-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text-strong); box-shadow: 0 1px 2px rgb(0 0 0 / .18); }
+
+/* Un tour = un moment de travail de l'agent. */
+.rc-tours { display: flex; flex-direction: column; gap: 26px; }
+.rc-tour__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.rc-tour__head h4 { margin: 0; font-size: .92rem; font-weight: 650; color: var(--text-strong); }
+.rc-tour__head span { font-size: .8rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.rc-tl { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; }
+.rc-tl::before { content: ""; position: absolute; left: 14px; top: 6px; bottom: 6px; width: 1.5px; background: var(--line); border-radius: 1px; }
+
+/* Moment utile. */
+.rc-m { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 14px; padding: 7px 0; }
+.rc-m__dot { position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); border: 1.5px solid var(--line-strong); color: var(--muted); }
+.rc-m__meta { display: flex; align-items: baseline; gap: 8px; font-size: .76rem; color: var(--faint); margin-bottom: 2px; }
+.rc-m__who { font-weight: 650; color: var(--muted); }
+.rc-m__text { font-size: .92rem; line-height: 1.55; color: var(--text); overflow-wrap: anywhere; white-space: pre-line; }
+.rc-m__detail { margin-top: 3px; font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+.rc-m.is-ok .rc-m__dot { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.rc-m.is-ko .rc-m__dot { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.rc-m.is-ko .rc-m__text { color: var(--text-strong); }
+.rc-m.is-ko .rc-m__detail { color: var(--danger); }
+.rc-m.is-say .rc-m__text { color: var(--text-strong); }
+.rc-m.is-think .rc-m__text { color: var(--muted); font-style: italic; font-size: .88rem; }
+.rc-m.is-you .rc-m__dot { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.rc-m.is-you .rc-m__body { background: var(--accent-soft); border-radius: var(--r-l); padding: 8px 12px; }
+.rc-m.is-you .rc-m__who { color: var(--accent); }
+.rc-m--etape.is-ok .rc-m__text { font-weight: 550; color: var(--text-strong); }
+
+/* Travail technique regroupé : discret, s'ouvre au clic. */
+.rc-work { position: relative; padding: 3px 0 3px 36px; }
+.rc-work__line { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 5px 8px; margin-left: -8px; border-radius: var(--r-m); font: inherit; text-align: left; cursor: pointer; color: var(--faint); }
+.rc-work__line:hover { background: var(--sunken); color: var(--muted); }
+.rc-work__dots { position: absolute; left: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); box-shadow: 0 0 0 3px var(--bg); }
+.rc-work.has-edits .rc-work__dots { background: var(--accent); }
+.rc-work__sum { flex: 1; min-width: 0; font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-work.has-edits .rc-work__sum { color: var(--muted); }
+.rc-work__more { flex: none; font-size: .76rem; color: var(--accent); opacity: .8; }
+.rc-work__list { list-style: none; margin: 4px 0 6px; padding: 8px 12px; border-left: 2px solid var(--line); background: var(--sunken); border-radius: 0 var(--r-m) var(--r-m) 0; max-height: 280px; overflow: auto; }
+.rc-work__list li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; padding: 2px 0; font-size: .8rem; }
+.rc-work__t { color: var(--faint); font-variant-numeric: tabular-nums; }
+.rc-work__x { color: var(--muted); font-family: var(--mono); font-size: .76rem; overflow-wrap: anywhere; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (max-width: 760px) {
+  .rc-rail { grid-auto-flow: row; }
+  .rc-seg button { grid-template-columns: auto minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .rc-live::before { animation: none; } }

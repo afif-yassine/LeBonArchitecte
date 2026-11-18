@@ -205,7 +205,7 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     } else if (m.type === 'result') {
       const u = m.usage ?? {};
       const tokens = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-      try { engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0 }); } catch { /* ignore */ }
+      try { engine.tokens(t.id, { used: tokens, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 }); } catch { /* ignore */ }
       const ok = m.subtype === 'success' && !m.is_error;
       const quotaUntil = m.is_error ? quotaReset(String(m.result ?? '')) : undefined;
       if (quotaUntil) { outcome = { ok: false, reason: 'quota', read: [...read], tokens, summary: short(m.result, 300), quotaUntil }; return; }

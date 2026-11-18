@@ -4,7 +4,8 @@ import {
   Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, RotateCcw, SendHorizontal, Settings2, Square, X,
 } from 'lucide-react';
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
-import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
+import { TOOLS, budgetFor, type Effort, type LiveItem, type Ticket, type ToolId } from '../shared/contract';
+import '../ticket-side.css';
 import { Deroule, PhaseFrise } from '../components/Deroule';
 import { TicketStatus } from '../components/TicketStatus';
 import { Markdown } from '../components/Markdown';
@@ -14,6 +15,9 @@ import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
 import type { Go } from '../view';
+
+// Effort réel donné à l'agent (même règle que server/claude.ts : Opus = haut, Haiku = bas).
+const effortOf = (t: Ticket) => (t.model === 'Haiku' || t.effort === 'bas' ? 'bas' : t.effort === 'haut' || t.model === 'Opus' ? 'haut' : 'moyen');
 
 type Tab = 'deroule' | 'description' | 'realise' | 'journal' | 'diff' | 'tests';
 interface RawEvent { id: number; at: string; type: string; actor: string; data: Record<string, unknown> }
@@ -139,7 +143,8 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <div className="tk__head">
           <button className="btn btn--ghost btn--sm" onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'travail' })}><ArrowLeft size={15} />Travail</button>
           <div className="tk__title"><span className="card__id">{t.id}</span>{t.title}</div>
-          <div style={{ marginLeft: 'auto', position: 'relative', flex: 'none' }}>
+          {/* Changer d'outil en cours de route n'est pas encore branché au moteur : seulement sur les projets d'exemple. */}
+          {demo && <div style={{ marginLeft: 'auto', position: 'relative', flex: 'none' }}>
             <button className="btn btn--sm" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
               <Settings2 size={14} />Outil et modèle<ChevronDown size={14} />
             </button>
@@ -147,7 +152,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <ToolMenu tool0={conf.tool} account0={conf.accountId} model0={conf.model} effort0={conf.effort} onClose={() => setMenu(false)}
                 onApply={(v) => { setConf(v); setMenu(false); notify(`Passera sur ${TOOLS[v.tool].label}, ${v.model}, à la fin du tour. Même dossier, même branche.`); }} />
             )}
-          </div>
+          </div>}
         </div>
         <TicketStatus t={t} busy={busy} ready={isReady(t)}
           onValidate={doValidate} onReject={() => { setTab('realise'); setRejecting(true); }} onFix={() => { fix(t.id); }}
@@ -209,25 +214,17 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               <div className="empty"><h3>Rien de réalisé pour l’instant</h3><p>À la fin du ticket, le programme écrit ici ce qui a été fait et ajouté, à partir des commits et des tests. Sans IA.</p></div>
             ) : (
               <div className="descr">
-                {t.status === 'a-tester' && (
+                {/* Valider est dans le bandeau du haut ; ici seulement la description de ce qui ne va pas, quand on l'ouvre. */}
+                {t.status === 'a-tester' && rejecting && (
                   <div className="recette">
-                    <h3>Recette : à vous de tester</h3>
-                    <p className="small muted">Le programme a déjà vérifié les tests, les critères, les secrets et les failles. Il reste à essayer comme un vrai utilisateur.</p>
-                    <ol className="steps" style={{ margin: '10px 0 14px' }}>
-                      <li>Lisez le résumé et les fichiers ci-dessous.</li>
-                      <li>Vérifiez chaque critère d’acceptation.</li>
-                      <li>Validez, ou décrivez ce qui ne va pas : le même agent corrige.</li>
-                    </ol>
-                    <div className="row">
-                      <button className="btn btn--primary" disabled={busy} onClick={doValidate}>{busy ? 'Validation… voir les étapes en haut' : 'Tout marche : valider'}</button>
-                      <button className="btn" onClick={() => setRejecting(true)}>Ça ne marche pas</button>
-                    </div>
+                    <h3>Qu’est-ce qui ne va pas ?</h3>
+                    <p className="small muted">L’agent qui a fait le travail reprend sa conversation avec votre description, corrige et repasse les tests.</p>
                     {rejecting && (
                       <div className="recette__ko">
                         <label className="sr-only" htmlFor="ko">Ce qui ne marche pas</label>
                         <textarea id="ko" className="input" rows={3} value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="Ex. : le lien de connexion arrive, mais la page reste blanche sur mobile." />
                         <div className="row" style={{ justifyContent: 'flex-end' }}>
-                          <button className="btn btn--ghost btn--sm"><Paperclip size={14} />Joindre une capture</button>
+                          <button className="btn btn--ghost btn--sm" onClick={() => setRejecting(false)}>Annuler</button>
                           <button className="btn btn--primary btn--sm" disabled={!problem.trim()} onClick={() => { reject(t.id, problem.trim()); setRejecting(false); setProblem(''); }}>Renvoyer à l’agent</button>
                         </div>
                       </div>
@@ -319,8 +316,6 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                 : 'Message pour l’agent : il le recevra à son lancement…'}
                 onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
               <div className="composer__bar">
-                <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre un fichier" title="Joindre un fichier"><Paperclip size={16} /></button>
-                <button className="btn btn--ghost btn--icon btn--sm" aria-label="Joindre une image" title="Joindre une image"><ImageIcon size={16} /></button>
                 <span className="hint">Entrée pour envoyer. « !npm test » lance une commande par le moteur.</span>
                 <button className="btn btn--primary btn--icon btn--sm" aria-label="Envoyer" onClick={send}><SendHorizontal size={15} /></button>
               </div>
@@ -329,55 +324,63 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         )}
       </div>
 
-      <aside className="tk__side" aria-label="Détails du ticket">
-        <h4>Détails</h4>
-        <div className="kv"><span>État</span><span>{agent ? <span className={`pill pill--dot pill--${paused ? '' : STATE[agent.state].tone}`}>{paused ? 'En pause' : STATE[agent.state].label}</span> : <span className="pill">{t.status === 'a-faire' ? 'À faire' : t.status === 'a-tester' ? 'À tester' : t.status === 'termine' ? 'Fini' : 'Sans agent'}</span>}</span></div>
-        {agent && <div className="kv"><span>Agent</span><span>{agent.name}<span className="faint xsmall"> {role?.name}</span></span></div>}
-        <div className="kv"><span>Étapes</span><span className="num">{proven} sur {t.steps.length} prouvées{!t.planOk && <span className="faint xsmall">, plan à valider</span>}</span></div>
-        {t.interrupted && <div className="kv"><span>Dernière preuve</span><span>{t.interrupted.lastProved ?? 'Aucune étape prouvée'}</span></div>}
-        <div className="kv"><span>Outil</span><span>{TOOLS[conf.tool].label}</span></div>
-        <div className="kv"><span>Compte</span><span>{account?.label}<span className="faint xsmall"> 5 h : {account?.quota5h} %</span></span></div>
-        <div className="kv"><span>Modèle</span><span>{conf.model}, effort {conf.effort}</span></div>
-        <div className="kv"><span>Budget</span><span><Bar value={t.used} max={t.budget} label="Budget" thick /><span className="xsmall muted num">{t.used === 0 && t.status !== 'a-faire'
-          ? <>non mesuré : aucun agent branché n’a compté (budget {fmtTokens(t.budget)})</>
-          : <>{fmtTokens(t.used)} sur {fmtTokens(t.budget)}, boucle {t.loops}</>}</span></span></div>
-        {realizedState && <div className="kv"><span>Rapport</span><span>{t.reportedIn ? <span className="pill pill--ok">{t.reportedIn}</span> : <span className="pill pill--wait">à rapporter</span>}</span></div>}
+      {/* Panneau de droite : qui travaille, ce que ça consomme, à quoi le ticket est relié.
+          Les actions sont dans le bandeau d'état, en haut : pas de doublon ici. Seulement des chiffres vrais. */}
+      <aside className="tk__side sd" aria-label="Détails du ticket">
+        <section className="sd-card">
+          <h4 className="sd-label">Qui travaille</h4>
+          <div className="sd-model">
+            <span className="sd-model__name">{t.model}</span>
+            <span className="sd-chip">effort {effortOf(t)}</span>
+          </div>
+          <p className="sd-line">{TOOLS[t.tool]?.label ?? t.tool}{!demo && ', sur votre abonnement'}</p>
+          <p className="sd-line">{t.loops > 1 ? `${t.loops} passages de l’agent` : t.status === 'a-faire' ? 'Pas encore lancé' : '1 passage de l’agent'}{t.usage?.turns ? ` · ${t.usage.turns} échanges` : ''}</p>
+          {t.interrupted && <p className="sd-line sd-line--warn">Dernière étape prouvée : {t.interrupted.lastProved ?? 'aucune'}</p>}
+        </section>
 
-        <h4>Dépend de</h4>
-        {t.deps.length === 0 ? <p className="small faint">Aucun ticket.</p> : (
-          <div className="row">{t.deps.map((d) => {
-            const done = tickets.find((x) => x.id === d)?.status === 'termine';
-            return <button key={d} className={`pill ${done ? 'pill--ok' : 'pill--wait'}`} onClick={() => go({ kind: 'ticket', ticketId: d })}>{d} {done ? <Check size={12} /> : 'en cours'}</button>;
-          })}</div>
-        )}
+        <section className="sd-card">
+          <h4 className="sd-label">Consommation</h4>
+          {(() => {
+            const ref = budgetFor(t);
+            const ratio = t.used / ref;
+            const tone = ratio > 1 ? 'danger' : ratio > .8 ? 'wait' : 'ok';
+            const u = t.usage;
+            return t.used === 0 ? <p className="sd-line">Rien de consommé pour l’instant. Prévu : environ {fmtTokens(ref)} tokens pour {t.model}.</p> : (<>
+              <div className="sd-big"><span className="num">{fmtTokens(t.used)}</span> tokens{u && u.costUsd > 0 && <span className="sd-cost">≈ {u.costUsd.toFixed(2)} $ d’équivalent</span>}</div>
+              <div className={`sd-meter is-${tone}`} role="meter" aria-valuemin={0} aria-valuemax={ref} aria-valuenow={t.used} aria-label="Tokens utilisés par rapport au prévu">
+                <span style={{ width: `${Math.min(100, ratio * 100)}%` }} />
+              </div>
+              <p className="sd-line">{ratio > 1 ? `Au-dessus du prévu (environ ${fmtTokens(ref)} pour ${t.model}).` : `Dans le prévu : environ ${fmtTokens(ref)} pour ${t.model}.`}</p>
+              {u && (
+                <dl className="sd-split">
+                  {u.split && <><dt>Entrée</dt><dd className="num">{fmtTokens(u.input)}</dd><dt>Sortie</dt><dd className="num">{fmtTokens(u.output)}</dd><dt>Cache écrit</dt><dd className="num">{fmtTokens(u.cacheWrite)}</dd></>}
+                  <dt>Relu du cache</dt><dd className="num">{fmtTokens(u.cacheRead)}</dd>
+                </dl>
+              )}
+              {u && !u.split && <p className="sd-note">L’entrée et la sortie sont séparées à partir des prochains passages de l’agent.</p>}
+              <p className="sd-note">Le cache relu n’est pas compté dans le total : il coûte environ 10 fois moins.</p>
+            </>);
+          })()}
+        </section>
 
-        <h4>Partie</h4>
-        <p className="small">{t.part}, lot {t.lot}</p>
-
-        {t.files.length > 0 && (<>
-          <h4>Fichiers verrouillés</h4>
-          {t.files.map((f) => <div key={f} className="lockfile"><Lock size={12} />{f}</div>)}
-        </>)}
-
-        <div className="tk__actions">
-          {t.status === 'a-faire' && (t.paused
-            ? <button className="btn btn--primary" onClick={() => resume(t.id)}><Play size={15} />Reprendre</button>
-            : <button className="btn btn--primary" onClick={() => setLaunching(true)}><Play size={15} />Lancer maintenant</button>)}
-          {t.status === 'action' && t.interrupted && <button className="btn btn--primary" onClick={() => resume(t.id)}><RotateCcw size={15} />Reprendre</button>}
-          {t.status === 'a-tester' && (<>
-            <button className="btn btn--primary" disabled={busy} onClick={doValidate}><Check size={15} />{busy ? 'Validation…' : 'Valider'}</button>
-            <button className="btn" onClick={() => { setTab('realise'); setRejecting(true); }}><X size={15} />Ça ne marche pas</button>
+        <section className="sd-card">
+          <h4 className="sd-label">Relié à</h4>
+          <dl className="sd-links">
+            <dt>Partie</dt><dd>{t.part}, lot {t.lot}</dd>
+            <dt>Dépend de</dt>
+            <dd>{t.deps.length === 0 ? <span className="faint">aucun ticket</span> : <span className="sd-chips">{t.deps.map((d) => {
+              const done = tickets.find((x) => x.id === d)?.status === 'termine';
+              return <button key={d} className={`sd-tk ${done ? 'is-ok' : ''}`} onClick={() => go({ kind: 'ticket', ticketId: d })}>{d}{done && <Check size={11} strokeWidth={3} />}</button>;
+            })}</span>}</dd>
+            {t.description.cdcRefs.length > 0 && (<><dt>Exigences</dt><dd className="sd-chips">{t.description.cdcRefs.map((r) => <button key={r} className="sd-tk" onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'cdc' })}>{r}</button>)}</dd></>)}
+            {realizedState && (<><dt>Rapport</dt><dd>{t.reportedIn ? <span className="sd-chip is-ok">dans {t.reportedIn}</span> : <span className="sd-chip">à rapporter</span>}</dd></>)}
+          </dl>
+          {t.files.length > 0 && (<>
+            <h4 className="sd-label" style={{ marginTop: 14 }}>Fichiers réservés</h4>
+            {t.files.map((f) => <div key={f} className="lockfile"><Lock size={12} />{f}</div>)}
           </>)}
-          {t.status === 'en-cours' && (<>
-            <button className="btn" onClick={() => pause(t.id)} title="Arrête l’agent ; son travail et sa conversation sont gardés. « Reprendre » le relance dans sa session.">
-              <Pause size={15} />Pause
-            </button>
-            <button className="btn" onClick={() => { const acc = accounts.find((a) => a.tool === other && a.connected)!; setConf({ tool: other, accountId: acc.id, model: TOOLS[other].models[1], effort: conf.effort }); notify(`Passera sur ${TOOLS[other].label} à la fin du tour, avec la passation.`); }}>
-              <ArrowLeftRight size={15} />Passer à {TOOLS[other].short}
-            </button>
-            {demo && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
-          </>)}
-        </div>
+        </section>
+        {demo && t.status === 'en-cours' && <button className="btn btn--ghost btn--sm" onClick={() => simulate(t.id)}>Simuler un déroulé (démo)</button>}
       </aside>
       {launching && <LaunchDialog ticketId={t.id} onClose={() => setLaunching(false)} />}
     </div>

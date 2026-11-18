@@ -77,6 +77,26 @@ export class Engine {
     this.changed();
   }
 
+  // Recalcule chaque ticket depuis son journal (au démarrage). Le journal est la source, la table
+  // « tickets » n'est qu'une vue : quand le calcul d'un ticket s'enrichit (ex. détail des tokens),
+  // les anciens tickets en profitent aussi, sans rien perdre.
+  rebuild(): number {
+    const rows = this.db.prepare('SELECT * FROM events WHERE ticket IS NOT NULL ORDER BY id').all() as (Omit<EngineEvent, 'data'> & { data: string })[];
+    const views = new Map<string, Ticket>();
+    for (const r of rows) {
+      const ev = { ...r, data: JSON.parse(r.data) } as EngineEvent;
+      const after = reduce(ev.type === 'ticket-cree' ? undefined : views.get(ev.ticket!), ev);
+      if (after) views.set(after.id, after);
+    }
+    this.db.exec('BEGIN');
+    try {
+      const put = this.db.prepare('INSERT OR REPLACE INTO tickets (id, project, data) VALUES (?, ?, ?)');
+      for (const t of views.values()) put.run(t.id, t.projectId, JSON.stringify(t));
+      this.db.exec('COMMIT');
+    } catch (err) { this.db.exec('ROLLBACK'); throw err; }
+    return views.size;
+  }
+
   isEmpty(): boolean {
     return ((this.db.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n) === 0;
   }
@@ -413,7 +433,8 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
 
   // Tokens mesurés par un adaptateur (Claude Code renvoie l'usage à la fin de chaque tour).
-  tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number }): void {
+  // input / output / cacheWrite : le détail de « used » (entrée, sortie, cache écrit), pour la fiche du ticket.
+  tokens(id: string, d: { used: number; cacheRead: number; costUsd: number; turns: number; input?: number; output?: number; cacheWrite?: number }): void {
     const t = this.ticket(id);
     this.record({ project: t.projectId, ticket: id, type: 'tokens', actor: 'programme', data: { ...d } });
     this.budgetHit(t.projectId); // prévient dès que le budget est franchi, sans attendre le prochain lancement
