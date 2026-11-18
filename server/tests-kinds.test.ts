@@ -86,6 +86,8 @@ test('Architecte autonome : modèle choisi par règle, état préparé sans toke
   assert.equal(pickArchitectModel('Crée un ticket pour corriger le titre de la page Git'), 'Sonnet');
   assert.equal(pickArchitectModel('Fais une revue de l’architecture et des risques'), 'Opus');
   assert.equal(pickArchitectModel('/opus range le kanban'), 'Opus');
+  assert.equal(pickArchitectModel('Fais les agents dev, test et devops'), 'Opus');
+  assert.equal(pickArchitectModel('Lance un agent sur LBA-13'), 'Sonnet');
   const e = new Engine(openDb(':memory:'));
   const a = e.createTicket('p', { title: 'Socle', expected: 'x', criteria: ['y'] });
   e.createTicket('p', { title: 'Suite', expected: 'x', criteria: ['y'], deps: [a.id] });

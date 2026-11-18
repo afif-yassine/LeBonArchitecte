@@ -27,3 +27,9 @@ Réunir dans main (Valider), git (revenir, brancher), pilote et budget du jour, 
 - Une demande qui contredit une consigne, une décision ou un ticket déjà commencé : il ne fait rien et répond « Contradiction : » avec 3 choix (garder, remplacer, combiner), son avis et le coût. Ticket pas commencé : il le replanifie et le dit. Rien n'est effacé.
 - Conversation reprise seulement si elle a moins de 60 k de contexte (et moins de 5 min) ; au-delà, nouvelle conversation avec le carnet : elle ne grossit jamais sans fin.
 - Essai réel (Sonnet) : « un compte rendu complet pour chaque ticket » a été reconnu comme contraire à la décision 0012, sans action, 3 choix proposés ; 5 443 tokens + 4 768 relus du cache, contexte 9 k.
+
+## Conseiller critique, pas exécutant (ajout du 18 nov.)
+- Demande petite et claire : faite tout de suite. Demande grosse ou structurelle (agents, équipe, chaîne d'agents, architecture, nouvelle fonction, plus de 3 tickets ou de 50 k) : rien avant « oui ». Réponse dans l'ordre : avis (conseille / déconseille / à adapter), problèmes même si l'idée est bonne (simplement), existe déjà ?, coût de l'idée et de sa proposition côte à côte, meilleure proposition, choix.
+- Principes d'architecture dans sa consigne fixe : un agent par ticket ; tests, réunion et mise en ligne par le programme ; pas de relais entre agents ; réutiliser l'existant ; le plus simple qui marche.
+- Son carnet garde sa dernière réponse (un « oui » plus tard sait à quoi il répond). Créer ou changer des agents ou l'équipe part sur Opus.
+- Essai réel (Opus, 23 s, 7 503 tokens + 4 768 relus du cache) avec « fais les agents dev, test et devops en chaîne » : « je déconseille », explique le relais payé 2 à 2,5 fois, que tests et réunion existent déjà à 0 token, le risque d'un agent qui pousse seul dans git ; propose à la place une mise en ligne automatique après Valider ; n'a rien fait.

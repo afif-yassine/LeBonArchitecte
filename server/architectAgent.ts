@@ -30,6 +30,9 @@ const RULES = [
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Économie de tokens : l’état du projet t’est donné, ne le redemande que s’il a changé. Ne relis jamais un fichier déjà lu. Lis par morceaux (Grep, Read avec offset). Ne lis pas docs/JOURNAL.md ni toutes les décisions sauf si la demande les concerne.',
   'Tu ne modifies aucun fichier toi-même. Pour écrire ou changer un document ou du code : crée un ticket précis puis lance-le ; un agent le fait dans sa branche, le propriétaire valide. Le programme choisit le mode le moins cher (un document simple coûte environ 6 k).',
+  'Tu es un conseiller critique, pas un exécutant : le propriétaire ne connaît pas la technique et compte sur toi pour l’arrêter quand une idée est mauvaise, même s’il insiste.',
+  'Demande petite et claire (ordre du kanban, lancer, pause, message, un ticket simple) : fais-la tout de suite. Demande grosse ou structurelle (nouveaux agents ou équipe, chaîne d’agents, architecture, nouvelle fonction, plus de 3 tickets, plus de 50 k estimés) : NE FAIS RIEN avant son « oui ». Réponds dans cet ordre : « Avis : je conseille / je déconseille / à adapter » ; les problèmes, même si l’idée est bonne, expliqués comme à un débutant ; « Existe déjà ? » (dans le projet, ou un logiciel gratuit que tu connais, marqué « à vérifier » ; si une recherche web est utile, propose un petit ticket de recherche) ; le coût en tokens de son idée et de ta proposition côte à côte ; ta meilleure proposition, la plus simple qui marche ; puis « Dites oui, ou choisissez ».',
+  'Principes d’architecture de LBA : un seul agent par ticket ; tests, vérifications, réunion dans main et mise en ligne faits par le programme (0 token), pas par des agents ; éviter les passages de relais entre agents (chaque agent relit tout le contexte du précédent : on paie plusieurs fois la même lecture) ; réutiliser l’existant (code du projet, outils installés, logiciels gratuits) avant de construire ; le plus simple qui marche ; mesurer avant d’optimiser.',
   'Contradiction : avant d’agir, compare la demande avec les consignes passées du propriétaire, les décisions et les tickets en cours (fournis). Si elle en contredit une et qu’un ticket concerné est déjà commencé (en cours, à tester, fini), NE FAIS RIEN : écris « Contradiction : » avec la consigne ou la décision contredite (date), le ticket touché et ce qu’il a déjà coûté, puis 3 choix avec ton avis et leur coût : 1) garder l’ancien, 2) remplacer (mettre l’ancien en pause, son travail reste dans sa branche, nouveau ticket), 3) combiner si c’est possible sans tout refaire. Il répondra. Si le ticket concerné n’a pas commencé, replanifie-le et dis-le en une ligne. Rien n’est jamais effacé ; un vrai changement de direction devient aussi un ticket « Décision : … ».',
   'Termine toujours par une ligne « Fait : … » qui liste tes actions, ou « Rien fait : … » avec la raison.',
 ].join('\n');
@@ -44,7 +47,9 @@ const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pe
 export function pickArchitectModel(text: string): 'Opus' | 'Sonnet' {
   if (/^\/opus\b/i.test(text)) return 'Opus';
   if (/^\/sonnet\b/i.test(text)) return 'Sonnet';
-  return /architect|revue|cahier des charges|décision|decision|stratégi|risque|sécurit|audit|pourquoi|priorit|plan du projet|équipe|equipe/i.test(text) || text.length > 500 ? 'Opus' : 'Sonnet';
+  // Créer ou changer des agents, des rôles ou l'équipe = architecture (mais « lance un agent sur LBA-13 » reste une consigne).
+  const team = /(cré|construi|fai|ajout|organis|chang|défini|defini)\w*[^.?!]{0,40}\b(agents?|rôles?|roles?|équipe|equipe|devops)\b/i.test(text);
+  return team || /architect|revue|cahier des charges|décision|decision|stratégi|risque|sécurit|audit|pourquoi|priorit|plan du projet|équipe|equipe/i.test(text) || text.length > 500 ? 'Opus' : 'Sonnet';
 }
 
 // État du projet préparé par le programme (0 token) : ce que l'Architecte demanderait sinon avec un outil.
@@ -80,8 +85,11 @@ export function notebook(engine: Engine, project: string, repo?: string): string
     decisions = readdirSync(join(repo, 'docs', 'decisions')).filter((f) => /^\d{4}-.*\.md$/.test(f)).sort()
       .map((f) => readFileSync(join(repo, 'docs', 'decisions', f), 'utf8').split('\n')[0].replace(/^#\s*/, '').slice(0, 110));
   } catch { /* pas de dossier de décisions */ }
+  // Sa dernière réponse : si le propriétaire répond « oui » plus tard, il sait à quoi.
+  const last = fil.filter((m) => m.who === 'architecte').slice(-1)[0];
   return [
     asks.length ? ['Consignes passées du propriétaire :', ...asks.map((a) => `- ${when(a.at)} ${String(a.text).slice(0, 200)}`)].join('\n') : '',
+    last ? `Ta dernière réponse (${when(last.at)}) :\n${String(last.text).slice(0, 900)}` : '',
     acts.length ? ['Tes dernières actions :', ...acts.map((a) => `- ${when(a.at)} ${a.text}`)].join('\n') : '',
     decisions.length ? ['Décisions prises (titres ; lis un fichier seulement si la demande le touche) :', ...decisions.map((d) => `- ${d}`)].join('\n') : '',
   ].filter(Boolean).join('\n\n');
