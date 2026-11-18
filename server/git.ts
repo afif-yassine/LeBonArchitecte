@@ -52,6 +52,13 @@ export function fileAt(repo: string, id: string, path: string): string | undefin
   return r.ok ? r.out.slice(0, 300_000) : undefined;
 }
 
+// Même lecture, mais en octets (PDF, images) : jamais converti en texte.
+export function fileBytesAt(repo: string, id: string, path: string): Buffer | undefined {
+  try {
+    return execFileSync('git', ['show', `${branchOf(id)}:${path}`], { cwd: repo, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: 30_000_000 });
+  } catch { return undefined; }
+}
+
 export function diffFile(repo: string, id: string, path: string): string {
   const base = tryRun(repo, ['merge-base', 'main', branchOf(id)]).out || 'HEAD';
   // Après réunion, la base commune est la branche elle-même : on compare alors à son premier parent.

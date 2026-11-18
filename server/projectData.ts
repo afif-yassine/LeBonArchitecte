@@ -32,6 +32,12 @@ export function readDoc(repo: string, path: string): string {
   try { return readFileSync(join(repo, path), 'utf8').slice(0, 300_000); } catch { throw new Refused(`${path} n’existe pas.`); }
 }
 
+// Un PDF du dossier docs/, en octets, pour l'ouvrir directement dans le navigateur.
+export function readPdf(repo: string, path: string): Buffer {
+  if (!/^docs\/[\w./ -]+\.pdf$/.test(path) || path.includes('..')) throw new Refused('Seuls les PDF du dossier docs/ s’ouvrent ici.');
+  try { return readFileSync(join(repo, path)); } catch { throw new Refused(`${path} n’existe pas.`); }
+}
+
 const git = (repo: string, args: string[]) => {
   try { return execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trimEnd(); } catch { return ''; }
 };

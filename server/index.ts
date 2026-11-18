@@ -7,8 +7,8 @@ import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
-import { diffFile, fileAt } from './git.ts';
-import { gitInfo, listDocs, readDoc } from './projectData.ts';
+import { diffFile, fileAt, fileBytesAt } from './git.ts';
+import { gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -107,6 +107,24 @@ const repoOf = (id: string) => {
 };
 app.get<Id>('/api/projects/:id/docs', async (req) => listDocs(repoOf(req.params.id)));
 app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => ({ path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') }));
+// PDF ouvert directement dans le navigateur (affichage, pas téléchargement).
+const pdf = (reply: { header: (k: string, v: string) => unknown; type: (t: string) => unknown; send: (b: Buffer) => unknown }, body: Buffer, name: string) => {
+  reply.header('Content-Disposition', `inline; filename="${name.replace(/[^\w.-]/g, '_')}"`);
+  reply.type('application/pdf');
+  return reply.send(body);
+};
+app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/raw', async (req, reply) => {
+  const path = req.query.path ?? '';
+  return pdf(reply, readPdf(repoOf(req.params.id), path), path.split('/').pop() ?? 'document.pdf');
+});
+app.get<Id & { Querystring: { path?: string } }>('/api/tickets/:id/raw', async (req, reply) => {
+  const t = engine.ticket(req.params.id);
+  const path = req.query.path ?? '';
+  if (!path.endsWith('.pdf') || !t.realized?.files.some((f) => f.path === path)) throw new Refused('Ce PDF ne fait pas partie de ce que le ticket a réalisé.');
+  const body = fileBytesAt(repoOf(t.projectId), t.id, path);
+  if (!body) throw new Refused(`${path} n’existe plus dans la branche du ticket.`);
+  return pdf(reply, body, path.split('/').pop() ?? 'document.pdf');
+});
 app.get<Id>('/api/projects/:id/git', async (req) => gitInfo(repoOf(req.params.id)));
 app.get<Id>('/api/projects/:id/usage', async (req) => engine.usage(req.params.id));
 app.post<Id & { Body: { reportId: string } }>('/api/projects/:id/report', async (req) => ({ tickets: engine.report(req.params.id, req.body.reportId) }));
