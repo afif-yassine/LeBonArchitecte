@@ -6,6 +6,7 @@ import {
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
 import { TOOLS, type Effort, type LiveItem, type ToolId } from '../shared/contract';
 import { Deroule, PhaseFrise } from '../components/Deroule';
+import { FileViewer } from '../components/FileViewer';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
@@ -101,7 +102,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const [menu, setMenu] = useState(false);
   const [paused, setPaused] = useState(false);
   const [launching, setLaunching] = useState(false);
-  const [feed, setFeed] = useState<LiveItem[]>([]);
+  const [feed, setFeed] = useState<LiveItem[] | null>(null); // null = pas encore lu
   const [journal, setJournal] = useState<RawEvent[]>([]);
   const [text, setText] = useState('');
   const demo = Boolean(projects.find((p) => p.id === t.projectId)?.demo);
@@ -151,7 +152,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         </div>
 
         <div className="tk__body">
-          {tab === 'deroule' && <Deroule t={t} feed={feed} demo={demo} onValidatePlan={() => validatePlan(t.id)} onSimulate={() => simulate(t.id)} />}
+          {tab === 'deroule' && <Deroule t={t} feed={feed ?? []} loading={feed === null} demo={demo} onValidatePlan={() => validatePlan(t.id)} onSimulate={() => simulate(t.id)} />}
           {tab === 'description' && (
             <div className="descr">
               <div className="descr__block"><h3>Pourquoi</h3><p>{t.description.context}</p></div>
@@ -232,13 +233,15 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                   <button className="link" style={{ marginLeft: 'auto' }} onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'docs' })}>Comptes rendus</button>
                 </div>
                 <div className="descr__block"><h3>Résumé</h3><p className="realized__summary">{t.realized.summary}</p></div>
-                <div className="descr__block">
+                <div className="descr__block" hidden={t.realized.added.length === 0}>
                   <h3>Ajouté</h3>
                   <ul className="ulist">{t.realized.added.map((a) => <li key={a}><Plus size={13} />{a}</li>)}</ul>
                 </div>
                 <div className="descr__block">
                   <h3>Fichiers</h3>
-                  <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
+                  {demo
+                    ? <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
+                    : <FileViewer ticketId={t.id} files={t.realized.files} />}
                 </div>
                 <div className="grid2">
                   <div className="box"><div className="box__title">Tests</div>{t.realized.tests}</div>

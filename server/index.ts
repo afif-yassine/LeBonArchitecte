@@ -7,6 +7,7 @@ import { Refused } from './tickets.ts';
 import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
+import { diffFile, fileAt } from './git.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -77,6 +78,20 @@ app.post<{ Params: { id: string; step: string }; Body: { command?: string; evide
 app.post<Id & { Body: { who?: string } }>('/api/tickets/:id/agent-done', async (req) => {
   const ok = { 'Critères tenus': 'ok', 'Tests verts': 'ok', 'Périmètre respecté': 'ok', 'Aucun secret': 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok' } as const;
   return { message: engine.agentDone(req.params.id, { criteriaOk: true, checks: ok }) };
+});
+// Lire un fichier réalisé par un ticket (contenu ou changements), depuis sa branche.
+// Seulement les fichiers listés dans « Réalisé », jamais un fichier sensible.
+app.get<Id & { Querystring: { path?: string; diff?: string } }>('/api/tickets/:id/file', async (req) => {
+  const t = engine.ticket(req.params.id);
+  const repo = PROJECT_DIRS[t.projectId];
+  const path = req.query.path ?? '';
+  if (!repo) throw new Refused('Ce projet d’exemple n’a pas de fichiers sur ce PC.');
+  if (!t.realized?.files.some((f) => f.path === path)) throw new Refused('Ce fichier ne fait pas partie de ce que le ticket a réalisé.');
+  if (/(^|\/)\.env|\.pem$|\.key$|id_rsa/i.test(path)) throw new Refused('Fichier sensible : il ne s’affiche pas.');
+  if (req.query.diff) return { path, diff: diffFile(repo, t.id, path) };
+  const content = fileAt(repo, t.id, path);
+  if (content === undefined) throw new Refused(`${path} n’existe plus dans la branche du ticket.`);
+  return { path, content };
 });
 app.get<Id>('/api/tickets/:id/live', async (req) => engine.liveFeed(req.params.id));
 app.post<Id>('/api/tickets/:id/plan/validate', async (req) => ({ message: engine.validatePlan(req.params.id) }));

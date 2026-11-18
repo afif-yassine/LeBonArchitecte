@@ -1,7 +1,7 @@
 // État partagé de l'interface. Les tickets et le pilote viennent du moteur local (/api).
 // Si le moteur est arrêté, l'interface le dit et reste en lecture seule sur les données de démonstration.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { autopilotDefaults, humanActions, reports as initialReports, tickets as demoTickets } from './mock/data';
+import { autopilotDefaults, humanActions, projects, reports as initialReports, tickets as demoTickets } from './mock/data';
 import type { DailyReport, HumanAction, LiveItem, Ticket } from './shared/contract';
 import { useNotify } from './components/notify';
 
@@ -46,7 +46,9 @@ async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const notify = useNotify();
   const [online, setOnline] = useState(false);
-  const [tickets, setTickets] = useState<Ticket[]>(demoTickets);
+  // Avant la première réponse du moteur : seulement les projets d'exemple. Un vrai projet n'affiche
+  // jamais de fausses données (sinon un ticket fini pourrait sembler « à faire »).
+  const [tickets, setTickets] = useState<Ticket[]>(() => demoTickets.filter((t) => projects.find((p) => p.id === t.projectId)?.demo));
   const [reports, setReports] = useState<DailyReport[]>(initialReports);
   const [autopilot, setAuto] = useState<Autopilot>(autopilotDefaults);
   const [pending, setPending] = useState<HumanAction[]>(humanActions);

@@ -81,8 +81,8 @@ export function StepList({ t, compact }: { t: Ticket; compact?: boolean }) {
   );
 }
 
-export function Deroule({ t, feed, demo, onValidatePlan, onSimulate }: {
-  t: Ticket; feed: LiveItem[]; demo: boolean; onValidatePlan: () => void; onSimulate: () => void;
+export function Deroule({ t, feed, loading, demo, onValidatePlan, onSimulate }: {
+  t: Ticket; feed: LiveItem[]; loading?: boolean; demo: boolean; onValidatePlan: () => void; onSimulate: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>('tout');
   const listRef = useRef<HTMLOListElement>(null);
@@ -130,7 +130,7 @@ export function Deroule({ t, feed, demo, onValidatePlan, onSimulate }: {
             { id: 'bugs', label: label('bugs', 'Bugs') }, { id: 'tests', label: label('tests', 'Tests') },
           ]} />
         </div>
-        {feed.length === 0 ? (
+        {loading ? <p className="faint small">Lecture du journal du ticket…</p> : feed.length === 0 ? (
           <div className="empty empty--left">
             {t.status === 'a-faire' && <p>Le direct commence au lancement : vous verrez l’agent réfléchir, agir, trouver et corriger les bugs, et lancer les tests.</p>}
             {running && demo && (<><p>Aucun agent n’est branché sur ce projet d’exemple. Jouez un déroulé pour voir à quoi ressemble le travail.</p><button className="btn btn--sm" onClick={onSimulate}>Simuler un déroulé</button></>)}

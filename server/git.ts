@@ -46,6 +46,19 @@ export function diffOf(repo: string, id: string): string {
   return tryRun(repo, ['diff', `HEAD...${branchOf(id)}`]).out.slice(0, 2_000_000);
 }
 
+// Lecture d'un fichier tel qu'il est dans la branche du ticket (la branche reste après la réunion).
+export function fileAt(repo: string, id: string, path: string): string | undefined {
+  const r = tryRun(repo, ['show', `${branchOf(id)}:${path}`]);
+  return r.ok ? r.out.slice(0, 300_000) : undefined;
+}
+
+export function diffFile(repo: string, id: string, path: string): string {
+  const base = tryRun(repo, ['merge-base', 'main', branchOf(id)]).out || 'HEAD';
+  // Après réunion, la base commune est la branche elle-même : on compare alors à son premier parent.
+  const from = base === tryRun(repo, ['rev-parse', branchOf(id)]).out ? `${branchOf(id)}~1` : base;
+  return tryRun(repo, ['diff', from, branchOf(id), '--', path]).out.slice(0, 300_000);
+}
+
 export function changedFiles(repo: string, id: string): { path: string; plus: number; minus: number }[] {
   const r = tryRun(repo, ['diff', '--numstat', `HEAD...${branchOf(id)}`]);
   if (!r.ok || !r.out) return [];
@@ -70,4 +83,6 @@ export function removeWorktree(repo: string, id: string): void {
   const nm = join(dir, 'node_modules');
   if (existsSync(nm)) rmdirSync(nm); // retire la jonction seule, jamais le dossier d'origine
   tryRun(repo, ['worktree', 'remove', dir]);
+  // Windows garde parfois le dossier, vide : on le retire seulement s'il est vide (jamais récursif).
+  try { if (existsSync(dir)) rmdirSync(dir); } catch { /* pas vide ou verrouillé : on le laisse */ }
 }

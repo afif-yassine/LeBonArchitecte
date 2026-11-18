@@ -154,3 +154,25 @@
 
 **Reste à faire**
 - Le README indique Node.js 22.5 ou plus (base `node:sqlite`). Non vérifié : le projet a été lancé ici seulement avec Node 24.11.
+
+## LBA-6, vrais agents, mode direct (2026-11-18)
+
+**Fait**
+- **Vrais agents Claude** (décision 0006).
+  - Le moteur lance Claude Code en mode non interactif, avec l'abonnement du propriétaire, dans un worktree par ticket (`.lba/worktrees/<id>`, branche `ticket/<id>`).
+  - Interdits bloqués par Claude Code lui-même.
+  - À la fin, le programme fait un commit dans la branche, prouve les étapes avec les commandes de la fiche du projet, et note ce qui a été réalisé à partir de git.
+  - À la validation, les tests sont relancés, puis le ticket est réuni dans main (`--no-ff`) avec un point de retour.
+- **Tokens.** Premier agent réel (LBA-9, README) : 71 770 tokens. Mesure tour par tour : 34 210 de charge fixe (plugins, skills et MCP de l'installation), 27 690 de lecture, 9 842 écrits.
+  - Les agents tournent désormais avec un contexte minimal : `--strict-mcp-config`, `--disable-slash-commands`, 6 outils. La charge fixe mesurée passe à ~12 300.
+  - **Mode direct** pour les tâches simples de texte : un appel sans outils, avec un contexte préparé par le programme. Le README de LBA-9 refait ainsi a coûté **5 842 tokens** ; c'est la version réunie dans main (7fadd7c). Le Node 22.5 cité plus haut n'est plus dans le README : il indique Node 24.
+- **Écran à jour sans actualiser** : le flux est rouvert après un redémarrage du moteur, avec une relecture de secours toutes les 10 s. Un vrai projet n'affiche jamais les données d'exemple.
+- **Réalisé** : chaque fichier s'ouvre, en contenu (Markdown lisible) ou en changements, lu depuis la branche du ticket.
+- Lancement « manuel » (travail fait hors agent, étapes toujours prouvées). Après une réclamation, toutes les preuves sont à refaire.
+
+**Preuves**
+- 25 tests sur 25 verts, dont le worktree (node_modules d'origine intact), le mode direct (chemins hors dossier et `.env` refusés) et les preuves remises à zéro.
+- LBA-9 validé par le propriétaire : tests relancés, réuni dans main en 7fadd7c, point de retour 4d8d5c3.
+
+**Reste à faire**
+- LBA-7 (Codex). Note de passation à l'arrêt. Outils pour le périmètre, les failles et la documentation.

@@ -976,3 +976,26 @@ select:hover, .input:hover { border-color: var(--faint); }
   .dr__note .btn { grid-column: 1 / -1; justify-self: start; }
 }
 @media (prefers-reduced-motion: reduce) { .fd { animation: none; } }
+
+/* ================= Réalisé : lire un fichier ================= */
+.fileopen { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 2px 0; color: var(--text); cursor: pointer; text-align: left; min-width: 0; }
+.fileopen:hover .mono, .fileopen.is-open .mono { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.fileopen svg { color: var(--muted); flex: none; }
+.fileview { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); overflow: hidden; }
+.fileview__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--sunken); }
+.fileview__head .tabs { margin: 0; }
+.fileview__body { padding: 18px 22px; max-height: 62vh; overflow: auto; }
+.md { max-width: 72ch; line-height: 1.65; color: var(--text); }
+.md p { margin: 0 0 10px; }
+.md__h { color: var(--text-strong); font-weight: var(--wght-head); margin: 20px 0 8px; line-height: 1.3; }
+.md h2.md__h { font-size: 1.35rem; margin-top: 0; }
+.md h3.md__h { font-size: 1.08rem; }
+.md h4.md__h, .md h5.md__h { font-size: .98rem; }
+.md__ul { margin: 0 0 12px; padding-left: 20px; }
+.md__ul li { margin: 3px 0; }
+.md code { font-family: var(--mono); font-size: .86em; background: var(--sunken); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.md__code { font-family: var(--mono); font-size: .84rem; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diffview { font-family: var(--mono); font-size: .82rem; line-height: 1.6; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diffview .is-add { color: var(--ok); background: var(--ok-soft); display: block; }
+.diffview .is-del { color: var(--danger); background: var(--danger-soft); display: block; }
+.diffview .is-hunk { color: var(--faint); display: block; margin-top: 8px; }
