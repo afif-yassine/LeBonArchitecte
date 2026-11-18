@@ -264,3 +264,9 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Petite correction après plus de 5 minutes de pause : un nouvel agent part de la passation (~15 k) au lieu de recharger toute la conversation (~80 k). Pause courte ou gros travail : on reprend la session comme avant. Décision 0011.
 - Consigne d'économie renforcée : ne jamais relire un fichier déjà lu ; JOURNAL et décisions seulement si le ticket les nomme.
 - Fiche ticket : « Rechargée n fois après une pause : X payés pour rien » dans le bloc Contexte (LBA-15 : 2 fois, 149 k). 55 tests verts. Vérifié dans le navigateur.
+
+## Lot 2 : onglet Tests rangé par type (18 nov. 2026)
+- Onglet Tests : un bloc par type (unitaires, fonctionnels, bout en bout, vérification du code, contrôle des documents) avec le dernier résultat (passés / en échec), le nom des tests en échec, la commande exacte, qui l'a lancée et quand. Les types jamais lancés sont dits (« Pas lancés dans ce ticket : … ») ; l'historique complet reste replié dessous.
+- Les tests lancés par l'agent gardent maintenant leurs chiffres et les noms des tests en échec (avant : seulement « vert »). Correction d'un faux vert : « npm test | tail » ne renvoie jamais d'erreur ; le programme lit maintenant la sortie (échecs, erreurs TypeScript, build raté).
+- Règle unique dans src/shared/tests.ts (moteur et interface) ; une recherche du mot « test » (grep) n'est plus prise pour un test. 57 tests verts. Vérifié dans le navigateur (LBA-16).
+- À savoir : LBA n'a aujourd'hui que des tests unitaires et la vérification du code ; tests fonctionnels et bout en bout = ticket à part.

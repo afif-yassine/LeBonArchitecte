@@ -1,4 +1,4 @@
-# 0011 — Reprendre la conversation ou repartir avec une passation
+# Décision 0011 : reprendre la conversation ou repartir avec une passation
 
 Date : 18 nov. 2026. Statut : appliquée.
 

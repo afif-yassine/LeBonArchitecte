@@ -10,6 +10,7 @@ import { Deroule, PhaseFrise } from '../components/Deroule';
 import { TicketStatus } from '../components/TicketStatus';
 import { Markdown } from '../components/Markdown';
 import { FileViewer } from '../components/FileViewer';
+import { TestsTab } from '../components/TestsTab';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
@@ -330,25 +331,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                 ? <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
                 : <FileViewer ticketId={t.id} files={t.realized.files} />
           )}
-          {tab === 'tests' && (() => {
-            // Seulement les vrais passages de tests (pas les recherches de l'agent qui contiennent le mot « test »).
-            const runs = (feed ?? []).filter((i) => (i.kind === 'test' || i.kind === 'commande') && /^(npm (test|run (check|build))|npx tsc)\b/.test(i.text.trim()));
-            return runs.length === 0
-              ? <div className="empty"><h3>Aucun test lancé pour l’instant</h3><p>Chaque passage des tests (par l’agent, par le programme, ou par vous avec « Tester ») s’affiche ici.</p></div>
-              : (
-                <ol className="testruns">
-                  {runs.slice().reverse().map((i) => (
-                    <li key={i.id} className={`testrun ${i.ok === false ? 'is-ko' : i.ok ? 'is-ok' : ''}`}>
-                      <span className="testrun__mark" aria-hidden="true">{i.ok === false ? <X size={12} strokeWidth={3} /> : <Check size={12} strokeWidth={3} />}</span>
-                      <span className="testrun__what">{i.text}<span className="sr-only">{i.ok === false ? ', en échec' : ', vert'}</span></span>
-                      <span className="testrun__who">{i.who === 'programme' ? 'le programme' : i.who === 'vous' ? 'vous' : 'l’agent'}</span>
-                      <span className="testrun__at">{new Date(i.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                      {i.detail && <span className="testrun__detail">{i.detail.split('\n')[0]}</span>}
-                    </li>
-                  ))}
-                </ol>
-              );
-          })()}
+          {tab === 'tests' && <TestsTab feed={feed ?? []} />}
         </div>
 
         {tab === 'deroule' && t.status !== 'termine' && (

@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { Refused } from './tickets.ts';
+import { readTestOutput, testDetail } from '../src/shared/tests.ts';
 
 // Interdits par défaut (cahier des charges E16). Le propriétaire les lève au cas par cas, jamais l'agent.
 const FORBIDDEN: { re: RegExp; why: string }[] = [
@@ -40,13 +41,12 @@ export interface RunResult {
 export function summarize(output: string, ok: boolean): string {
   // Les lignes d'écho de npm (« > projet@1.0 check ») n'apprennent rien à l'agent.
   const lines = output.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l && !/^> /.test(l));
-  const pick = (re: RegExp) => lines.map((l) => l.match(re)?.[1]).find((x) => x !== undefined);
-  const pass = pick(/^ℹ pass (\d+)/) ?? pick(/(\d+) passed/) ?? pick(/Tests:.*?(\d+) passed/);
-  const fail = pick(/^ℹ fail (\d+)/) ?? pick(/(\d+) failed/);
+  const counts = readTestOutput(output);
   const errors = lines.filter((l) => /error|erreur|failed|✖|not ok|exception/i.test(l) && !/^ℹ fail 0/.test(l)).slice(0, 6);
   const parts: string[] = [];
-  if (pass !== undefined || fail !== undefined) parts.push(`Tests : ${pass ?? 0} passés, ${fail ?? 0} en échec.`);
-  if (!ok && errors.length) parts.push(...errors.map((e) => e.slice(0, 200)));
+  // Chiffres, puis le nom des tests en échec (« ✖ nom ») ; à défaut, les lignes d'erreur.
+  if (counts.pass !== undefined || counts.fail !== undefined || counts.failures.length) parts.push(testDetail(counts));
+  if (!ok && errors.length && !counts.failures.length) parts.push(...errors.map((e) => e.slice(0, 200)));
   if (!parts.length) parts.push(...lines.slice(-3).map((e) => e.slice(0, 200)));
   return parts.join('\n') || (ok ? 'Terminé sans sortie.' : 'Échec sans message.');
 }

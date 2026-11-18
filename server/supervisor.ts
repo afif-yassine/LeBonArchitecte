@@ -254,7 +254,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     if (testsOk === undefined && prof.commands.test) {
       const r = await runCommand(prof.commands.test, { cwd: wt, ticket: id });
       testsOk = r.ok;
-      engine.live(id, { kind: 'test', ok: r.ok, text: `${prof.commands.test} : ${r.ok ? 'vert' : 'en échec'}`, detail: r.summary.split('\n')[0] }, 'programme');
+      engine.live(id, { kind: 'test', ok: r.ok, text: `${prof.commands.test} : ${r.ok ? 'vert' : 'en échec'}`, detail: r.summary.split('\n').slice(0, 9).join('\n') }, 'programme');
     }
     // Audit LBA-11, point 4 : ce qu'aucun outil ne contrôle est affiché « non vérifié », jamais « ok ».
     engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : nouvelles failles, documentation à jour' + (isResearch(t) ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');

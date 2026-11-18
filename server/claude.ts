@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
+import { isTestCommand, readTestOutput, testDetail } from '../src/shared/tests.ts';
 import type { Engine } from './engine.ts';
 
 // Audit LBA-11, point 3 : plus de « npm * », « npx * » ni « node * », qui permettaient de lancer n'importe
@@ -89,8 +90,6 @@ function promptFor(t: Ticket, complaint?: string): string {
   ].join('\n');
 }
 
-// Une vraie commande de tests, pas n'importe quelle commande qui contient le mot « test ».
-const TEST_CMD = /(^|[;&|]\s*)(npm (run )?test|npx (vitest|jest|playwright)|node --test|vitest|jest|playwright test)\b/;
 const DENIED_MSG = /^Permission to use|was denied|denied by/i;
 
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -260,10 +259,14 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
         const tool = tools.get(b.tool_use_id);
         const text = Array.isArray(b.content) ? b.content.map((c: { text?: string }) => c.text ?? '').join(' ') : String(b.content ?? '');
         if (b.is_error && DENIED_MSG.test(text.trim())) live('systeme', `Refusé par les règles du projet : ${short(tool?.cmd ?? tool?.name, 120)}`, 'L’agent doit passer par un autre moyen autorisé.', false);
-        else if (tool?.name === 'Bash' && TEST_CMD.test(tool.cmd ?? '')) {
-          testsGreen = !b.is_error;
-          if (b.is_error) { testFailed = true; live('test', `${short(tool.cmd, 80)} : en échec`, short(text, 240), false); live('bug', short(text.split('\n').find((l: string) => /error|fail|✖|not ok/i.test(l)) ?? text, 200), 'Trouvé par les tests', false); }
-          else { live('test', `${short(tool.cmd, 80)} : vert`, undefined, true); if (testFailed) { testFailed = false; live('resolu', 'Les tests repassent au vert', 'Corrigé par l’agent', true); } }
+        else if (tool?.name === 'Bash' && isTestCommand(tool.cmd ?? '')) {
+          // « npm test | tail » ne renvoie jamais d'erreur (c'est tail qui répond) : on lit aussi la sortie.
+          const counts = readTestOutput(text);
+          const red = b.is_error || (counts.fail ?? 0) > 0 || /error TS\d+|Build failed|npm ERR!/i.test(text);
+          testsGreen = !red;
+          const detail = testDetail(counts) || undefined;
+          if (red) { testFailed = true; live('test', `${short(tool.cmd, 80)} : en échec`, detail ?? short(text, 240), false); live('bug', short(counts.failures[0] ?? text.split('\n').find((l: string) => /error|fail|✖|not ok/i.test(l)) ?? text, 200), 'Trouvé par les tests', false); }
+          else { live('test', `${short(tool.cmd, 80)} : vert`, detail, true); if (testFailed) { testFailed = false; live('resolu', 'Les tests repassent au vert', 'Corrigé par l’agent', true); } }
         } else if (b.is_error) live('systeme', `${tool?.name ?? 'Outil'} en échec`, short(text, 240), false);
       }
     } else if (m.type === 'result') {

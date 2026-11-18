@@ -6,6 +6,7 @@ import {
 import { roles } from '../mock/data';
 import { TICKET_PHASES, ticketPhase, type LiveItem, type LiveKind, type Ticket } from '../shared/contract';
 import { Tabs } from './ui';
+import { isTestCommand } from '../shared/tests';
 import '../deroule.css';
 
 const roleName = (id?: string) => roles.find((r) => r.id === id)?.name ?? id ?? '';
@@ -89,7 +90,7 @@ type Entry = { type: 'moment'; it: LiveItem } | { type: 'work'; items: LiveItem[
 interface Tour { title: string; model?: string; start?: string; end?: string; entries: Entry[] }
 
 // Un vrai passage de tests (pas une recherche de l'agent qui contient le mot « test »).
-export const isTestRun = (it: LiveItem) => (it.kind === 'test' || it.kind === 'commande') && /^(npm (test|run (check|build))|npx tsc)\b/.test(it.text.trim());
+export const isTestRun = (it: LiveItem) => (it.kind === 'test' || it.kind === 'commande') && isTestCommand(it.text.trim().replace(/\s:\s(vert|en échec)$/, ''));
 const isMoment = (it: LiveItem) =>
   it.kind === 'message' || it.kind === 'reflexion' || isTestRun(it) || it.kind === 'bug' || it.kind === 'resolu'
   || (it.kind === 'etape' && it.ok !== undefined) || (it.kind === 'systeme' && it.ok !== undefined);
