@@ -300,6 +300,7 @@ test('recherche : rôle Éclaireur, mode agent (web), pas d’étape de tests ; 
   assert.ok(r.steps.every((s) => s.role === 'eclaireur'));
   assert.ok(!r.steps.some((s) => s.proof.kind === 'tests'));
   assert.equal(pickMode(r), 'agent');
+  assert.equal(pickModel(r).model, 'Haiku'); // le modèle est choisi au lancement
   assert.ok(isResearch(r));
   assert.ok(!isResearch(e.ticket('LBA-6')));
 });
