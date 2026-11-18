@@ -196,3 +196,9 @@
 - Décision 0008 : réunion seulement dans un main propre, tests relancés après la réunion avec annulation par revert, droits précis des agents (plus de node/npx/npm *), contrôles « non vérifié » au lieu de « ok », ticket jamais bloqué en cours, moteur fermé aux pages étrangères (vérifié : 403 et 415).
 - Tests : 29 verts. LBA-11 : 68 711 tokens (Opus), prêt à tester.
 - À vérifier au prochain vrai ticket : que les nouveaux droits suffisent à l'agent (tests, compilation, PDF).
+
+## Cahier des charges réel, point 2 (18 nov. 2026)
+- Onglet Cahier des charges : les 34 exigences (E0 à E20, A1 à A13) lues dans le cahier sans IA ; carte de couverture ; schémas d'architecture et de vie d'un ticket (couleurs du thème) ; exigences en cases cochées seulement par les preuves.
+- Lien ticket → exigences dans le ticket (« E2 » en entier, « E2~ » en partie). Les 14 tickets LBA sont liés. Couverture actuelle : 4 faites, 15 en partie, 1 en cours, 3 prévues, 11 sans ticket.
+- Discussion avec l'Architecte (Opus, effort haut, un appel sans outils, contexte préparé par le programme). Ses propositions deviennent des tickets « à faire » seulement si vous les acceptez. Premier essai, revue complète : 13 334 tokens mesurés, 5 propositions et 9 points à enlever ou reporter.
+- Tests : 29 verts. Écran vérifié dans le navigateur.
