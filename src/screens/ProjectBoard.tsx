@@ -165,6 +165,15 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
   const lotDone = lot.filter((t) => t.status === 'termine' || t.status === 'a-tester').length;
   const q = queue(projectId);
   const run = running(projectId);
+  // Vrai projet : la « porte » dit ce qu'on attend de vous maintenant (avant : un texte écrit en dur, resté sur LBA-3).
+  const ids = (list: typeof ts) => list.slice(0, 3).map((t) => t.id).join(', ') + (list.length > 3 ? '…' : '');
+  const toTest = ts.filter((t) => t.status === 'a-tester');
+  const toFix = ts.filter((t) => t.status === 'action');
+  const gate = p.demo ? p.gate
+    : toFix.length ? `Régler ${ids(toFix)} (besoin d’action)`
+    : toTest.length ? `Faire la recette de ${ids(toTest)}`
+    : unplanned.length ? `Valider les plans de ${ids(unplanned)}`
+    : 'Rien ne vous attend';
 
   return (
     <>
@@ -200,8 +209,8 @@ export function ProjectBoard({ projectId, go }: { projectId: string; go: Go }) {
         <div className="lotline">
           <span>Lot {p.lot.n} <strong>« {p.lot.name} »</strong></span>
           <span><strong className="num">{lotDone}/{lot.length}</strong> tickets réalisés</span>
-          <span><strong className="num">{fmtTokens(p.tokensToday)}</strong> tokens aujourd’hui</span>
-          <span className="gate"><strong>Porte</strong> {p.gate}<button className="btn btn--sm" onClick={() => notify('Maquette : valider la porte fait passer le projet à l’étape suivante.')}>Valider</button></span>
+          <span><strong className="num">{fmtTokens(p.demo ? p.tokensToday : autopilot.spentToday)}</strong> tokens aujourd’hui</span>
+          <span className="gate"><strong>À vous</strong> {gate}{p.demo && <button className="btn btn--sm" onClick={() => notify('Maquette : valider la porte fait passer le projet à l’étape suivante.')}>Valider</button>}</span>
         </div>
       </div>
 

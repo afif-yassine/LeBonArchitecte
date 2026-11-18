@@ -292,3 +292,7 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Chaque compte rendu (ticket lourd, lot, jour) commence par l'essentiel : feu vert/orange/rouge avec sa raison, « En bref », tableau des chiffres clés et un schéma ; puis le détail ; les preuves en annexe. Décision 0013.
 - Schémas dessinés par le programme (0 token) : frise du ticket ; barres de tokens par ticket pour un lot ou un jour.
 - « Ouvrir le PDF » dans Documents : créé au clic (outil existant scripts/pdf.mjs, mode compte rendu sans sommaire), environ 1 s, rangé dans .lba/ (main reste propre). LBA-15 : 3 pages ; lot 1 : 2 pages. 60 tests verts. Vérifié dans le navigateur (PDF et appli, thème sombre).
+
+## Mémoire personnelle protégée, « À vous » réel sur le kanban (18 nov. 2026)
+- Les agents ne lisent plus la mémoire du propriétaire (~/.claude, hors du projet) : Read/Edit/Write/Glob/Grep refusés sur ~/.claude/**, mémoire automatique coupée (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1). Essayé en vrai avec un petit appel Haiku : lecture refusée (environ 3 k tokens écrits + 6 k relus du cache).
+- Kanban : la « Porte » écrite en dur (« Faire la recette de LBA-3 », bouton Valider factice) devient « À vous », calculé : besoin d'action, sinon recette, sinon plans à valider. « Tokens aujourd'hui » montre le vrai total (1,1 M) au lieu de 0. 60 tests verts. Vérifié dans le navigateur.

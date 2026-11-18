@@ -22,7 +22,9 @@ const ALLOWED = ['Read', 'Edit', 'Write', 'Glob', 'Grep',
   'Bash(ls)', 'Bash(ls *)', 'Bash(tail *)', 'Bash(head *)', 'Bash(wc *)', 'Bash(grep *)'];
 const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git -C *)', 'Bash(git -c *)',
   'Bash(node *)', 'Bash(npx *)', 'Bash(npm install *)', 'Bash(npm i *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npm publish *)',
-  'Read(**/.env*)', 'Read(**/*.pem)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
+  'Read(**/.env*)', 'Read(**/*.pem)',
+  // Mémoire personnelle du propriétaire et journaux des sessions (~/.claude) : hors du projet, jamais lus ni écrits.
+  'Read(~/.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
 
 // Le web seulement pour un ticket de recherche (rôle Éclaireur) : lecture d'Internet, écriture limitée à ses dossiers.
 export const isResearch = (t: Ticket) => t.steps.some((s) => s.role === 'eclaireur');
@@ -186,7 +188,8 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' || t.model === 'Opus' ? 'high' : 'medium',
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   if (resume) args.push('--resume', resume);
-  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
+  // Mémoire automatique coupée : l'agent ne charge pas la mémoire personnelle du propriétaire (vu dans LBA-17).
+  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   const brief = resume && why === 'reparation'
     ? `Le programme a vérifié ton travail. ${complaint} Corrige seulement cela : c’est ta seule tentative de réparation. Lance les tests, annonce les étapes reprises (« ÉTAPE n : faite »), puis écris ton résumé.`
     : resume && why === 'message'
