@@ -218,3 +218,6 @@
 - Tableau : bouton « Valider les plans et lancer ». On coche les tickets, on choisit le nombre d'agents en même temps ; un ticket qui attend un ticket non coché est signalé « bloqué ». Le bandeau du pilote dit pourquoi il attend (plans à valider). 34 tests verts.
 - Lancé depuis l'écran : LBA-12, 15, 16 sur Opus (3 en même temps), chacun sur sa branche et son dossier ; LBA-17 attend une place. Gardés de côté : LBA-7 (Codex), LBA-13 (à fusionner avec LBA-12), LBA-14 (attend LBA-13).
 - Pendant que les agents travaillent, aucune modification du moteur (elle le redémarrerait).
+- Incident : 2 à 3 minutes après le départ, la limite de 5 h de l'abonnement est atteinte (« resets 5:50am »). Le moteur l'a pris pour une fin normale : les 4 tickets en « Pas fini », et le pilote a lancé LBA-17 qui s'est arrêté aussitôt.
+- Corrigé : la limite est reconnue. Le travail est gardé dans la branche, le ticket attend en tête de file avec sa session, le pilote se met en pause jusqu'à l'heure de retour (gardée même si le moteur redémarre), puis reprend. Un ticket relancé reprend sa session Claude au lieu de tout relire. 35 tests verts.
+- Relancés à 12 h : LBA-12, 15, 16 reprennent leur session (branches mises à jour avec la correction) ; LBA-17 attend une place.
