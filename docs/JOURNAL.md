@@ -207,3 +207,9 @@
 - Onglet Git : main et une colonne par branche de ticket, départs et réunions dessinés, annulations en rouge, point « changements pas encore enregistrés ». Légende des branches : réunie, en travail, pas réunie.
 - Clic sur un point : message, fichiers changés (pour une réunion : ce que le ticket a apporté). « Repartir d'ici » crée une branche reprise/<commit> sans toucher main. « Annuler ce ticket dans main » ajoute un commit d'annulation (main propre exigé), puis relance les tests. Confirmation dans la page, jamais de boîte du navigateur.
 - Tests : 30 verts (dont un dépôt jetable : schéma, reprise, annulation). Écran vérifié dans le navigateur.
+
+## Corrections signalées par le propriétaire (18 nov. 2026)
+- Valider LBA-11 échouait : « git status » est rogné, la 1re ligne perdait son espace et « .lba/projet.yaml » devenait « lba/projet.yaml », pris pour un vrai fichier modifié. Lecture corrigée (statusPaths), aussi dans le schéma Git.
+- Après correction, un conflit (deux tests ajoutés en fin du même fichier) : la garde a refusé sans rien changer ; branche du ticket mise à jour avec main, 33 tests verts, puis LBA-11 réuni (83e6994).
+- Le pilote ne démarrait qu'à la fin d'un ticket. Maintenant : valider un plan ou allumer le pilote lance tout de suite les tickets prêts (vrais projets seulement). Il ne lance jamais un plan non validé.
+- Documents › Décisions : nouvelle page « Vos choix sur les propositions de l'Architecte », écrite par le programme depuis le journal (pas de fichier recopié). Les Règles du projet restent les règles de travail du cahier.
