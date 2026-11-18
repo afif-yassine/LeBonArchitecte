@@ -103,7 +103,7 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
 // resume : session Claude à reprendre. why = 'redemarrage' (moteur coupé en route : tokens pas encore comptés)
 // ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés).
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage'): ChildProcess {
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage', handoff?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -121,9 +121,11 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   if (resume) args.push('--resume', resume);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
-  child.stdin.end(resume
-    ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
-    : promptFor(t, complaint));
+  const brief = resume
+    ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le PC ou le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
+    : promptFor(t, complaint);
+  // Passation (reprise après panne) : ce que le programme a constaté, jointe à la consigne.
+  child.stdin.end(handoff ? `${brief}\n\n${handoff}` : brief);
 
   const live = (kind: Parameters<Engine['live']>[1]['kind'], text: string, detail?: string, ok?: boolean) => {
     try { engine.live(t.id, { kind, text, detail, ok }, who); } catch { /* ticket supprimé ou arrêté : on ignore */ }

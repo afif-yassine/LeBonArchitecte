@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
 import { COLUMNS, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
@@ -65,7 +65,7 @@ function PlansPanel({ projectId, todo, onClose }: { projectId: string; todo: Tic
 }
 
 function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) => void }) {
-  const { stop, simulate, isReady, validate } = useStore();
+  const { stop, resume, simulate, isReady, validate } = useStore();
   const agent = agents.find((a) => a.id === t.agentId);
   const open = () => go({ kind: 'ticket', ticketId: t.id });
   const realized = t.status === 'termine' || t.status === 'a-tester';
@@ -115,6 +115,9 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
       </button>
       {t.status === 'a-faire' && (
         <div className="card__acts"><button className="btn btn--sm" onClick={() => onLaunch(t.id)}><Play size={12} />Lancer</button></div>
+      )}
+      {t.status === 'action' && t.interrupted && (
+        <div className="card__acts"><button className="btn btn--sm" onClick={() => resume(t.id)}><RotateCcw size={12} />Reprendre</button></div>
       )}
       {t.status === 'a-tester' && (
         <div className="card__acts">

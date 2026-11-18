@@ -90,6 +90,14 @@ export function diffFile(repo: string, id: string, path: string): string {
   return tryRun(repo, ['diff', from, branchOf(id), '--', path]).out.slice(0, 300_000);
 }
 
+// Travail pas encore enregistré dans la branche (un agent coupé n'a pas eu le temps de le faire).
+export function pendingFiles(dir: string): string[] {
+  if (!existsSync(join(dir, '.git'))) return [];
+  const r = tryRun(dir, ['-c', 'core.quotepath=off', 'status', '--porcelain', '--untracked-files=all']);
+  if (!r.ok) return [];
+  return statusPaths(r.out).map((p) => p.replace(/^"|"$/g, '')).filter((p) => p !== 'node_modules' && !p.startsWith('node_modules/'));
+}
+
 export function changedFiles(repo: string, id: string): { path: string; plus: number; minus: number }[] {
   const r = tryRun(repo, ['diff', '--numstat', `${MAIN}...${branchOf(id)}`]);
   if (!r.ok || !r.out) return [];

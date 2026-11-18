@@ -18,6 +18,7 @@ interface Store {
   running: (projectId: string) => Ticket[];
   launch: (id: string, replaceId?: string) => void;
   stop: (id: string) => void;
+  resume: (id: string) => void;
   simulate: (id: string) => void;
   validatePlan: (id: string) => void;
   sendMessage: (id: string, text: string) => void;
@@ -112,6 +113,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const launch = useCallback((id: string, replaceId?: string) => { act(`/tickets/${id}/launch`, { replace: replaceId }); }, [act]);
   const stop = useCallback((id: string) => { act(`/tickets/${id}/stop`); }, [act]);
+  const resume = useCallback((id: string) => { act(`/tickets/${id}/resume`); }, [act]);
   const simulate = useCallback((id: string) => { act(`/tickets/${id}/simulate-run`); }, [act]);
   const validatePlan = useCallback((id: string) => { act(`/tickets/${id}/plan/validate`); }, [act]);
   const runCommand = useCallback((id: string, command: string) => { act(`/tickets/${id}/run`, { command }); }, [act]);
@@ -157,7 +159,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const actions = useCallback((pid: string) => pending.filter((a) => a.projectId === pid), [pending]);
   const resolveAction = useCallback((id: string, label: string) => { act(`/actions/${id}/resolve`, { label }); }, [act]);
 
-  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction }),
-    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction]);
+  const value = useMemo(() => ({ online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, resume, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction }),
+    [online, tickets, reports, autopilot, setAutopilot, isReady, queue, running, launch, stop, resume, simulate, validatePlan, sendMessage, runCommand, live, rev, move, unreported, writeReport, validate, reject, actions, resolveAction]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

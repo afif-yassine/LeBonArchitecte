@@ -29,7 +29,8 @@ export type EventType =
   | 'besoin-action' | 'ticket-valide' | 'reclamation' | 'rapporte'
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
-  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee';
+  | 'exigences-liees' | 'architecte-revue' | 'proposition-decidee'
+  | 'ticket-interrompu' | 'ticket-repris';
 
 export interface EngineEvent {
   id?: number;
@@ -41,16 +42,24 @@ export interface EngineEvent {
   data: Record<string, unknown>;
 }
 
+// Dernière étape prouvée, dans l'ordre du plan : c'est le point sûr d'où un travail coupé repart.
+export const lastProvedStep = (t: Ticket): TicketStep | undefined => t.steps.filter((s) => s.state === 'prouve').at(-1);
+
 // Applique un événement à un ticket. Le journal est la source ; ce résultat n'est qu'une vue.
 export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefined {
   if (e.type === 'ticket-cree') return e.data.ticket as Ticket;
   if (!t) return t;
   switch (e.type) {
     case 'ticket-lance':
-      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, model: (e.data.model as string) ?? t.model };
+      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined, model: (e.data.model as string) ?? t.model };
+    case 'ticket-interrompu':
+      // Plus aucun agent ne travaille dessus (PC éteint, panne) : il attend votre « Reprendre ».
+      return { ...t, status: 'action', needAction: String(e.data.cause ?? 'Travail interrompu'), interrupted: { at: e.at, lastProved: e.data.lastProved as string | undefined } };
+    case 'ticket-repris':
+      return { ...t, status: 'en-cours', waitingFor: undefined, needAction: undefined, interrupted: undefined };
     case 'ticket-arrete':
       return {
-        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined,
+        ...t, status: 'a-faire', priority: 0, needAction: undefined, securityBlock: undefined, interrupted: undefined,
         waitingFor: e.data.reason ? `Reprend en tête de file : ${e.data.reason}` : 'Arrêté par vous, reprendra avec sa passation',
       };
     case 'agent-termine':
@@ -67,7 +76,7 @@ export function reduce(t: Ticket | undefined, e: EngineEvent): Ticket | undefine
       return { ...t, status: 'termine' };
     case 'reclamation':
       // Le travail va changer : toutes les preuves sont à refaire, aucune coche ancienne ne reste.
-      return { ...t, status: 'en-cours', loops: t.loops + 1, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
+      return { ...t, status: 'en-cours', loops: t.loops + 1, interrupted: undefined, steps: t.steps.map((s) => ({ ...s, state: 'a-faire', evidence: undefined })) };
     case 'rapporte':
       return { ...t, reportedIn: String(e.data.report) };
     case 'tokens':

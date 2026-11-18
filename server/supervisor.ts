@@ -10,7 +10,8 @@ import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
-import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, removeWorktree, revertMerge, worktreeOf } from './git.ts';
+import { branchOf, changedFiles, commitWorktree, diffOf, ensureWorktree, mergeTicket, pendingFiles, removeWorktree, revertMerge, worktreeOf } from './git.ts';
+import { handoffText, writeHandoff } from './recovery.ts';
 import { Refused } from './tickets.ts';
 
 const SECRET = /(sk-ant-[\w-]{10,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
@@ -35,28 +36,37 @@ function recentlyActive(cwd: string, session: string): boolean {
   try { return Date.now() - statSync(transcriptOf(cwd, session)).mtimeMs < 90_000; } catch { return false; }
 }
 
-export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile) {
+export function startSupervisor(engine: Engine, dirs: Record<string, string>, profileOf: (p: string) => ProjectProfile, runAgent: typeof runClaude = runClaude) {
   const runs = new Map<string, ChildProcess>();
   const handled = new Set<number>();
-  const startEvent = (id: string) => engine.events({ ticket: id, limit: 300 }).find((e) => e.type === 'ticket-lance' || e.type === 'reclamation');
+  const startEvent = (id: string) => engine.lastStart(id);
 
-  // Au démarrage du moteur, on ne relance jamais un agent depuis zéro. Mais un agent coupé par le
-  // redémarrage (son ticket est encore « en cours ») est repris dans sa propre session Claude :
-  // il continue où il en était, sans refaire ni repayer le travail déjà fait.
-  const resumable: { id: string; session: string }[] = [];
+  // Passation : ce que le programme constate (preuves, fichiers, derniers messages), gardée dans .lba/passations.
+  function handoffOf(id: string): string {
+    const t = engine.ticket(id);
+    const repo = dirs[t.projectId];
+    const text = handoffText(t, {
+      committed: changedFiles(repo, id).map((f) => f.path),
+      pending: pendingFiles(worktreeOf(repo, id)),
+      notes: engine.liveFeed(id).filter((i) => i.kind === 'message' && i.who !== 'vous' && i.who !== 'programme').slice(-3).map((i) => i.text),
+      complaint: engine.openComplaint(id),
+    });
+    try { writeHandoff(repo, id, text); } catch (err) { engine.live(id, { kind: 'systeme', ok: false, text: `Passation non enregistrée sur le disque : ${(err as Error).message}` }, 'programme'); }
+    return text;
+  }
+
+  // Au démarrage, aucun agent ne tourne encore : un ticket resté « en cours » a perdu le sien (PC éteint,
+  // panne, moteur relancé). Il passe en « Besoin d'action » et attend « Reprendre » ; rien ne repart seul.
+  // Exceptions : les projets d'exemple, et le travail manuel (fait hors agent, il n'en a jamais eu).
   for (const t of engine.tickets()) {
     const e = startEvent(t.id);
     if (e?.id) handled.add(e.id);
-    const session = engine.sessionOf(t.id);
-    if (t.status === 'en-cours' && dirs[t.projectId] && e && !e.data.manual && session && pickMode(t) === 'agent'
-      && existsSync(worktreeOf(dirs[t.projectId], t.id)) && !recentlyActive(worktreeOf(dirs[t.projectId], t.id), session)) resumable.push({ id: t.id, session });
+    if (t.status !== 'en-cours' || !dirs[t.projectId] || e?.data.manual) continue;
+    try {
+      engine.interrupt(t.id, 'Travail interrompu par un redémarrage ou une panne.');
+      handoffOf(t.id);
+    } catch (err) { console.error(`Reprise de ${t.id} : ${(err as Error).message}`); }
   }
-  setImmediate(() => {
-    for (const r of resumable) {
-      engine.live(r.id, { kind: 'systeme', text: 'Le moteur a redémarré pendant le travail : l’agent reprend sa session, sans repartir de zéro.' }, 'programme');
-      start(r.id, undefined, r.session);
-    }
-  });
 
   let scheduled = false;
   engine.onChange(() => { if (!scheduled) { scheduled = true; setImmediate(() => { scheduled = false; tick(); }); } });
@@ -75,6 +85,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       if (!e?.id || handled.has(e.id) || e.data.manual) continue;
       handled.add(e.id);
       if (e.type === 'reclamation') { start(t.id, String(e.data.problem ?? '')); continue; }
+      if (e.type === 'ticket-repris') { resumeRun(t.id); continue; }
       // Relancé après un arrêt (limite d'abonnement, arrêt par vous, « Pas fini ») : il reprend sa
       // propre session au lieu de tout relire et refaire. Sans session ni dossier : départ normal.
       const session = engine.sessionOf(t.id);
@@ -82,6 +93,26 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       if (again) engine.live(t.id, { kind: 'systeme', text: 'Reprise de sa session Claude : l’agent continue où il en était.' }, 'programme');
       start(t.id, undefined, again ? session : undefined, 'reprise');
     }
+  }
+
+  // « Reprendre » : même session Claude si son journal existe encore, sinon un nouvel agent.
+  // Dans les deux cas il reçoit la passation et ne refait pas ce qui est prouvé.
+  function resumeRun(id: string) {
+    const t = engine.ticket(id);
+    const session = engine.sessionOf(id);
+    const same = session && pickMode(t) === 'agent' && existsSync(transcriptOf(worktreeOf(dirs[t.projectId], id), session)) ? session : undefined;
+    const handoff = handoffOf(id);
+    engine.live(id, { kind: 'systeme', text: same ? 'Reprise de sa session Claude, avec la passation.' : 'Session introuvable : un nouvel agent repart de la passation.', detail: `.lba/passations/${id}.md` }, 'programme');
+    start(id, engine.openComplaint(id), same, 'redemarrage', handoff);
+  }
+
+  function resume(id: string): string {
+    const t = engine.ticket(id);
+    const session = engine.sessionOf(id);
+    if (dirs[t.projectId] && session && recentlyActive(worktreeOf(dirs[t.projectId], id), session)) {
+      throw new Refused(`L’ancien agent de ${id} écrivait il y a moins de 90 secondes : il tourne peut-être encore. Réessayez dans deux minutes pour ne pas le doubler.`);
+    }
+    return engine.resume(id);
   }
 
   // Limite d'abonnement : réveil du pilote à l'heure de retour (aussi après un redémarrage du moteur).
@@ -95,11 +126,12 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
   const held = engine.quotaUntil();
   if (held) wakeAt(held);
 
-  function start(id: string, complaint?: string, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage') {
+  function start(id: string, complaint?: string, session?: string, why: 'redemarrage' | 'reprise' = 'redemarrage', handoff?: string) {
     const t = engine.ticket(id);
     let wt: string;
     try { wt = ensureWorktree(dirs[t.projectId], id); } catch (err) {
-      engine.live(id, { kind: 'systeme', ok: false, text: (err as Error).message }, 'programme');
+      // Pas d'espace de travail, donc pas d'agent : le ticket ne reste pas « en cours ».
+      engine.interrupt(id, (err as Error).message);
       return;
     }
     engine.live(id, { kind: 'etape', text: `Espace de travail prêt : .lba/worktrees/${id}`, detail: `Branche ${branchOf(id)} ; main n’est pas touché avant les tests verts` }, 'programme');
@@ -127,7 +159,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     // Tâche simple de texte : un seul appel sans outils ; sinon un agent complet.
     runs.set(id, pickMode(t) === 'direct'
       ? runDirect(engine, t, wt, profileOf(t.projectId), complaint, onEnd)
-      : runClaude(engine, t, wt, complaint, onEnd, resume, why));
+      : runAgent(engine, t, wt, complaint, onEnd, session, why, handoff));
   }
 
   async function finish(id: string, wt: string, o: RunOutcome) {
@@ -212,5 +244,5 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     return `${msg} Réuni dans main (${m.merge}), point de retour ${m.before}.`;
   }
 
-  return { validate, running: () => [...runs.keys()] };
+  return { validate, resume, running: () => [...runs.keys()] };
 }
