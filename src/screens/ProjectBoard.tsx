@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, FileClock, FileCheck2, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
 import { agents, projects } from '../mock/data';
 import { COLUMNS, budgetFor, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';
@@ -71,16 +71,12 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
   const doing = (what: 'valider' | 'tester') => { setBusy(what); (what === 'valider' ? validate : test)(t.id).finally(() => setBusy(null)); };
   const agent = agents.find((a) => a.id === t.agentId);
   const open = () => go({ kind: 'ticket', ticketId: t.id });
-  const realized = t.status === 'termine' || t.status === 'a-tester';
-  const reported = realized && (t.reportedIn
-    ? <span className="reported" title={`Déjà dans le compte rendu ${t.reportedIn}`}><FileCheck2 size={12} />{t.reportedIn}</span>
-    : <span className="reported is-new" title="Pas encore dans un compte rendu"><FileClock size={12} />à rapporter</span>);
 
   if (t.status === 'termine') {
     return (
       <div className="card is-done">
         <button className="card__main" onClick={open}>
-          <span className="card__top"><span className="card__id">{t.id}</span><CheckCircle2 size={13} style={{ color: 'var(--ok)' }} aria-label="fini" /><span style={{ marginLeft: 'auto' }}>{reported}</span></span>
+          <span className="card__top"><span className="card__id">{t.id}</span><CheckCircle2 size={13} style={{ color: 'var(--ok)' }} aria-label="fini" /></span>
           <span className="card__title">{t.title}</span>
         </button>
       </div>
@@ -111,11 +107,10 @@ function Card({ t, go, onLaunch }: { t: Ticket; go: Go; onLaunch: (id: string) =
         {t.status === 'en-cours' && current && <span className="flag"><ListChecks size={14} aria-hidden="true" />Étape {proven + 1} sur {t.steps.length} : {current.label}</span>}
         {t.status === 'a-tester' && <span className="flag flag--ok"><CheckCircle2 size={14} aria-hidden="true" />{okCount}/{t.criteria.length} critères, tests verts</span>}
         {agent && t.status === 'en-cours' && <span className={`flag ${agent.lastAction.includes('sans retour') ? 'flag--danger' : 'flag--accent'}`}>{agent.state === 'attend' ? <Hand size={14} /> : <Clock size={14} />}{agent.lastAction}</span>}
-        {(t.used > 0 || realized) && (
+        {t.used > 0 && (
           <span className="card__foot">
-            {t.used > 0 && <span style={{ flex: 1 }}><Bar value={t.used} max={budgetFor(t)} label={`Budget de ${t.id}`} /></span>}
-            {t.used > 0 && <span className="num">{fmtTokens(t.used)}</span>}
-            {realized && <span style={{ marginLeft: 'auto' }}>{reported}</span>}
+            <span style={{ flex: 1 }}><Bar value={t.used} max={budgetFor(t)} label={`Budget de ${t.id}`} /></span>
+            <span className="num">{fmtTokens(t.used)}</span>
           </span>
         )}
       </button>

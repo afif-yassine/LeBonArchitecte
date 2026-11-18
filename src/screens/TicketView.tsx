@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowLeftRight, Check, ChevronDown, FileCheck2, FileClock, GitBranch, GitCommitHorizontal,
-  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, Plus, RotateCcw, SendHorizontal, Settings2, Square, X,
+  ArrowLeft, ArrowLeftRight, Check, ChevronDown,
+  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, RotateCcw, SendHorizontal, Settings2, Square, X,
 } from 'lucide-react';
 import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
 import { TOOLS, budgetFor, type Effort, type LiveItem, type Ticket, type ToolId } from '../shared/contract';
 import '../ticket-side.css';
 import { Deroule, PhaseFrise } from '../components/Deroule';
 import { TicketStatus } from '../components/TicketStatus';
-import { Markdown } from '../components/Markdown';
 import { FileViewer } from '../components/FileViewer';
 import { TestsTab } from '../components/TestsTab';
 import { ReportTab } from '../components/ReportTab';
@@ -72,8 +71,12 @@ const EV_LABEL: Record<string, string> = {
   'ticket-cree': 'Ticket créé', 'ticket-lance': 'Lancé', 'ticket-arrete': 'Arrêté', 'agent-termine': 'Fin de l’agent', 'ticket-a-tester': 'Passé à tester',
   'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', reparation: 'Réparation automatique', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
   'etape-commencee': 'Étape commencée', 'etape-annoncee': 'Étape annoncée', direct: 'Direct',
-  'ticket-interrompu': 'Interrompu', 'ticket-repris': 'Repris',
+  'ticket-interrompu': 'Interrompu', 'ticket-repris': 'Repris', reuni: 'Travail enregistré', tokens: 'Tokens comptés', activite: 'Activité',
+  'ticket-pause': 'Mis en pause', 'etape-prouvee': 'Étape prouvée',
 };
+// Le direct est déjà dans le Déroulé : caché par défaut dans le journal brut, pour qu'on y lise les vrais événements.
+const NOISY = new Set(['direct', 'tokens', 'activite']);
+const actorOf = (a: string) => (a === 'vous' ? 'vous' : a === 'programme' ? 'programme' : a.startsWith('claude') || a.startsWith('codex') ? 'agent' : a);
 const evText = (d: Record<string, unknown>) => String(d.text ?? d.cause ?? d.problem ?? d.evidence ?? d.model ?? d.report ?? d.step ?? '');
 
 function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
@@ -144,7 +147,7 @@ function ToolMenu({ tool0, account0, model0, effort0, onClose, onApply }: {
 
 export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const notify = useNotify();
-  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, reports, validate, reject, pause, resume, fix, isReady } = useStore();
+  const { tickets, simulate, validatePlan, sendMessage, runCommand, live, rev, validate, reject, pause, resume, fix, isReady } = useStore();
   const [rejecting, setRejecting] = useState(false);
   // Valider dure (tests, réunion, tests dans main) : le bouton se bloque et le bandeau montre chaque étape.
   const [busy, setBusy] = useState(false);
@@ -153,8 +156,8 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const t = tickets.find((x) => x.id === ticketId)!;
   const agent = t.status === 'en-cours' || t.status === 'action' ? agents.find((a) => a.id === t.agentId) : undefined;
   const role = agent ? roles.find((r) => r.id === agentRoles[agent.id]) : undefined;
-  const realizedState = t.status === 'termine' || t.status === 'a-tester';
   const [tab, setTab] = useState<Tab>(t.status === 'a-tester' ? 'realise' : 'deroule');
+  const [showNoisy, setShowNoisy] = useState(false);
   const [conf, setConf] = useState({ tool: t.tool, accountId: t.accountId, model: t.model, effort: t.effort });
   const [menu, setMenu] = useState(false);
   const paused = t.status === 'a-faire' && !!t.paused;
@@ -166,7 +169,6 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const proven = t.steps.filter((s) => s.state === 'prouve').length;
   const account = accounts.find((a) => a.id === conf.accountId);
   const other: ToolId = conf.tool === 'codex' ? 'claude-code' : 'codex';
-  const report = reports.find((r) => r.id === t.reportedIn);
 
   // Le moteur prévient à chaque changement (rev) : on relit le direct et le journal du ticket.
   useEffect(() => {
@@ -206,16 +208,23 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           onPause={() => pause(t.id)} onResume={() => resume(t.id)} onLaunch={() => setLaunching(true)} onLook={() => setTab('deroule')} />
         <div className="tk__phases"><PhaseFrise t={t} /></div>
         <div className="tk__tabs">
-          <Tabs<Tab> label="Vues du ticket" value={tab} onChange={setTab} tabs={[
-            { id: 'deroule', label: 'Déroulé' }, { id: 'description', label: 'Description' }, { id: 'realise', label: 'Compte rendu' },
-            { id: 'journal', label: 'Journal' }, { id: 'diff', label: 'Diff' }, { id: 'tests', label: 'Tests' },
+          {/* 5 onglets : Description et Journal brut sont sous « Plus ». */}
+          <Tabs<Tab> label="Vues du ticket" value={tab === 'journal' ? 'description' : tab} onChange={setTab} tabs={[
+            { id: 'deroule', label: 'Déroulé' }, { id: 'realise', label: 'Compte rendu' }, { id: 'tests', label: 'Tests' },
+            { id: 'diff', label: 'Changements' }, { id: 'description', label: 'Plus' },
           ]} />
         </div>
 
         <div className="tk__body">
+          {(tab === 'description' || tab === 'journal') && (
+            <div className="tk-more" role="group" aria-label="Plus">
+              <button className={tab === 'description' ? 'is-on' : ''} aria-pressed={tab === 'description'} onClick={() => setTab('description')}>Description</button>
+              <button className={tab === 'journal' ? 'is-on' : ''} aria-pressed={tab === 'journal'} onClick={() => setTab('journal')}>Journal brut</button>
+            </div>
+          )}
           {tab === 'deroule' && <Deroule t={t} feed={feed ?? []} loading={feed === null} demo={demo} onValidatePlan={() => validatePlan(t.id)} onSimulate={() => simulate(t.id)} />}
           {tab === 'description' && (
-            <div className="descr">
+            <div className="descr descr--grid">
               <div className="descr__block"><h3>Pourquoi</h3><p>{t.description.context}</p></div>
               <div className="descr__block"><h3>Ce qui est attendu</h3><p className="strong" style={{ fontWeight: 500 }}>{t.description.expected}</p></div>
               <div className="descr__block">
@@ -283,18 +292,37 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               </div>
           )}
 
-          {tab === 'journal' && (
-            <ol className="journal">
-              {journal.map((e) => (
-                <li key={e.id} className="ev">
-                  <span className="ev__time">{new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-                  <span className="ev__icon" aria-hidden="true"><Info size={15} /></span>
-                  <div><span className="ev__actor">{e.actor}</span> <strong style={{ fontWeight: 550 }}>{EV_LABEL[e.type] ?? e.type}</strong> {evText(e.data)}</div>
-                </li>
-              ))}
-              {journal.length === 0 && <p className="muted">Chaque événement du ticket est écrit ici par le moteur, tel quel, pour l’audit.</p>}
-            </ol>
-          )}
+          {tab === 'journal' && (() => {
+            const hidden = journal.filter((e) => NOISY.has(e.type)).length;
+            const shown = showNoisy ? journal : journal.filter((e) => !NOISY.has(e.type));
+            let lastDay = '';
+            return (
+              <div className="jr">
+                <p className="jr__intro">
+                  Chaque événement écrit par le moteur, tel quel, pour l’audit.
+                  {hidden > 0 && <label className="jr__toggle"><input type="checkbox" checked={showNoisy} onChange={(e) => setShowNoisy(e.target.checked)} /> Afficher aussi le direct et les compteurs ({hidden})</label>}
+                </p>
+                {shown.length === 0 ? <p className="cr-missing">Aucun événement pour l’instant.</p> : (
+                  <ol className="jr__list">
+                    {shown.map((e) => {
+                      const d = new Date(e.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+                      const head = d !== lastDay; lastDay = d;
+                      return (
+                        <li key={e.id}>
+                          {head && <h4 className="jr__day">{d}</h4>}
+                          <div className={`jr__ev is-${actorOf(e.actor)}`}>
+                            <span className="jr__time">{new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="jr__who">{actorOf(e.actor)}</span>
+                            <span className="jr__what"><b>{EV_LABEL[e.type] ?? e.type}</b> {evText(e.data)}</span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            );
+          })()}
           {/* Avant : des exemples écrits en dur. Maintenant : les vrais changements et les vrais tests du ticket. */}
           {tab === 'diff' && (
             !t.realized || t.realized.files.length === 0
@@ -375,7 +403,6 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
               return <button key={d} className={`sd-tk ${done ? 'is-ok' : ''}`} onClick={() => go({ kind: 'ticket', ticketId: d })}>{d}{done && <Check size={11} strokeWidth={3} />}</button>;
             })}</span>}</dd>
             {t.description.cdcRefs.length > 0 && (<><dt>Exigences</dt><dd className="sd-chips">{t.description.cdcRefs.map((r) => <button key={r} className="sd-tk" onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'cdc' })}>{r}</button>)}</dd></>)}
-            {realizedState && (<><dt>Rapport</dt><dd>{t.reportedIn ? <span className="sd-chip is-ok">dans {t.reportedIn}</span> : <span className="sd-chip">à rapporter</span>}</dd></>)}
           </dl>
           {t.files.length > 0 && (<>
             <h4 className="sd-label" style={{ marginTop: 14 }}>Fichiers réservés</h4>

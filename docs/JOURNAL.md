@@ -276,3 +276,10 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Le résumé d'une correction n'écrase plus le résumé du vrai travail : il est ajouté en « Correction : … ».
 - Documents › Comptes rendus : un compte rendu par ticket lourd, un par lot fini (tickets légers regroupés), un par jour. Pages calculées depuis le journal, 0 token, aucun fichier écrit. Décision 0012.
 - Aujourd'hui : 6 tickets lourds (LBA-9, 11, 12, 15, 16, 17), lot 1, journée du 18 nov. 58 tests verts. Vérifié dans le navigateur.
+
+## Lot 4 : fiche ticket à 5 onglets (18 nov. 2026)
+- Onglets : Déroulé, Compte rendu, Tests, Changements, Plus (Description et Journal brut). Avant : 6 onglets dont deux peu utiles en premier plan.
+- Description : titre à gauche, contenu à droite, une ligne fine entre les parties (plus court à lire).
+- Journal brut : rangé par jour, heure / qui (vous, agent, programme) / quoi ; le direct et les compteurs de tokens (déjà dans le Déroulé) sont cachés par défaut, une case les remet.
+- Ancien « à rapporter / CR-n » retiré des cartes du kanban et du panneau : remplacé par les comptes rendus calculés (décision 0012).
+- Contexte de l'agent : la taille de départ ignore un premier échange vide (LBA-17 affichait « 0 au départ »). 58 tests verts. Vérifié dans le navigateur.

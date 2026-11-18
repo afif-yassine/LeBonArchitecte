@@ -39,4 +39,33 @@
 .sd-files li { font-family: var(--mono); font-size: .72rem; color: var(--muted); padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-files li.is-mem { color: var(--wait); }
 
+/* « Plus » : Description ou Journal brut. */
+.tk-more { display: inline-flex; gap: 2px; padding: 2px; margin-bottom: 14px; border-radius: 8px; background: var(--sunken); border: 1px solid var(--line); }
+.tk-more button { font: inherit; font-size: .8rem; padding: 4px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.tk-more button.is-on { background: var(--surface); color: var(--text-strong); box-shadow: 0 0 0 1px var(--line); }
+/* Description : titre à gauche, contenu à droite, une ligne fine entre les parties. */
+.descr--grid { gap: 0; max-width: 860px; }
+.descr--grid .descr__block { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 20px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.descr--grid .descr__block:last-child { border-bottom: 0; }
+.descr--grid .descr__block h3 { margin: 2px 0 0; font-size: .84rem; font-weight: 600; color: var(--muted); }
+.descr--grid .descr__block p { margin: 0; font-size: .92rem; line-height: 1.55; }
+/* Journal brut : par jour, heure / qui / quoi. */
+.jr__intro { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin: 0 0 10px; font-size: .82rem; color: var(--faint); }
+.jr__toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+.jr__list { list-style: none; margin: 0; padding: 0; max-width: 900px; }
+.jr__day { margin: 14px 0 4px; font-size: .78rem; font-weight: 600; color: var(--faint); }
+.jr__list li:first-child .jr__day { margin-top: 0; }
+.jr__ev { display: grid; grid-template-columns: 44px 76px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .85rem; align-items: baseline; }
+.jr__time { font-variant-numeric: tabular-nums; color: var(--faint); font-size: .8rem; }
+.jr__who { justify-self: start; font-size: .72rem; font-weight: 600; padding: 0 7px; border-radius: 999px; background: var(--sunken); color: var(--muted); }
+.jr__ev.is-vous .jr__who { background: var(--accent-soft); color: var(--accent); }
+.jr__ev.is-agent .jr__who { background: var(--ok-soft); color: var(--ok); }
+.jr__what { color: var(--muted); overflow-wrap: anywhere; }
+.jr__what b { font-weight: 600; color: var(--text-strong); }
+@media (max-width: 640px) {
+  .descr--grid .descr__block { grid-template-columns: minmax(0, 1fr); }
+  .jr__ev { grid-template-columns: 44px minmax(0, 1fr); }
+  .jr__who { display: none; }
+}
+
 @media (max-width: 1100px) { .tk { grid-template-columns: minmax(0, 1fr); } .tk__side.sd { border-left: 0; border-top: 1px solid var(--line); } }

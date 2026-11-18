@@ -159,7 +159,7 @@ export function contextOf(cwd: string, session: string): { exists: boolean; seri
   // Au plus 48 points pour le petit graphique : on garde le maximum de chaque tranche.
   const step = Math.ceil(series.length / 48) || 1;
   const small = Array.from({ length: Math.ceil(series.length / step) }, (_, i) => Math.max(...series.slice(i * step, i * step + step)));
-  return { exists: true, series: small, start: series[0] ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions, reloads, reloadTokens };
+  return { exists: true, series: small, start: series.find((v) => v > 0) ?? 0, end: series[series.length - 1] ?? 0, peak: Math.max(0, ...series), read: [...read], memory: [...memory], compactions, reloads, reloadTokens };
 }
 
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
