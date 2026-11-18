@@ -86,7 +86,8 @@ function promptFor(t: Ticket, complaint?: string): string {
       'Rapport : écris-le en Markdown (.md), jamais en HTML : titre #, résumé en citation >, tableaux |, schémas dans un bloc ```svg. Puis lance npm run pdf -- <ton fichier>.md (le programme fait la mise en page).',
     ] : []),
     'Annonce ton avancement pour le propriétaire : au début de chaque étape du plan, écris sur une ligne seule « ÉTAPE n : commencée », et quand elle est finie « ÉTAPE n : faite ». Le programme vérifie ensuite chaque preuve lui-même.',
-    'Termine par un résumé en français simple : ce qui a été fait, ce qui a été ajouté, les tests.',
+    // Compte rendu (décision du 18 nov.) : le programme ajoute lui-même fichiers, tests, tokens et durée.
+    'Termine par un résumé court en français simple, avec exactement ces titres : « ## Le problème » (pourquoi ce ticket, 1 à 2 phrases), « ## La solution » (ce qui a été fait), « ## Pourquoi cette solution » (les autres choix écartés et pourquoi), « ## Limites et suite » (ce qui reste ou pourrait casser). Pas de liste de fichiers ni de tests : le programme les ajoute.',
   ].join('\n');
 }
 

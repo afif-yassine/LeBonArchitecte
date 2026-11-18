@@ -28,3 +28,15 @@ test('chiffres et noms des tests en échec, sans doublon', () => {
   assert.equal(testDetail(c), 'Tests : 2 passés, 1 en échec.\n✖ la validation refuse un conflit');
   assert.match(summarize(out, false), /✖ la validation refuse un conflit/);
 });
+
+test('compte rendu : ticket léger par défaut, pas de compte rendu de lot tant que le lot n’est pas fini', async () => {
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { reportDocs, ticketReport } = await import('./reports.ts');
+  const e = new Engine(openDb(':memory:'));
+  const t = e.createTicket('p', { title: 'Petit correctif', expected: 'x', criteria: ['y'] });
+  const r = ticketReport(e, e.ticket(t.id));
+  assert.equal(r.problem, e.ticket(t.id).description.context);
+  assert.equal(r.heavy.filter((h) => !/Opus/.test(h)).length, 0, 'aucune autre raison d’être lourd');
+  assert.equal(reportDocs(e, 'p').length, 0, 'rien de fini : aucun compte rendu');
+});

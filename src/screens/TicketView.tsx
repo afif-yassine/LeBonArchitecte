@@ -11,6 +11,7 @@ import { TicketStatus } from '../components/TicketStatus';
 import { Markdown } from '../components/Markdown';
 import { FileViewer } from '../components/FileViewer';
 import { TestsTab } from '../components/TestsTab';
+import { ReportTab } from '../components/ReportTab';
 import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
@@ -206,7 +207,7 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
         <div className="tk__phases"><PhaseFrise t={t} /></div>
         <div className="tk__tabs">
           <Tabs<Tab> label="Vues du ticket" value={tab} onChange={setTab} tabs={[
-            { id: 'deroule', label: 'Déroulé' }, { id: 'description', label: 'Description' }, { id: 'realise', label: 'Réalisé' },
+            { id: 'deroule', label: 'Déroulé' }, { id: 'description', label: 'Description' }, { id: 'realise', label: 'Compte rendu' },
             { id: 'journal', label: 'Journal' }, { id: 'diff', label: 'Diff' }, { id: 'tests', label: 'Tests' },
           ]} />
         </div>
@@ -256,9 +257,6 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
           )}
 
           {tab === 'realise' && (
-            !t.realized ? (
-              <div className="empty"><h3>Rien de réalisé pour l’instant</h3><p>À la fin du ticket, le programme écrit ici ce qui a été fait et ajouté, à partir des commits et des tests. Sans IA.</p></div>
-            ) : (
               <div className="descr">
                 {/* Valider est dans le bandeau du haut ; ici seulement la description de ce qui ne va pas, quand on l'ouvre. */}
                 {t.status === 'a-tester' && rejecting && (
@@ -277,38 +275,12 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
                     )}
                   </div>
                 )}
-                <div className={`crbadge ${t.reportedIn ? 'is-done' : 'is-new'}`}>
-                  {t.reportedIn ? <FileCheck2 size={18} /> : <FileClock size={18} />}
-                  {t.reportedIn
-                    ? <span>Déjà rapporté dans le compte rendu <strong>{t.reportedIn}</strong> du {report?.date}.</span>
-                    : <span><strong>Pas encore rapporté.</strong> Il sera dans le prochain compte rendu.</span>}
-                  <button className="link" style={{ marginLeft: 'auto' }} onClick={() => go({ kind: 'projet', projectId: t.projectId, space: 'docs' })}>Comptes rendus</button>
-                </div>
-                <div className="descr__block">
-                  <h3>Résumé de l’agent</h3>
-                  {/* Les annonces « ÉTAPE n : faite » servent au programme, pas à la lecture. */}
-                  <div className="realized__summary"><Markdown text={t.realized.summary.replace(/ÉTAPE \d+ : (faite|commencée)\s*/g, '').replace(/ (#{2,3} )/g, '\n\n$1').replace(/ - \*\*/g, '\n- **')} /></div>
-                </div>
-                <div className="descr__block" hidden={t.realized.added.length === 0}>
-                  <h3>Ajouté</h3>
-                  <ul className="ulist">{t.realized.added.map((a) => <li key={a}><Plus size={13} />{a}</li>)}</ul>
-                </div>
-                <div className="descr__block">
-                  <h3>Fichiers</h3>
-                  {demo
-                    ? <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
-                    : <FileViewer ticketId={t.id} files={t.realized.files} />}
-                </div>
-                <div className="grid2">
-                  <div className="box"><div className="box__title">Tests</div>{t.realized.tests}</div>
-                  <div className="box">
-                    <div className="box__title">Git</div>
-                    <div className="flag"><GitBranch size={14} /><span className="mono">{t.realized.branch}</span></div>
-                    {t.realized.commits.map((c) => <div key={c} className="flag" style={{ marginTop: 4 }}><GitCommitHorizontal size={14} /><span className="mono">{c}</span></div>)}
-                  </div>
-                </div>
+                <ReportTab ticketId={t.id} onDocs={() => go({ kind: 'projet', projectId: t.projectId, space: 'docs' })} onTests={() => setTab('tests')}
+                  files={!t.realized ? null : <>
+                    <ul className="files">{t.realized.files.map((f) => <li key={f.path}><span className="mono">{f.path}</span><span className="diffstat"><span className="plus">+{f.plus}</span><span className="minus">−{f.minus}</span></span></li>)}</ul>
+                    <button className="link cr-more" onClick={() => setTab('diff')}>Voir les changements ligne par ligne</button>
+                  </>} />
               </div>
-            )
           )}
 
           {tab === 'journal' && (

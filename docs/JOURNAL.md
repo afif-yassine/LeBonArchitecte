@@ -270,3 +270,9 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Les tests lancés par l'agent gardent maintenant leurs chiffres et les noms des tests en échec (avant : seulement « vert »). Correction d'un faux vert : « npm test | tail » ne renvoie jamais d'erreur ; le programme lit maintenant la sortie (échecs, erreurs TypeScript, build raté).
 - Règle unique dans src/shared/tests.ts (moteur et interface) ; une recherche du mot « test » (grep) n'est plus prise pour un test. 57 tests verts. Vérifié dans le navigateur (LBA-16).
 - À savoir : LBA n'a aujourd'hui que des tests unitaires et la vérification du code ; tests fonctionnels et bout en bout = ticket à part.
+
+## Lot 3 : comptes rendus selon le poids du ticket (18 nov. 2026)
+- Onglet « Compte rendu » (remplace « Réalisé ») : 7 parties fixes. L'agent écrit le problème, la solution, le pourquoi et les limites (nouvelle consigne de résumé) ; le programme ajoute fichiers, branche, tests par type, appels (modèle, effort réel, passages, durée, tokens, coût), vos messages et les problèmes réglés.
+- Le résumé d'une correction n'écrase plus le résumé du vrai travail : il est ajouté en « Correction : … ».
+- Documents › Comptes rendus : un compte rendu par ticket lourd, un par lot fini (tickets légers regroupés), un par jour. Pages calculées depuis le journal, 0 token, aucun fichier écrit. Décision 0012.
+- Aujourd'hui : 6 tickets lourds (LBA-9, 11, 12, 15, 16, 17), lot 1, journée du 18 nov. 58 tests verts. Vérifié dans le navigateur.

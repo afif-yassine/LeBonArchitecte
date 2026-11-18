@@ -9,6 +9,7 @@ import { simulateRun } from './simulate.ts';
 import { writeProfile, type ProjectProfile } from './scan.ts';
 import { startSupervisor } from './supervisor.ts';
 import { contextOf } from './claude.ts';
+import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
@@ -107,6 +108,8 @@ app.post<Id>('/api/tickets/:id/test', async (req) => {
 app.post<Id>('/api/tickets/:id/fix', async (req) => ({ message: supervisor.fix(req.params.id) }));
 // Contexte de l'agent du ticket, lu dans le journal de sa session (le chemin dépend du dossier du ticket,
 // même s'il a été retiré après la réunion).
+// Compte rendu du ticket en 7 parties (programme, 0 token).
+app.get<Id>('/api/tickets/:id/report', async (req) => ticketReport(engine, engine.ticket(req.params.id)));
 app.get<Id>('/api/tickets/:id/context', async (req) => {
   const t = engine.ticket(req.params.id);
   const repo = PROJECT_DIRS[t.projectId];
@@ -177,10 +180,12 @@ app.get<Id>('/api/projects/:id/docs', async (req) => {
   const docs = listDocs(repoOf(req.params.id));
   const c = choicesDoc(engine, req.params.id);
   if (c) { const { content: _, ...entry } = c; docs.push(entry); }
+  for (const { content: _, ...entry } of reportDocs(engine, req.params.id)) docs.push(entry);
   return docs;
 });
 app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => {
   if (req.query.path === CHOICES_PATH) return { path: CHOICES_PATH, content: choicesDoc(engine, req.params.id)?.content ?? '' };
+  if (req.query.path?.startsWith(REPORTS_DIR)) return { path: req.query.path, content: reportDocs(engine, req.params.id).find((d) => d.path === req.query.path)?.content ?? '' };
   return { path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') };
 });
 // PDF ouvert directement dans le navigateur (affichage, pas téléchargement).

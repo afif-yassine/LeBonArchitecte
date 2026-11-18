@@ -49,6 +49,7 @@ const Wait = ({ error }: { error?: string }) => <p className={error ? 'small' : 
 const GROUPS: { id: string; label: string; test: (p: string) => boolean }[] = [
   { id: 'cdc', label: 'Cahier des charges', test: (p) => p.startsWith('docs/cahier-des-charges/') },
   { id: 'dec', label: 'Décisions', test: (p) => p.startsWith('docs/decisions/') },
+  { id: 'cr', label: 'Comptes rendus', test: (p) => p.startsWith('lba/comptes-rendus/') },
   { id: 'rap', label: 'Rapports', test: (p) => p.startsWith('docs/rapports/') },
   { id: 'rec', label: 'Recherches', test: (p) => p.startsWith('docs/recherche/') },
   { id: 'jou', label: 'Journal', test: (p) => /JOURNAL\.md$/i.test(p) },
