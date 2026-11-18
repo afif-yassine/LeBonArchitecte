@@ -213,3 +213,8 @@
 - Après correction, un conflit (deux tests ajoutés en fin du même fichier) : la garde a refusé sans rien changer ; branche du ticket mise à jour avec main, 33 tests verts, puis LBA-11 réuni (83e6994).
 - Le pilote ne démarrait qu'à la fin d'un ticket. Maintenant : valider un plan ou allumer le pilote lance tout de suite les tickets prêts (vrais projets seulement). Il ne lance jamais un plan non validé.
 - Documents › Décisions : nouvelle page « Vos choix sur les propositions de l'Architecte », écrite par le programme depuis le journal (pas de fichier recopié). Les Règles du projet restent les règles de travail du cahier.
+
+## Lancement groupé (18 nov. 2026)
+- Tableau : bouton « Valider les plans et lancer ». On coche les tickets, on choisit le nombre d'agents en même temps ; un ticket qui attend un ticket non coché est signalé « bloqué ». Le bandeau du pilote dit pourquoi il attend (plans à valider). 34 tests verts.
+- Lancé depuis l'écran : LBA-12, 15, 16 sur Opus (3 en même temps), chacun sur sa branche et son dossier ; LBA-17 attend une place. Gardés de côté : LBA-7 (Codex), LBA-13 (à fusionner avec LBA-12), LBA-14 (attend LBA-13).
+- Pendant que les agents travaillent, aucune modification du moteur (elle le redémarrerait).
