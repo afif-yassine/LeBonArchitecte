@@ -1,5 +1,6 @@
 // Règles de l'orchestrateur (décision 0004). Fonctions pures, 0 token, testées dans rules.test.ts.
 import type { Ticket } from '../src/shared/contract.ts';
+import { RESEARCH } from '../src/shared/plan.ts';
 
 export interface PilotSettings { on: boolean; maxParallel: number; stopAtLotEnd: boolean; respectBudget: boolean }
 
@@ -52,7 +53,8 @@ export function pickModel(t: Ticket, failedBefore = false): { model: string; rea
 // Mesuré : un agent pour un README = 71 770 tokens ; le plancher d'un appel direct ≈ 4 300.
 export function pickMode(t: Ticket): 'direct' | 'agent' {
   const text = `${t.title} ${t.part} ${t.description.expected}`;
-  return SIMPLE.test(text) && !RISKY.test(text) && t.files.length <= 2 ? 'direct' : 'agent';
+  // Une recherche a besoin du web : jamais en mode direct.
+  return SIMPLE.test(text) && !RISKY.test(text) && !RESEARCH.test(text) && t.files.length <= 2 ? 'direct' : 'agent';
 }
 
 // Bascule d'outil quand le quota 5 h dépasse le seuil de la fiche du projet.

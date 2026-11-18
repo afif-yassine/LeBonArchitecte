@@ -11,8 +11,14 @@ const AUDIT = /audit|sécurité|securite/i;
 const RISKY = /sécurité|paiement|stripe|base de données|prisma|migration|auth|connexion|déploiement|adaptateur|exécuteur/i;
 const EXTERNAL = /stripe|paiement|sms|e-mail|email|api|prisma|sdk|codex|claude/i;
 
+// Recherche sur Internet : rôle Éclaireur, seul rôle qui a le droit de lire le web.
+// Il n'écrit que dans docs/recherche/ et docs/rapports/ (vérifié par le programme à la fin).
+export const RESEARCH = /recherche|veille|état de l.art|comparatif|benchmark|scénarios?/i;
+export const RESEARCH_DIRS = ['docs/recherche/', 'docs/rapports/'];
+
 function roleFor(t: Draftable): string {
   const text = `${t.title} ${t.part}`;
+  if (RESEARCH.test(text)) return 'eclaireur';
   if (AUDIT.test(text)) return 'securite';
   if (DOC.test(text)) return 'redacteur';
   if (TESTS.test(text)) return 'testeur';
@@ -44,7 +50,7 @@ export function draftPlan(t: Draftable): TicketStep[] {
     out.push(step(`s${out.length + 1}`, w, role, skillsFor(`${text} ${w}`), 'commande', 'le projet compile sans erreur',
       i === 0 && EXTERNAL.test(text) ? 'eclaireur' : undefined));
   });
-  if (role !== 'redacteur') out.push(step(`s${out.length + 1}`, 'Écrire et faire passer les tests', role, ['tests'], 'tests', 'tous les tests verts', 'testeur'));
+  if (role !== 'redacteur' && role !== 'eclaireur') out.push(step(`s${out.length + 1}`, 'Écrire et faire passer les tests', role, ['tests'], 'tests', 'tous les tests verts', 'testeur'));
   if (role === 'dev-front') out.push(step(`s${out.length + 1}`, 'Vérifier en image', role, ['design'], 'capture', 'capture d’écran jointe'));
   if (RISKY.test(text)) out.push(step(`s${out.length + 1}`, 'Relecture sécurité', 'securite', ['sécurité'], 'relecture', 'scans gratuits sans alerte'));
   return out;

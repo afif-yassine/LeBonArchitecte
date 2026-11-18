@@ -292,6 +292,18 @@ test('mode direct : choisi pour le texte simple, contexte préparé, fichiers é
   assert.deepEqual(files.map((f) => f.path), ['README.md']);
 });
 
+test('recherche : rôle Éclaireur, mode agent (web), pas d’étape de tests ; les autres tickets restent sans web', async () => {
+  const { pickMode } = await import('./rules.ts');
+  const { isResearch } = await import('./claude.ts');
+  const e = fresh();
+  const r = e.createTicket('lba', { title: 'Recherche : mémoire partagée et cache (documentation)', expected: 'Un rapport avec scénarios comparés', criteria: ['Sources citées'] });
+  assert.ok(r.steps.every((s) => s.role === 'eclaireur'));
+  assert.ok(!r.steps.some((s) => s.proof.kind === 'tests'));
+  assert.equal(pickMode(r), 'agent');
+  assert.ok(isResearch(r));
+  assert.ok(!isResearch(e.ticket('LBA-6')));
+});
+
 test('réclamation : toutes les preuves sont à refaire', () => {
   const e = fresh();
   proveAll(e, 'T-12');

@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs';
 import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
-import { runClaude, type RunOutcome } from './claude.ts';
+import { isResearch, runClaude, type RunOutcome } from './claude.ts';
+import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { runDirect } from './direct.ts';
 import { pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
@@ -86,6 +87,9 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     const files = changedFiles(repo, id);
     const leaked = SECRET.test(diffOf(repo, id));
     if (leaked) engine.live(id, { kind: 'bug', ok: false, text: 'Un secret semble écrit dans les changements : réunion bloquée.' }, 'programme');
+    // Un ticket de recherche lit Internet : il n'a le droit d'écrire que dans ses dossiers.
+    const outside = isResearch(t) ? files.filter((f) => !RESEARCH_DIRS.some((d) => f.path.startsWith(d))).map((f) => f.path) : [];
+    if (outside.length) engine.live(id, { kind: 'bug', ok: false, text: `Recherche : fichiers modifiés hors de ${RESEARCH_DIRS.join(' et ')}. Réunion à refuser.`, detail: outside.join(', ') }, 'programme');
     engine.realized(id, {
       summary: o.summary || 'Voir le direct.', added: [], files,
       tests: testsOk ? `Tests verts, lancés par le programme (${prof.commands.test}).` : 'Tests pas encore verts : voir les étapes.',
@@ -96,7 +100,7 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       criteriaOk: o.ok,
       checks: {
         'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === false ? 'echec' : 'ok',
-        'Périmètre respecté': 'ok', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok',
+        'Périmètre respecté': outside.length ? 'echec' : 'ok', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': 'ok', 'Documentation à jour': 'ok',
       },
     });
   }

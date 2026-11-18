@@ -176,3 +176,9 @@
 
 **Reste à faire**
 - LBA-7 (Codex). Note de passation à l'arrêt. Outils pour le périmètre, les failles et la documentation.
+
+## Cadrage, étape 1 : les outils (18 nov. 2026)
+- Recherche sur Internet : l'Éclaireur (rôle déjà existant) devient le seul rôle qui lit le web (WebSearch, WebFetch). Un ticket dont le titre parle de recherche, veille, comparatif ou scénarios lui est confié, toujours en mode agent.
+- Il n'écrit que dans `docs/recherche/` et `docs/rapports/` : sinon le programme signale un bug et le contrôle « Périmètre respecté » passe en échec.
+- Rapports PDF : `npm run pdf -- docs/rapports/<nom>.html` (Microsoft Edge, rien à installer). Modèle avec schéma SVG et tableau de scénarios : `docs/rapports/modele.html`. Essai : PDF créé, 53 Ko.
+- Tests : 26 verts. Suite : tickets de cadrage C1 à C5.
