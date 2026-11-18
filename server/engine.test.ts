@@ -386,3 +386,26 @@ test('réclamation : toutes les preuves sont à refaire', () => {
   e.reject('T-12', 'Le calendrier saute un jour.');
   assert.ok(e.ticket('T-12').steps.every((s) => s.state === 'a-faire'));
 });
+
+test('validation : la 1re ligne de git status (rognée) garde son chemin entier ; .lba/ ne bloque pas la réunion', async () => {
+  const { statusPaths } = await import('./git.ts');
+  assert.deepEqual(statusPaths('M .lba/projet.yaml\n M src/a.ts\n?? docs/x.md\nR  old.ts -> new.ts'), ['.lba/projet.yaml', 'src/a.ts', 'docs/x.md', 'new.ts']);
+});
+
+test('pilote : un plan validé démarre tout de suite si une place est libre ; pilote arrêté, il attend', () => {
+  const e = fresh();
+  e.setPilot({ on: true, maxParallel: 1, stopAtLotEnd: false });
+  const t = e.createTicket('zz', { title: 'Petit correctif du formulaire', expected: 'Le formulaire marche', criteria: ['Formulaire envoyé'] });
+  assert.match(e.validatePlan(t.id), /Pilote automatique : /);
+  assert.equal(e.ticket(t.id).status, 'en-cours');
+  const u = e.createTicket('zz', { title: 'Autre correctif', expected: 'x', criteria: ['y'] });
+  assert.match(e.validatePlan(u.id), /dès qu’une place se libère/);
+  assert.equal(e.ticket(u.id).status, 'a-faire');
+  e.setPilot({ on: false });
+  const v = e.createTicket('yy', { title: 'Encore un correctif', expected: 'x', criteria: ['y'] });
+  e.validatePlan(v.id);
+  assert.equal(e.ticket(v.id).status, 'a-faire');
+  e.setPilot({ on: true });
+  assert.match(e.kickPilot('yy'), /yy|Pilote automatique/);
+  assert.equal(e.ticket(v.id).status, 'en-cours');
+});

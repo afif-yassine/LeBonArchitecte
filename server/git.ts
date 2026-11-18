@@ -51,11 +51,16 @@ export function diffOf(repo: string, id: string): string {
 
 // Avant de réunir : le dossier principal doit être sur main et sans changement suivi en cours
 // (hors .lba/, réservé au moteur). Sinon on refuse, sans rien toucher, en expliquant quoi faire.
+// Chemins d'un « git status --porcelain ». La sortie est rognée (trim) : la 1re ligne perd
+// son espace de tête (« M .lba/x » au lieu de «  M .lba/x »), donc on ne coupe pas à 3 caractères fixes.
+export const statusPaths = (out: string): string[] =>
+  out.split('\n').filter((l) => l.trim()).map((l) => l.replace(/^[ MADRCUT?!]{1,2} /, '').replace(/^.* -> /, ''));
+
 export function assertMainReady(repo: string): void {
   const branch = run(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
   if (branch !== MAIN) throw new Refused(`Réunion refusée : le dossier principal est sur la branche « ${branch} », pas sur ${MAIN}. Revenez sur ${MAIN}, puis validez de nouveau.`);
-  const dirty = run(repo, ['status', '--porcelain', '--untracked-files=no']).split('\n').filter((l) => l.trim() && !l.slice(3).startsWith('.lba/'));
-  if (dirty.length) throw new Refused(`Réunion refusée : ${dirty.length} fichier(s) modifié(s) mais pas enregistré(s) dans main (${dirty.slice(0, 3).map((l) => l.slice(3)).join(', ')}). Enregistrez-les ou annulez-les, puis validez de nouveau.`);
+  const dirty = statusPaths(run(repo, ['status', '--porcelain', '--untracked-files=no'])).filter((p) => !p.startsWith('.lba/'));
+  if (dirty.length) throw new Refused(`Réunion refusée : ${dirty.length} fichier(s) modifié(s) mais pas enregistré(s) dans main (${dirty.slice(0, 3).join(', ')}). Enregistrez-les ou annulez-les, puis validez de nouveau.`);
 }
 
 // Annule une réunion par un commit d'annulation : rien n'est effacé de l'historique.

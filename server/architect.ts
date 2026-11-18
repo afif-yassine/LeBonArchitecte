@@ -62,6 +62,34 @@ const MODES: Record<string, string> = {
 const pending = new Set<string>();
 export const architectBusy = (project: string) => pending.has(project);
 
+// Vos choix sur les propositions : une page de Documents › Décisions, écrite par le programme
+// à partir du journal du moteur (une information = un endroit : pas de fichier recopié).
+export const CHOICES_PATH = 'docs/decisions/architecte-vos-choix.md';
+const CHOICES_TITLE = 'Vos choix sur les propositions de l’Architecte';
+const cell = (s = '') => s.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+
+export function choicesDoc(engine: Engine, project: string): { path: string; title: string; size: number; at: string; content: string } | null {
+  const reviews = engine.reviews(project).filter((r) => (r.answer as { propositions?: unknown[] } | null)?.propositions?.length);
+  if (!reviews.length) return null;
+  const parts = [`# ${CHOICES_TITLE}`, '',
+    'Page tenue par le programme à partir du journal : elle se met à jour à chaque choix dans Cahier des charges › Discussion avec l’Architecte.',
+    'Une proposition acceptée devient un ticket ; la décision numérotée (0009, 0010…) est écrite quand ce ticket est fini.', ''];
+  for (const r of [...reviews].sort((a, b) => b.at.localeCompare(a.at))) {
+    const props = (r.answer as { propositions: { titre: string; pourquoi: string }[] }).propositions;
+    const n = Object.keys(r.decisions).length;
+    parts.push(`## Revue du ${new Date(r.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`, '',
+      `> ${cell(r.question)}`, '', `${n} choix sur ${props.length} proposition${props.length > 1 ? 's' : ''}.`, '',
+      '| Proposition | Pourquoi (Architecte) | Votre choix |', '| --- | --- | --- |');
+    props.forEach((p, i) => {
+      const d = r.decisions[i];
+      parts.push(`| ${cell(p.titre)} | ${cell(p.pourquoi)} | ${!d ? 'Pas encore choisie' : d.decision === 'acceptee' ? `Acceptée : ${d.ticket}` : 'Refusée'} |`);
+    });
+    parts.push('');
+  }
+  const content = parts.join('\n');
+  return { path: CHOICES_PATH, title: CHOICES_TITLE, size: Buffer.byteLength(content), at: reviews.map((r) => r.at).sort().pop()!, content };
+}
+
 export function askArchitect(engine: Engine, project: string, repo: string, o: { mode?: string; question?: string }): string {
   if (pending.has(project)) throw new Refused('L’Architecte réfléchit déjà à une question : attendez sa réponse.');
   const question = (o.question?.trim() || MODES[o.mode ?? 'revue'] || MODES.revue).slice(0, 2000);

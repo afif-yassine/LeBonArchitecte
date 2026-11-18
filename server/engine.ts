@@ -200,8 +200,10 @@ export class Engine {
     if (t.planOk) return `Le plan de ${id} est déjà validé.`;
     if (t.status !== 'a-faire') throw new Refused(`${id} a déjà démarré : son plan ne se valide plus.`);
     this.record({ project: t.projectId, ticket: id, type: 'plan-valide', actor: 'vous', data: {} });
+    // Le pilote ne démarrait qu'à la fin d'un ticket : un plan validé alors que rien ne tourne restait en attente.
+    const go = this.runPilot(t.projectId, t.lot);
     this.changed();
-    return `Plan de ${id} validé : ${t.steps.length} étapes. Le pilote pourra le lancer.`;
+    return `Plan de ${id} validé : ${t.steps.length} étapes.${go || (this.pilot().on ? ' Le pilote le lancera dès qu’une place se libère.' : ' Pilote arrêté : lancez-le vous-même.')}`;
   }
 
   // ---------- Pendant le travail (adaptateurs, ou simulation en démonstration) ----------
@@ -448,6 +450,15 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
       msg += ` ${t.id} revient en tête de file.${this.runPilot(t.projectId, t.lot)}`;
     }
     this.changed();
+    return msg;
+  }
+
+  // Pilote allumé : il démarre tout de suite les tickets prêts du lot en cours (le plus petit lot pas fini).
+  kickPilot(project: string): string {
+    const open = this.tickets(project).filter((t) => t.status !== 'termine');
+    if (!open.length) return '';
+    const msg = this.runPilot(project, Math.min(...open.map((t) => t.lot)));
+    if (msg) this.changed();
     return msg;
   }
 

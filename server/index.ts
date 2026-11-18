@@ -10,7 +10,7 @@ import { startSupervisor } from './supervisor.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
-import { architectBusy, askArchitect, CDC_PATH, readCdc } from './architect.ts';
+import { architectBusy, askArchitect, CDC_PATH, CHOICES_PATH, choicesDoc, readCdc } from './architect.ts';
 import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 
 const PORT = Number(process.env.LBA_PORT ?? 4317);
@@ -66,7 +66,12 @@ app.get('/api/pilot', async () => engine.pilot());
 app.get('/api/actions', async () => engine.actions());
 app.post<Id & { Body: { label?: string } }>('/api/actions/:id/resolve', async (req) => ({ message: engine.resolveAction(req.params.id, req.body?.label ?? 'Fait') }));
 app.post<Id & { Body: { dir?: -1 | 1 | 'tete' } }>('/api/tickets/:id/priority', async (req) => ({ message: engine.reorder(req.params.id, req.body?.dir ?? 'tete') }));
-app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => engine.setPilot(req.body as never));
+app.put<{ Body: Record<string, unknown> }>('/api/pilot', async (req) => {
+  const s = engine.setPilot(req.body as never);
+  // Allumer le pilote démarre tout de suite les tickets prêts des vrais projets (pas les démos).
+  if (s.on) for (const p of Object.keys(PROJECT_DIRS)) engine.kickPilot(p);
+  return s;
+});
 
 app.post<Id & { Body: { replace?: string; manual?: boolean; who?: string } }>('/api/tickets/:id/launch', async (req) => ({ message: engine.launch(req.params.id, { replace: req.body?.replace, manual: req.body?.manual, actor: req.body?.who }) }));
 app.post<Id>('/api/tickets/:id/stop', async (req) => ({ message: engine.stop(req.params.id) }));
@@ -123,8 +128,16 @@ const repoOf = (id: string) => {
   if (!r) throw new Refused('Ce projet d’exemple n’a pas de dossier sur ce PC.');
   return r;
 };
-app.get<Id>('/api/projects/:id/docs', async (req) => listDocs(repoOf(req.params.id)));
-app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => ({ path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') }));
+app.get<Id>('/api/projects/:id/docs', async (req) => {
+  const docs = listDocs(repoOf(req.params.id));
+  const c = choicesDoc(engine, req.params.id);
+  if (c) { const { content: _, ...entry } = c; docs.push(entry); }
+  return docs;
+});
+app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => {
+  if (req.query.path === CHOICES_PATH) return { path: CHOICES_PATH, content: choicesDoc(engine, req.params.id)?.content ?? '' };
+  return { path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') };
+});
 // PDF ouvert directement dans le navigateur (affichage, pas téléchargement).
 const pdf = (reply: { header: (k: string, v: string) => unknown; type: (t: string) => unknown; send: (b: Buffer) => unknown }, body: Buffer, name: string) => {
   reply.header('Content-Disposition', `inline; filename="${name.replace(/[^\w.-]/g, '_')}"`);

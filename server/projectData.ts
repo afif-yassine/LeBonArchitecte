@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { Refused } from './tickets.ts';
+import { statusPaths } from './git.ts';
 
 export interface DocEntry { path: string; title: string; size: number; at: string }
 
@@ -92,7 +93,7 @@ export function gitGraph(repo: string, limit = 60): GitGraph {
       kind: l ? 'branche' : p.length > 1 ? 'reunion' : /^Revert /.test(subject) ? 'annulation' : 'main',
     });
   }
-  const dirty = git(repo, ['status', '--porcelain']).split('\n').filter((x) => x.trim() && !x.slice(3).startsWith('.lba/')).slice(0, 40);
+  const dirty = statusPaths(git(repo, ['status', '--porcelain'])).filter((p) => !p.startsWith('.lba/')).slice(0, 40);
   return { nodes, lanes, dirty, head, branch };
 }
 
