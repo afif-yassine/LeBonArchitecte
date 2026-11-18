@@ -208,6 +208,22 @@
 - Clic sur un point : message, fichiers changés (pour une réunion : ce que le ticket a apporté). « Repartir d'ici » crée une branche reprise/<commit> sans toucher main. « Annuler ce ticket dans main » ajoute un commit d'annulation (main propre exigé), puis relance les tests. Confirmation dans la page, jamais de boîte du navigateur.
 - Tests : 30 verts (dont un dépôt jetable : schéma, reprise, annulation). Écran vérifié dans le navigateur.
 
+## Objectifs par jalon et budget du pilote, LBA-17 (18 nov. 2026)
+La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles, par ticket fait par un agent :
+
+| Jalon | Tokens par ticket (au plus) | Validé du premier coup (au moins) | Temps par ticket (au plus) |
+|---|---|---|---|
+| J2 Moteur | 60 000 | 60 % | 45 min |
+| J3 Agents | 50 000 | 70 % | 30 min |
+| J4 Orchestrateur et démarche | 40 000 | 80 % | 20 min |
+
+- D'où viennent ces chiffres : les tokens partent des mesures déjà faites (LBA-9 : 71 770, LBA-10 : 52 782, LBA-11 : 68 711). Le premier coup et le temps n'avaient aucune mesure : ce sont des cibles de départ, à corriger après le premier bilan.
+- Comment c'est mesuré : moyenne des tickets arrivés « à tester ». « Premier coup » veut dire validé sans réclamation ni réparation automatique. Le temps ne compte que les moments où l'agent travaille.
+- Où les voir : Réglages › Quotas et budgets, avec « tenue » ou « pas encore » en face de chaque cible.
+- **Budget du jour du pilote : 200 000 tokens par défaut**, tous projets, de minuit à minuit, réglable dans les réglages du projet. Une fois atteint, le pilote ne lance plus rien et une alerte arrive dans « Pour vous ». Les agents déjà au travail finissent leur ticket, et vous pouvez toujours lancer un ticket vous-même. Le pilote ne repart pas seul à minuit : il reprend à la prochaine validation ou fin de ticket.
+- **Réparation automatique : une seule tentative.** Si le programme trouve un manque qu'il sait revérifier (tests rouges, compilation, document absent), l'agent reprend sa session une fois, et toutes les preuves sont refaites. Encore raté : « Besoin d'action » avec la cause. Pas de réparation si l'agent s'est arrêté sur une erreur, si un secret est écrit, si le périmètre est dépassé ou si le budget du jour est atteint.
+- Tests : 42 verts.
+
 ## Corrections signalées par le propriétaire (18 nov. 2026)
 - Valider LBA-11 échouait : « git status » est rogné, la 1re ligne perdait son espace et « .lba/projet.yaml » devenait « lba/projet.yaml », pris pour un vrai fichier modifié. Lecture corrigée (statusPaths), aussi dans le schéma Git.
 - Après correction, un conflit (deux tests ajoutés en fin du même fichier) : la garde a refusé sans rien changer ; branche du ticket mise à jour avec main, 33 tests verts, puis LBA-11 réuni (83e6994).

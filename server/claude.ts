@@ -102,8 +102,9 @@ export function sessionSoFar(cwd: string, session: string): { read: string[]; us
 
 // resume : reprendre la session Claude d'avant (le moteur a redémarré pendant le travail) au lieu de tout refaire.
 // resume : session Claude à reprendre. why = 'redemarrage' (moteur coupé en route : tokens pas encore comptés)
-// ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés).
-export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' = 'redemarrage'): ChildProcess {
+// ou 'reprise' (session finie proprement, ex. limite d'abonnement : tokens déjà comptés)
+// ou 'reparation' (le programme a trouvé ce qui manque, dans complaint : tokens déjà comptés).
+export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: 'redemarrage' | 'reprise' | 'reparation' = 'redemarrage'): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
   const web = isResearch(t);
   const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
@@ -121,7 +122,9 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   if (resume) args.push('--resume', resume);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env } });
-  child.stdin.end(resume
+  child.stdin.end(resume && why === 'reparation'
+    ? `Le programme a vérifié ton travail. ${complaint} Corrige seulement cela : c’est ta seule tentative de réparation. Lance les tests, annonce les étapes reprises (« ÉTAPE n : faite »), puis écris ton résumé.`
+    : resume
     ? `${why === 'reprise' ? 'Ton travail a été coupé (limite de l’abonnement ou arrêt), il peut reprendre.' : 'Le moteur de Le Bon Architecte a redémarré pendant ton travail.'} Reprends exactement où tu en étais, sans refaire ce qui est déjà fait : annonce et termine les étapes restantes (« ÉTAPE n : faite »), lance les tests, puis écris ton résumé.`
     : promptFor(t, complaint));
 

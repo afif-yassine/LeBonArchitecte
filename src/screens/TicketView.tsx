@@ -17,7 +17,7 @@ type Tab = 'deroule' | 'description' | 'realise' | 'journal' | 'diff' | 'tests';
 interface RawEvent { id: number; at: string; type: string; actor: string; data: Record<string, unknown> }
 const EV_LABEL: Record<string, string> = {
   'ticket-cree': 'Ticket créé', 'ticket-lance': 'Lancé', 'ticket-arrete': 'Arrêté', 'agent-termine': 'Fin de l’agent', 'ticket-a-tester': 'Passé à tester',
-  'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
+  'besoin-action': 'Besoin d’action', 'ticket-valide': 'Validé', reclamation: 'Réclamation', reparation: 'Réparation automatique', rapporte: 'Rapporté', 'plan-valide': 'Plan validé',
   'etape-commencee': 'Étape commencée', 'etape-annoncee': 'Étape annoncée', direct: 'Direct',
 };
 const evText = (d: Record<string, unknown>) => String(d.text ?? d.cause ?? d.problem ?? d.evidence ?? d.model ?? d.report ?? d.step ?? '');
