@@ -36,12 +36,13 @@ function recentlyActive(cwd: string, session: string): boolean {
   try { return Date.now() - statSync(transcriptOf(cwd, session)).mtimeMs < 90_000; } catch { return false; }
 }
 
-// Le cache de Claude expire après ~5 minutes sans échange. Au-delà, reprendre une session réécrit toute la
-// conversation au plein tarif (mesuré sur LBA-15 : 83 k pour régler 2 conflits). Pour une petite correction,
-// un nouvel agent avec la passation coûte bien moins (~15 k).
-const CACHE_MS = 5 * 60_000;
-export function cacheWarm(cwd: string, session: string, now = Date.now()): boolean {
-  try { return now - statSync(transcriptOf(cwd, session)).mtimeMs < CACHE_MS; } catch { return false; }
+// Le cache de Claude Code dure 1 HEURE sur cet abonnement (décision 0018, mesuré le 19 nov. : ephemeral_1h, et une
+// reprise après 24 min relit le cache). La décision 0011 croyait 5 minutes. Au-delà, reprendre une session réécrit
+// toute la conversation au plein tarif (mesuré sur LBA-15 : 83 k pour régler 2 conflits) ; pour une petite
+// correction, un nouvel agent avec la passation coûte alors bien moins (~15 k). Marge : 55 min.
+const CACHE_MS = 55 * 60_000;
+export function cacheWarm(cwd: string, session: string, now = Date.now(), ms = CACHE_MS): boolean {
+  try { return now - statSync(transcriptOf(cwd, session)).mtimeMs < ms; } catch { return false; }
 }
 
 // onMerged : prévenu après chaque réunion réussie dans main (le serveur y refait la carte du code).

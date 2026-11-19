@@ -113,8 +113,11 @@ test('carnet de l’Architecte : vos consignes passées, ses actions et le titre
   const e = new Engine(openDb(':memory:'));
   e.architectSay('p', 'vous', 'Les tickets légers sont regroupés par lot.');
   e.architectSay('p', 'action', 'lba creer --titre X');
+  for (let i = 1; i <= 9; i++) { e.architectSay('p', 'vous', `question ${i}`); e.architectSay('p', 'architecte', `réponse ${i}`); }
   const n = notebook(e, 'p', repo);
-  assert.match(n, /Consignes passées[\s\S]*regroupés par lot/);
+  assert.match(n, /Consignes plus anciennes[\s\S]*regroupés par lot/);
+  assert.match(n, /Discussion en cours[\s\S]*Propriétaire : question 6[\s\S]*Toi : réponse 9/, 'les 8 derniers échanges en entier (décision 0018)');
+  assert.doesNotMatch(n, /Toi : réponse 5/, 'pas plus de 8 messages');
   assert.match(n, /Tes dernières actions[\s\S]*lba creer/);
   assert.match(n, /Décisions prises[\s\S]*Décision 0012 : comptes rendus selon le poids/);
   assert.doesNotMatch(n, /Texte long/, 'seulement le titre, pas le texte');

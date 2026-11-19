@@ -194,7 +194,13 @@ test('petite correction : session reprise si le cache est chaud, nouvel agent av
     const w = calls.find((c) => c.id === warm)!;
     assert.equal(w.session, `s-${warm}`, 'cache encore chaud : on reprend la conversation');
 
-    const cold = setup(30 * 60_000);
+    // Le cache dure 1 h (décision 0018) : 30 min reste « chaud », il faut plus d'une heure pour repartir à neuf.
+    const half = setup(30 * 60_000);
+    sup2.fix(half);
+    await until(() => calls.some((c) => c.id === half));
+    assert.equal(calls.find((c) => c.id === half)!.session, `s-${half}`, '30 min de pause : le cache d’une heure tient encore');
+
+    const cold = setup(70 * 60_000);
     sup2.fix(cold);
     await until(() => calls.some((c) => c.id === cold));
     const c = calls.find((x) => x.id === cold)!;

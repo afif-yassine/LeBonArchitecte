@@ -351,3 +351,12 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - **Quotas** : lus dans le message officiel de Claude Code à chaque appel (gratuit). Une jauge en haut de l'écran ; un clic montre tous les comptes, avec la prévision.
 - Vérifié : 69 tests verts, écran contrôlé sur PC et téléphone, sans erreur. `.lba/comptes/` et `.lba/pieces/` n'étaient pas ignorés par git : corrigé.
 - Vu en passant : le cache de Claude semble durer 1 h, et non 5 min. À mesurer, car cela pourrait rendre les reprises moins chères.
+
+## L'Architecte discute au lieu de faire un rapport (19 nov. 2026)
+- Votre remarque : des PDF partout, de la lenteur, un rapport à chaque message. Les 4 causes sont trouvées et corrigées. Décision 0018.
+- Vérifié avec vous : le cache de Claude dure **1 heure** (et non 5 minutes). Claude Code ne compacte pas selon le temps : seulement à partir de 100 k, selon la taille.
+- Il garde maintenant la discussion : reprise si la pause dure moins d'une heure, ou si la conversation est courte. Sinon, il repart avec son carnet et les 8 derniers échanges. Bouton « Nouvelle discussion ».
+- Il répond directement, pose une question si le message n'est pas clair, et donne son avis sur une idée puis demande « Qu'en penses-tu ? ». Le format « avis, coût, oui » seulement avant de faire quelque chose de gros. Le lien PDF seulement sous les longues réponses.
+- Mesuré sur 3 messages (Opus) : 2 à 3 fois plus court, plus rapide (4 à 5 s au lieu de 7 à 16 s) et moins cher (0,07 à 0,10 $ au lieu de 0,14 à 0,20 $).
+- La même erreur des 5 minutes est corrigée pour les agents des tickets.
+- 69 tests verts.

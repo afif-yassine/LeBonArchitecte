@@ -2,7 +2,7 @@
 // Il agit seul sur le projet avec la commande lba ; chaque action s'affiche sur une ligne ; chaque réponse
 // montre son modèle, ses tokens, la taille de sa conversation et sa durée, et sort en PDF.
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { ArrowUp, FileText, Loader2, Paperclip, Wrench, X } from 'lucide-react';
+import { ArrowUp, FileText, Loader2, Paperclip, RotateCcw, Wrench, X } from 'lucide-react';
 import { Markdown } from '../components/Markdown';
 import { fmtTokens } from '../components/ui';
 import { useNotify } from '../components/notify';
@@ -135,7 +135,10 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
           <h1 className="ar__title">Architecte</h1>
           <p className="ar__sub">Il tient le projet : kanban, agents, documents. Il vous dit son avis avant une grosse décision. Valider, git, budget et supprimer restent à vous.</p>
         </div>
-        <p className="ar__today"><b>{today.length}</b> réponse{today.length > 1 ? 's' : ''} aujourd’hui<span aria-hidden="true">,</span> <b>{fmtTokens(spent)}</b> tokens</p>
+        <div className="ar__headr">
+          <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void send('/compact')} title="Il oublie cette conversation ; la suivante repart avec son carnet et les derniers échanges. 0 token."><RotateCcw size={14} aria-hidden="true" />Nouvelle discussion</button>
+          <p className="ar__today"><b>{today.length}</b> réponse{today.length > 1 ? 's' : ''} aujourd’hui<span aria-hidden="true">,</span> <b>{fmtTokens(spent)}</b> tokens</p>
+        </div>
       </header>
 
       <div className="ar__fil" ref={scroll} aria-live="polite">
@@ -174,7 +177,7 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
                 {!!m.context && <span title="Taille de sa conversation après cette réponse">contexte {fmtTokens(m.context)}</span>}
                 {!!m.ms && <span>{Math.round(m.ms / 1000)} s</span>}
                 <span>{hour(m.at)}</span>
-                <a className="ar__pdf" href={`/api/projects/${projectId}/architecte/avis/${m.id}`} target="_blank" rel="noopener"><FileText size={12} aria-hidden="true" />PDF</a>
+                {m.text.length > 1500 && <a className="ar__pdf" href={`/api/projects/${projectId}/architecte/avis/${m.id}`} target="_blank" rel="noopener" title="Longue réponse : la garder en PDF"><FileText size={12} aria-hidden="true" />PDF</a>}
               </footer>
             </article>
           );

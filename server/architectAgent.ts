@@ -4,9 +4,9 @@
 // Économie (votre question du 18 nov.) : il ne relit PAS les règles ni les procédures à chaque demande.
 // - Règles et procédures = consigne système FIXE, toujours identique : mise en cache, relue à 10 % du prix.
 // - L'état du projet est préparé par le programme (0 token) et joint à la demande : pas d'outil pour le chercher.
-// - Une demande = une conversation courte. Il reprend sa conversation seulement si elle date de moins de
-//   5 minutes (cache encore chaud) ; sinon il repart avec son carnet (ses 12 dernières actions, écrit par
-//   le programme), au lieu de recharger une longue conversation au plein tarif.
+// - Il garde la discussion (décision 0018) : reprise si la pause dure moins d'une heure (le cache dure 1 h),
+//   ou si la conversation est courte ; sinon il repart avec son carnet (discussion récente, consignes, actions,
+//   décisions, écrit par le programme), au lieu de recharger une longue conversation au plein tarif.
 // - Sonnet pour une consigne simple, Opus pour l'architecture et les décisions (décision 0007).
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -25,7 +25,12 @@ const MODEL = { Opus: 'opus', Sonnet: 'sonnet', Haiku: 'haiku' } as const; // ja
 // Consigne fixe (jamais de valeur qui change ici : sinon le cache ne sert plus).
 const RULES = [
   'Tu es l’Architecte de « Le Bon Architecte » : tu tiens tout le projet du propriétaire, comme un chef de projet technique.',
-  'Le propriétaire parle français simple : réponds en français simple, sans jargon, phrases courtes. Avis d’abord, puis ce que tu as fait.',
+  'Le propriétaire parle français simple : réponds en français simple, sans jargon, phrases courtes.',
+  'Tu DISCUTES avec lui comme un collègue, pas comme un rapport : réponds directement à ce qu’il demande, court (souvent 2 à 6 phrases), sans titres. Une question = une réponse. Ne répète pas l’état du projet ni le budget s’il n’en parle pas et si cela ne change pas ta réponse.',
+  'Pour une question ou une discussion : jamais de ligne « Avis : », jamais de « Rien fait », pas de titres en gras ni de tableau, pas de ligne de fin. Juste la réponse, comme à l’oral. Même si tes anciennes réponses de cette conversation avaient un autre format, suis celui-ci.',
+  'Message pas clair (un mot seul, « rien », une phrase coupée) : ne cherche rien et ne devine pas ; pose UNE question courte pour comprendre, et rien d’autre.',
+  'Une idée qu’il propose ou une question « et si… ? » est une discussion : donne ton avis en 3 à 6 phrases (ce qui est bien, le problème, ce que tu ferais à la place, son ordre de coût), puis demande ce qu’il en pense. Le format complet ci-dessous seulement quand il te dit de le faire.',
+  'Une discussion d’architecture se fait en plusieurs messages : propose, écoute ses objections, ajuste ; ne refais pas toute l’analyse à chaque message, continue la discussion en cours. Quand il dit « on valide » ou « c’est décidé », résume la décision en 5 lignes au plus, puis crée UN ticket « Décision : <titre> » qui l’écrit dans docs/decisions. Pas de rapport avant.',
   'Tu agis seul, sans demander la permission, avec la commande : node scripts/lba.mjs <commande> (node scripts/lba.mjs aide pour la liste).',
   'Tu peux : créer des tickets (titre, attendu, critères vérifiables, modèle), valider des plans, changer l’ordre, lancer, mettre en pause, reprendre, écrire aux agents, leur demander de résoudre, lire le code, les documents, les déroulés et les comptes rendus.',
   'Restent au propriétaire (le serveur te les refuse) : réunir dans main (Valider), git, le pilote et le budget, supprimer, décider de tes propres propositions. Si c’est nécessaire, dis-lui précisément quoi faire.',
@@ -36,10 +41,10 @@ const RULES = [
   'Pour trouver du code : la carte attend un NOM du code (souvent en anglais : architectRefusal, mergeTicket, Engine…), pas un mot français. Si tu connais le nom, lance node scripts/lba.mjs carte <nom> (où il est, qui l’utilise, avec fichiers et lignes ; avec deux noms : le chemin entre eux). Sinon, un seul Grep pour trouver le nom, puis la carte pour ses liens au lieu d’ouvrir les fichiers un par un. Lis ensuite seulement les lignes utiles. Ne lis jamais le dossier graphify-out (trop gros).',
   'Tu ne modifies aucun fichier toi-même. Pour écrire ou changer un document ou du code : crée un ticket précis puis lance-le ; un agent le fait dans sa branche, le propriétaire valide. Le programme choisit le mode le moins cher (un document simple coûte environ 6 k).',
   'Tu es un conseiller critique, pas un exécutant : le propriétaire ne connaît pas la technique et compte sur toi pour l’arrêter quand une idée est mauvaise, même s’il insiste.',
-  'Demande petite et claire (ordre du kanban, lancer, pause, message, un ticket simple) : fais-la tout de suite. Demande grosse ou structurelle (nouveaux agents ou équipe, chaîne d’agents, architecture, nouvelle fonction, plus de 3 tickets, plus de 50 k estimés) : NE FAIS RIEN avant son « oui ». Réponds dans cet ordre : « Avis : je conseille / je déconseille / à adapter » ; les problèmes, même si l’idée est bonne, expliqués comme à un débutant ; « Existe déjà ? » (dans le projet, ou un logiciel gratuit que tu connais, marqué « à vérifier » ; si une recherche web est utile, propose un petit ticket de recherche) ; le coût en tokens de son idée et de ta proposition côte à côte ; ta meilleure proposition, la plus simple qui marche ; puis « Dites oui, ou choisissez ».',
+  'Demande petite et claire (ordre du kanban, lancer, pause, message, un ticket simple) : fais-la tout de suite. Quand il te demande de FAIRE quelque chose de gros ou de structurel (nouveaux agents ou équipe, chaîne d’agents, changement d’architecture, nouvelle fonction, plus de 3 tickets, plus de 50 k estimés) : NE FAIS RIEN avant son « oui ». Seulement dans ce cas, réponds dans cet ordre, en restant court : « Avis : je conseille / je déconseille / à adapter » ; les problèmes, même si l’idée est bonne, expliqués comme à un débutant ; « Existe déjà ? » (dans le projet, ou un logiciel gratuit que tu connais, marqué « à vérifier » ; si une recherche web est utile, propose un petit ticket de recherche) ; le coût en tokens de son idée et de ta proposition côte à côte ; ta meilleure proposition, la plus simple qui marche ; puis « Dites oui, ou choisissez ».',
   'Principes d’architecture de LBA : un seul agent par ticket ; tests, vérifications, réunion dans main et mise en ligne faits par le programme (0 token), pas par des agents ; éviter les passages de relais entre agents (chaque agent relit tout le contexte du précédent : on paie plusieurs fois la même lecture) ; réutiliser l’existant (code du projet, outils installés, logiciels gratuits) avant de construire ; le plus simple qui marche ; mesurer avant d’optimiser.',
   'Contradiction : avant d’agir, compare la demande avec les consignes passées du propriétaire, les décisions et les tickets en cours (fournis). Si elle en contredit une et qu’un ticket concerné est déjà commencé (en cours, à tester, fini), NE FAIS RIEN : écris « Contradiction : » avec la consigne ou la décision contredite (date), le ticket touché et ce qu’il a déjà coûté, puis 3 choix avec ton avis et leur coût : 1) garder l’ancien, 2) remplacer (mettre l’ancien en pause, son travail reste dans sa branche, nouveau ticket), 3) combiner si c’est possible sans tout refaire. Il répondra. Si le ticket concerné n’a pas commencé, replanifie-le et dis-le en une ligne. Rien n’est jamais effacé ; un vrai changement de direction devient aussi un ticket « Décision : … ».',
-  'Termine toujours par une ligne « Fait : … » qui liste tes actions, ou « Rien fait : … » avec la raison.',
+  'Si tu as agi, termine par une ligne « Fait : … » qui liste tes actions. Si on ne t’a rien demandé de faire, n’ajoute aucune ligne de fin. Si on t’a demandé une action et que tu ne l’as pas faite, dis pourquoi en une phrase.',
 ].join('\n');
 
 // Lecture seule sur le projet (main, toujours à jour) + la commande lba. Aucune écriture de fichier.
@@ -74,32 +79,62 @@ export function projectDigest(engine: Engine, project: string): string {
   ].filter(Boolean).join('\n');
 }
 
-// Carnet, écrit par le programme (0 token) : mémoire courte quand il repart à neuf.
-// Vos 10 dernières consignes + ses 12 dernières actions + le titre de chaque décision : de quoi voir une contradiction.
+// Carnet, écrit par le programme (0 token) : sa mémoire quand il repart à neuf.
+// La discussion en cours (8 derniers échanges en entier, décision 0018) + vos consignes plus anciennes + ses
+// 12 dernières actions + le titre de chaque décision : il sait où vous en étiez et voit une contradiction.
 export function notebook(engine: Engine, project: string, repo?: string): string {
   // Les commandes (/usage, /context…) sont faites par le programme : ni consignes ni réponses à retenir.
   // /btw non plus : une question en passant ne doit pas entrer dans sa mémoire (comme dans Claude Code).
-  const fil = engine.architectThread(project, 120).filter((m) => !m.commande && !m.btw);
+  const fil = engine.architectThread(project, 160).filter((m) => !m.commande && !m.btw);
   const when = (at: string) => at.slice(5, 16).replace('T', ' ');
-  const asks = fil.filter((m) => m.who === 'vous').slice(-10);
+  const talk = fil.filter((m) => m.who === 'vous' || m.who === 'architecte');
+  const recent = talk.slice(-8);
+  const older = new Set(recent.map((m) => m.id));
+  const asks = talk.filter((m) => m.who === 'vous' && !older.has(m.id)).slice(-6);
   const acts = fil.filter((m) => m.who === 'action').slice(-12);
   let decisions: string[] = [];
   if (repo) try {
     decisions = readdirSync(join(repo, 'docs', 'decisions')).filter((f) => /^\d{4}-.*\.md$/.test(f)).sort()
       .map((f) => readFileSync(join(repo, 'docs', 'decisions', f), 'utf8').split('\n')[0].replace(/^#\s*/, '').slice(0, 110));
   } catch { /* pas de dossier de décisions */ }
-  // Sa dernière réponse : si le propriétaire répond « oui » plus tard, il sait à quoi.
-  const last = fil.filter((m) => m.who === 'architecte').slice(-1)[0];
   return [
-    asks.length ? ['Consignes passées du propriétaire :', ...asks.map((a) => `- ${when(a.at)} ${String(a.text).slice(0, 200)}`)].join('\n') : '',
-    last ? `Ta dernière réponse (${when(last.at)}) :\n${String(last.text).slice(0, 900)}` : '',
+    asks.length ? ['Consignes plus anciennes du propriétaire :', ...asks.map((a) => `- ${when(a.at)} ${String(a.text).slice(0, 200)}`)].join('\n') : '',
+    // La discussion en cours : si le propriétaire répond « oui » ou continue une idée, il sait à quoi.
+    recent.length ? ['Discussion en cours (derniers échanges, du plus ancien au plus récent) :',
+      ...recent.map((m) => `[${when(m.at)}] ${m.who === 'vous' ? 'Propriétaire' : 'Toi'} : ${String(m.text).slice(0, m.who === 'vous' ? 600 : 1200)}`)].join('\n') : '',
     acts.length ? ['Tes dernières actions :', ...acts.map((a) => `- ${when(a.at)} ${a.text}`)].join('\n') : '',
     decisions.length ? ['Décisions prises (titres ; lis un fichier seulement si la demande le touche) :', ...decisions.map((d) => `- ${d}`)].join('\n') : '',
   ].filter(Boolean).join('\n\n');
 }
 
-// Au-delà de cette taille, reprendre la conversation coûte plus que repartir avec le carnet (mesuré sur LBA-15).
+// Reprise de la conversation (décision 0018, mesuré le 19 nov.) : le cache de Claude dure 1 HEURE (ephemeral_1h,
+// reprise après 24 min = 3 326 tokens relus pour 515 réécrits), pas 5 minutes comme le disait la décision 0011.
+// - Moins de 55 min de pause : il reprend (lecture du cache, environ 10 % du prix).
+// - Plus d'une heure mais petite conversation (moins de 30 k) : il reprend quand même ; tout réécrire coûte à peu
+//   près autant que repartir avec le carnet, et il garde toute la discussion.
+// - Grosse conversation après une heure, ou plus de 60 k : il repart avec le carnet (le « compact » de LBA :
+//   Claude Code ne compacte qu'à partir de 100 k, selon la taille, jamais selon le temps).
 const MAX_RESUME_CONTEXT = 60_000;
+const SMALL_CONTEXT = 30_000;
+export const CACHE_HOUR_MS = 55 * 60_000;
+
+export function resumePlan(engine: Engine, project: string, cwd: string): { prev?: string; size: number; warm: boolean; resume: boolean; otherAccount: boolean; compte: ReturnType<typeof pickCompte>; why: string } {
+  const prev = engine.sessionOf(`${ARCHITECT_ID}-${project}`) || undefined;
+  const compte = pickCompte(engine, project, 'architecte');
+  const dir = prev ? sessionDir(cwd, prev) : undefined;
+  const otherAccount = Boolean(dir && dir.toLowerCase() !== configDir(compte).toLowerCase());
+  const size = prev ? contextOf(cwd, prev).end : 0;
+  const warm = prev ? cacheWarm(cwd, prev, Date.now(), CACHE_HOUR_MS) : false;
+  const resume = Boolean(prev && dir && !otherAccount && size < MAX_RESUME_CONTEXT && (warm || size < SMALL_CONTEXT));
+  const k = (n: number) => `${Math.round(n / 1000)} k`;
+  const why = !prev ? 'aucune conversation en cours'
+    : !dir ? 'conversation introuvable sur ce PC'
+    : otherAccount ? `autre compte : « ${compte.name} »`
+    : size >= MAX_RESUME_CONTEXT ? `conversation trop longue (${k(size)})`
+    : resume ? (warm ? `pause de moins d’une heure, cache encore valable (${k(size)})` : `pause de plus d’une heure, mais conversation courte (${k(size)}) : il la garde`)
+    : `pause de plus d’une heure et conversation de ${k(size)} : il repart avec son carnet et les derniers échanges`;
+  return { prev, size, warm, resume, otherAccount, compte, why };
+}
 
 // « Avis de l'Architecte » en PDF (style des comptes rendus, décision 0013) : l'essentiel d'abord, sa réponse, puis
 // en annexe votre demande exacte, ses actions et ce que ça a coûté. Construit depuis son fil : 0 token.
@@ -139,14 +174,10 @@ export function adviceMarkdown(engine: Engine, project: string, id: number): str
 // Les tailles du texte préparé sont estimées (1 token ≈ 4 caractères) ; celle de la conversation est mesurée.
 export function architectContext(engine: Engine, project: string, repo: string) {
   const est = (s: string) => Math.round(s.length / 4);
-  const prev = engine.sessionOf(`${ARCHITECT_ID}-${project}`) || undefined;
-  const size = prev ? contextOf(repo, prev).end : 0;
-  const warm = prev ? cacheWarm(repo, prev) : false;
-  const resume = Boolean(prev && warm && size < MAX_RESUME_CONTEXT);
+  const p = resumePlan(engine, project, repo);
   return {
     rules: est(RULES), digest: est(projectDigest(engine, project)), notebook: est(notebook(engine, project, repo)),
-    session: prev, size, warm, resume, maxResume: MAX_RESUME_CONTEXT,
-    why: !prev ? 'aucune conversation en cours' : resume ? 'conversation de moins de 5 min et assez courte' : size >= MAX_RESUME_CONTEXT ? 'conversation trop longue' : 'pause de plus de 5 min, le cache a expiré',
+    session: p.prev, size: p.size, warm: p.warm, resume: p.resume, maxResume: MAX_RESUME_CONTEXT, why: p.why,
   };
 }
 // /compact : oublier la conversation ; la prochaine demande repart avec le carnet (écrit par le programme, 0 token).
@@ -163,21 +194,19 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   const ask = text.replace(/^\/(opus|sonnet|haiku)\s*/i, '').trim() || 'Regarde les pièces jointes et dis-moi ce que tu en penses pour le projet.';
   const cwd = repo; // lecture seule : il voit main tel qu'il est maintenant
   const key = `${ARCHITECT_ID}-${project}`;
-  const prev = engine.sessionOf(key);
-  // Compte choisi (décision 0017). Une conversation gardée par un autre compte ne se reprend pas.
-  const compte = pickCompte(engine, project, 'architecte');
-  const otherAccount = Boolean(prev && sessionDir(cwd, prev) && sessionDir(cwd, prev)!.toLowerCase() !== configDir(compte).toLowerCase());
-  // Reprendre seulement si le cache est chaud (moins de 5 min) ET la conversation encore courte.
-  const size = prev ? contextOf(cwd, prev).end : 0;
-  const resume = prev && !otherAccount && cacheWarm(cwd, prev) && size < MAX_RESUME_CONTEXT ? prev : undefined;
-  const fresh = prev && !resume ? (otherAccount ? `autre compte : « ${compte.name} »` : size >= MAX_RESUME_CONTEXT ? `conversation trop longue (${Math.round(size / 1000)} k)` : 'pause de plus de 5 min') : '';
+  // Compte (décision 0017) et reprise (décision 0018) : il garde la discussion tant que c'est raisonnable.
+  const plan = resumePlan(engine, project, cwd);
+  const compte = plan.compte;
+  const resume = plan.resume ? plan.prev : undefined;
+  // Réflexion légère pour une question courte sur Sonnet : réponse plus rapide (décision 0018).
+  const effort = model === 'Opus' ? 'high' : model === 'Haiku' || ask.length < 300 ? 'low' : 'medium';
 
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[model],
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','),
     '--max-budget-usd', model === 'Opus' ? '6' : model === 'Haiku' ? '1' : '2',
     '--strict-mcp-config', '--disable-slash-commands', '--tools', 'Read,Glob,Grep,Bash',
-    '--effort', model === 'Opus' ? 'high' : model === 'Haiku' ? 'low' : 'medium',
+    '--effort', effort,
     '--append-system-prompt', RULES];
   if (resume) args.push('--resume', resume);
   // Pièces jointes (lot C2) : il les lit lui-même avec Read, dans leur dossier rangé (accès ajouté pour cette demande).
@@ -189,8 +218,8 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
 
   engine.architectSay(project, 'vous', text.replace(/^\/(opus|sonnet|haiku)\s*/i, '').trim(), { model, ...(pieces.length ? { pieces } : {}) });
   engine.architectSay(project, 'systeme', (resume
-    ? `Reprend sa conversation (${Math.round(size / 1000)} k, moins de 5 min) sur ${model}`
-    : `Nouvelle conversation sur ${model}, avec son carnet et l’état du projet${fresh ? ` (${fresh})` : ''}`) + `, compte « ${compte.name} ».`);
+    ? `Reprend la discussion sur ${model} : ${plan.why}`
+    : `Nouvelle conversation sur ${model}, avec son carnet, les derniers échanges et l’état du projet (${plan.why})`) + `, compte « ${compte.name} ».`);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, ...envOf(compte), CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   running.set(project, child);
   child.stdin.end(prompt);
