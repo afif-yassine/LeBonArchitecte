@@ -5,8 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
-import { isResearch, runClaude, transcriptOf, type RunOutcome, type Why } from './claude.ts';
-import { RESEARCH_DIRS } from '../src/shared/plan.ts';
+import { runClaude, transcriptOf, type RunOutcome, type Why } from './claude.ts';
 import { runDirect } from './direct.ts';
 import { canAutoRepair, pickMode } from './rules.ts';
 import { runCommand } from './executor.ts';
@@ -14,6 +13,7 @@ import { assertMainReady, branchOf, changedFiles, commitWorktree, diffOf, ensure
 import type { TicketActivity } from '../src/shared/contract.ts';
 import { handoffText, writeHandoff } from './recovery.ts';
 import { Refused } from './tickets.ts';
+import { outsideOf, roleOf, rolesOf } from './equipe.ts';
 import { envNotIgnored, hasAbuseTest, newRiskyPackages, quickScan, sensitiveZones } from './securite.ts';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -257,8 +257,11 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
     if (zones.length) engine.live(id, { kind: 'systeme', text: `Zone sensible touchée : ${zones.join(', ')}. ${hasAbuseTest(t.criteria) ? 'Le test d’abus du ticket a tourné avec les tests.' : 'Aucun critère « Test d’abus » : une triche (quota remis à zéro, droits contournés…) ne serait pas vue.'} Relecture sécurité conseillée à la recette.` }, 'programme');
     const faille = pkgs.risky.length ? 'echec' : zones.length || (pkgs.why && !/inchangée/.test(pkgs.why)) ? 'non-verifie' : 'ok';
     // Un ticket de recherche lit Internet : il n'a le droit d'écrire que dans ses dossiers.
-    const outside = isResearch(t) ? files.filter((f) => !RESEARCH_DIRS.some((d) => f.path.startsWith(d))).map((f) => f.path) : [];
-    if (outside.length) engine.live(id, { kind: 'bug', ok: false, text: `Recherche : fichiers modifiés hors de ${RESEARCH_DIRS.join(' et ')}. Réunion à refuser.`, detail: outside.join(', ') }, 'programme');
+    // Périmètre (décision 0019) : un rôle qui a des dossiers permis (éclaireur, DevOps…) ne doit rien écrire ailleurs.
+    const role = roleOf(t, rolesOf(t.projectId, repo).roles);
+    const fenced = Boolean(role.ecrire?.length);
+    const outside = outsideOf(role, files.map((f) => f.path));
+    if (outside.length) engine.live(id, { kind: 'bug', ok: false, text: `Rôle ${role.nom} : fichiers modifiés hors de ${role.ecrire!.join(', ')}. Réunion à refuser.`, detail: outside.join(', ') }, 'programme');
     engine.realized(id, {
       summary: o.summary || 'Voir le direct.', added: [], files,
       tests: testsOk ? `Tests verts, lancés par le programme (${prof.commands.test}).` : 'Tests pas encore verts : voir les étapes.',
@@ -271,12 +274,12 @@ export function startSupervisor(engine: Engine, dirs: Record<string, string>, pr
       engine.live(id, { kind: 'test', ok: r.ok, text: `${prof.commands.test} : ${r.ok ? 'vert' : 'en échec'}`, detail: r.summary.split('\n').slice(0, 9).join('\n') }, 'programme');
     }
     // Audit LBA-11, point 4 : ce qu'aucun outil ne contrôle est affiché « non vérifié », jamais « ok ».
-    engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : ' + (faille === 'non-verifie' ? 'nouvelles failles, ' : '') + 'documentation à jour' + (isResearch(t) ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');
+    engine.live(id, { kind: 'systeme', text: 'Non vérifié par un outil : ' + (faille === 'non-verifie' ? 'nouvelles failles, ' : '') + 'documentation à jour' + (fenced ? '' : ', périmètre') + '. À regarder à la recette.' }, 'programme');
     engine.agentDone(id, {
       criteriaOk: o.ok,
       checks: {
         'Critères tenus': o.ok ? 'ok' : 'echec', 'Tests verts': testsOk === true ? 'ok' : testsOk === false ? 'echec' : 'non-verifie',
-        'Périmètre respecté': outside.length ? 'echec' : isResearch(t) ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': faille, 'Documentation à jour': 'non-verifie',
+        'Périmètre respecté': outside.length ? 'echec' : fenced ? 'ok' : 'non-verifie', 'Aucun secret': leaked ? 'echec' : 'ok', 'Aucune nouvelle faille': faille, 'Documentation à jour': 'non-verifie',
       },
     }, { repair: canAutoRepair(engine.ticket(id), prof.commands, { agentOk: o.ok, hasSession: !!engine.sessionOf(id), leaked, outside: outside.length }) });
   }

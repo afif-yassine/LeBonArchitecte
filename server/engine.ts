@@ -555,6 +555,12 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`architecte-modele:${project}`, model ?? '');
     this.changed();
   }
+  // Réclamations (« ça ne marche pas ») par ticket : un ticket fini sans réclamation a été validé du premier coup.
+  reclamationsByTicket(project: string): Map<string, number> {
+    const rows = this.db.prepare("SELECT ticket, COUNT(*) AS n FROM events WHERE project = ? AND type = 'reclamation' GROUP BY ticket").all(project) as { ticket: string; n: number }[];
+    return new Map(rows.map((r) => [r.ticket, r.n]));
+  }
+
   // ---------- Backlog (lot B) : chaque changement est un événement du journal ----------
   backlog(project: string): { items: BacklogItem[]; done: BacklogItem[] } {
     const rows = this.db.prepare("SELECT type, actor, at, data FROM events WHERE project = ? AND type LIKE 'backlog-%' ORDER BY id").all(project) as { type: string; actor: string; at: string; data: string }[];
@@ -662,7 +668,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return decision === 'acceptee' ? `Proposition acceptée : ${ticket} créé, plan à valider. Rien d’autre n’a changé.` : 'Proposition refusée.';
   }
 
-  createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number; model?: 'Opus' | 'Sonnet' | 'Haiku' }): Ticket {
+  createTicket(project: string, o: { title: string; context?: string; expected: string; criteria: string[]; deps?: string[]; part?: string; lot?: number; model?: 'Opus' | 'Sonnet' | 'Haiku'; role?: string }): Ticket {
     if (!o.title?.trim() || !o.expected?.trim()) throw new Refused('Un ticket a besoin d’un titre et de ce qui est attendu.');
     const all = this.tickets(project);
     const prefix = (all[0]?.id.split('-')[0]) ?? project.toUpperCase();
@@ -675,6 +681,7 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
       priority: Math.max(0, ...all.filter((x) => x.status === 'a-faire').map((x) => x.priority)) + 1,
       criteria: o.criteria.filter((c) => c.trim()).map((text) => ({ text: text.trim(), done: false })),
       description: { context: o.context ?? '', expected: o.expected.trim(), outOfScope: 'Rien d’autre que les critères.', cdcRefs: [] },
+      ...(o.role ? { role: o.role } : {}),
     };
     const t: Ticket = { ...base, steps: draftPlan(base), planOk: false };
     this.record({ project, ticket: t.id, type: 'ticket-cree', actor: 'vous', data: { ticket: t } });

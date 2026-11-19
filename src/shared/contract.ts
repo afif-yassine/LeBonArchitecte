@@ -184,6 +184,7 @@ export interface Ticket {
   realized?: Realized; // ce qui a été fait et ajouté, rempli par le programme à la fin
   reportedIn?: string; // id du compte rendu qui a déjà parlé de ce ticket ; absent = pas encore rapporté
   steps: TicketStep[]; // le plan du ticket, montré avant le lancement
+  role?: string; // fiche de rôle choisie à la création (décision 0019) ; sinon trouvée par le programme
   planOk: boolean; // plan validé (par vous, au lancement) : le pilote ne lance jamais un plan non validé
 }
 

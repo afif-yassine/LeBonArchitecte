@@ -385,3 +385,20 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Trois vrais éléments ajoutés, qui attendent une décision : la carte du code sur un gros projet, une relecture automatique pour les tickets risqués, les styles CSS jamais utilisés.
 - Vérifié : 70 tests verts, écran contrôlé sur PC et téléphone, sans erreur.
 - LBA-13 (un **rapport** de backlog) n'a plus de raison d'être : à vous de décider si on le garde.
+
+## Lot E1 : les fiches de rôle appliquées aux agents (19 nov. 2026)
+- Un rôle **ne crée pas d'agent en plus** : il règle l'agent unique du ticket. Décision 0019.
+- Une fiche contient :
+  - la mission ;
+  - le modèle par défaut ;
+  - les commandes permises en plus ;
+  - le MCP et **seulement** les outils listés ;
+  - les dossiers où il peut écrire ;
+  - les mots qui l'appellent ;
+  - le budget par lancement.
+- Les fiches sont rangées dans `<projet>/.lba/equipe.json`, suivi par git. Elles sont lues dans le dossier principal, jamais dans la branche d'un ticket, et les agents n'ont pas le droit de modifier ce fichier.
+- **Rôle d'un ticket :** celui choisi à la création (`lba creer --role`), sinon l'Éclaireur pour une recherche, sinon le premier rôle actif dont un mot apparaît dans le ticket, sinon Développeur. Calculé par le programme : 0 token.
+- **Garde-fous d'une fiche :** jamais git push, suppression, téléchargement, interpréteur (node, bash…), enchaînement de commandes, chemin hors du projet, Fable, ni MCP sans liste d'outils. Les interdits des agents restent plus forts que tout.
+- **Périmètre :** le contrôle qui était réservé aux recherches vaut pour tout rôle qui a des dossiers permis. Un fichier écrit ailleurs met « Périmètre respecté » en échec.
+- Rôles de base : Développeur, Éclaireur, Sécurité. Modèles prêts : DevOps, Média, Rédacteur.
+- 71 tests verts.

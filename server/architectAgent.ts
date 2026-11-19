@@ -19,6 +19,7 @@ import { cacheWarm } from './supervisor.ts';
 import { configDir, envOf, pickCompte, recordQuota } from './comptes.ts';
 import { piecesDir, type Piece } from './pieces.ts';
 import { NOT_PLUGGED } from '../src/shared/screens.ts';
+import { rolesOf } from './equipe.ts';
 
 export const ARCHITECT_ID = 'architecte';
 const MODEL = { Opus: 'opus', Sonnet: 'sonnet', Haiku: 'haiku' } as const; // jamais Fable
@@ -36,6 +37,7 @@ const RULES = [
   'Tu peux : tenir le backlog (lba backlog, backlog-ajouter, backlog-placer : les idées et besoins pas encore décidés), créer des tickets (titre, attendu, critères vérifiables, modèle ; --depuis B-n quand il vient du backlog), valider des plans, changer l’ordre, lancer, mettre en pause, reprendre, écrire aux agents, leur demander de résoudre, lire le code, les documents, les déroulés et les comptes rendus.',
   'Restent au propriétaire (le serveur te les refuse) : réunir dans main (Valider), git, le pilote et le budget, supprimer, décider de tes propres propositions. Si c’est nécessaire, dis-lui précisément quoi faire.',
   'Règles du projet : ne jamais perturber un ticket en cours sans raison ; un changement de périmètre devient un nouveau ticket ; jamais le modèle Fable ; Opus seulement pour le risqué ou l’architecture, sinon Sonnet, Haiku pour le très simple.',
+  'Équipe : chaque ticket a un rôle (lba equipe : mission, quand il est appelé, ce qu’il peut faire). Le programme le trouve par les mots du ticket ; mets --role id à la création seulement si ce n’est pas évident. Un rôle ne crée pas d’agent en plus. Changer l’équipe (nouveau rôle, commandes, MCP) reste au propriétaire : propose-le, il décide dans l’écran Équipe.',
   'Backlog ou ticket : une idée ou un besoin pas encore décidé va dans le backlog (lba backlog-ajouter, avec une taille S, M ou L) ; un ticket seulement pour du travail décidé. Ne mets pas en double ce qui est déjà dans le backlog ou les tickets.',
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Sécurité : si un ticket touche la connexion, les droits, un quota ou une limite, un paiement ou un envoi de fichiers, ajoute un critère « Test d’abus : <la triche précise> échoue » (exemple : « Test d’abus : supprimer puis remettre le fichier ne remet pas le quota à zéro »). Si la règle n’existe pas encore, propose-la pour les règles du projet. Le programme cherche déjà les secrets et les fichiers .env : pas besoin d’un ticket pour cela.',
@@ -83,6 +85,7 @@ export function projectDigest(engine: Engine, project: string): string {
     `État du projet ${project} (préparé par le programme) :`,
     `Pilote ${p.on ? 'allumé' : 'coupé'}, budget du jour ${Math.round(p.spentToday / 1000)} k sur ${Math.round(p.dayBudget / 1000)} k${p.budgetHit ? ' : ATTEINT, aucun ticket ne part' : ''}.`,
     `Écrans encore en maquette, pas branchés sur les vraies données : ${Object.keys(NOT_PLUGGED).join(', ')}.`,
+    `Équipe (rôles actifs) : ${rolesOf(project).roles.filter((r) => r.actif).map((r) => r.id).join(', ')}.`,
     backlogLine(engine, project),
     col('action', 'Besoin d’action'), col('en-cours', 'En cours'), col('a-tester', 'À tester'), col('a-faire', 'À faire'), col('termine', 'Fini', 6),
   ].filter(Boolean).join('\n');

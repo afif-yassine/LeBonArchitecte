@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import { compteOfDir, configDirs, envOf, pickCompte, recordQuota } from './comptes.ts';
+import { equipeRepo, mcpServers, roleOf, rolesOf } from './equipe.ts';
 import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { isTestCommand, readTestOutput, testDetail } from '../src/shared/tests.ts';
@@ -29,7 +30,7 @@ const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'B
   // Dossiers des comptes Claude (décision 0017) : ils gardent les connexions, jamais lus par un agent.
   'Read(**/.lba/comptes/**)', 'Grep(**/.lba/comptes/**)', 'Glob(**/.lba/comptes/**)', 'Read(**/.credentials.json)', 'Bash(*.lba/comptes*)', 'Bash(*.lba\\comptes*)', 'Bash(*.credentials.json*)',
   // Mémoire personnelle du propriétaire et journaux des sessions (~/.claude) : hors du projet, jamais lus ni écrits.
-  'Read(~/.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
+  'Read(~/.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'Edit(**/.lba/equipe.json)', 'Write(**/.lba/equipe.json)', 'WebFetch', 'WebSearch'];
 
 // Le web seulement pour un ticket de recherche (rôle Éclaireur) : lecture d'Internet, écriture limitée à ses dossiers.
 export const isResearch = (t: Ticket) => t.steps.some((s) => s.role === 'eclaireur');
@@ -185,20 +186,30 @@ export function contextOf(cwd: string, session: string): { exists: boolean; seri
 // handoff : passation écrite par le programme (reprise après panne), jointe à la consigne.
 export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: string | undefined, onEnd: (o: RunOutcome) => void, resume?: string, why: Why = 'redemarrage', handoff?: string): ChildProcess {
   const who = `claude-${(MODEL[t.model] ?? 'sonnet')}`;
-  const web = isResearch(t);
-  const allowed = web ? [...ALLOWED, 'WebSearch', 'WebFetch'] : ALLOWED;
+  // Fiche de rôle (décision 0019) : lue dans le dossier principal du projet, jamais dans la branche du ticket.
+  const role = roleOf(t, rolesOf(t.projectId).roles);
+  const web = isResearch(t) || Boolean(role.web);
+  const repo = equipeRepo(t.projectId);
+  const servers = repo && role.mcp ? mcpServers(repo, role) : [];
+  // Commandes et outils MCP du rôle : seulement ceux de sa fiche (les interdits restent plus forts que tout).
+  const allowed = [...ALLOWED, ...(web ? ['WebSearch', 'WebFetch'] : []), ...(role.commandes ?? []).map((c) => `Bash(${c})`),
+    ...servers.flatMap((s) => role.mcp!.outils.map((o) => `mcp__${s}__${o}`))];
   const denied = web ? DENIED.filter((d) => d !== 'WebSearch' && d !== 'WebFetch') : DENIED;
+  const system = ['Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.',
+    `Ton rôle : ${role.nom}. ${role.mission}`,
+    ...(role.ecrire?.length ? [`Tu écris seulement dans : ${role.ecrire.join(', ')}. Tout autre fichier modifié bloque la réunion.`] : [])].join('\n');
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[t.model] ?? 'sonnet',
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', allowed.join(','), '--disallowedTools', denied.join(','),
-    // Plafond par lancement ; plus haut pour Opus (décision 0007) pour ne pas couper un travail important en route.
-    '--max-budget-usd', t.model === 'Opus' ? '8' : '3',
+    // Plafond par lancement : celui du rôle, sinon plus haut pour Opus (décision 0007) pour ne pas couper un travail important.
+    '--max-budget-usd', String(role.budgetUsd ?? (t.model === 'Opus' ? 8 : 3)),
     // Contexte minimal (mesuré : 34 210 tokens fixes au 1er tour sans ces options, ~12 300 avec) :
-    // pas de connecteurs MCP, pas de liste de skills, seulement les 6 outils utiles à un ticket.
-    '--strict-mcp-config', '--disable-slash-commands', '--tools', web ? 'Read,Edit,Write,Glob,Grep,Bash,WebSearch,WebFetch' : 'Read,Edit,Write,Glob,Grep,Bash',
+    // aucun connecteur MCP sauf celui du rôle, pas de liste de skills, seulement les outils utiles à un ticket.
+    '--strict-mcp-config', ...(servers.length ? ['--mcp-config', join(repo!, role.mcp!.config)] : []),
+    '--disable-slash-commands', '--tools', web ? 'Read,Edit,Write,Glob,Grep,Bash,WebSearch,WebFetch' : 'Read,Edit,Write,Glob,Grep,Bash',
     // Opus = tâche importante (décision 0007) : réflexion poussée.
     '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' || t.model === 'Opus' ? 'high' : 'medium',
-    '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
+    '--append-system-prompt', system];
   if (resume) args.push('--resume', resume);
   // Compte : une conversation reprise reste sur le compte qui l'a commencée ; sinon le compte choisi (décision 0017).
   const compte = (resume && compteOfDir(engine, sessionDir(cwd, resume))) || pickCompte(engine, t.projectId, 'agents');
@@ -251,7 +262,7 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init') {
       if (m.session_id) try { engine.setSession(t.id, String(m.session_id)); } catch { /* ignore */ }
-      live('agent', resume ? `Agent Claude repris sur ${m.model}` : `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket, compte « ${compte.name} »`);
+      live('agent', resume ? `Agent Claude repris sur ${m.model}` : `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket, rôle ${role.nom}, compte « ${compte.name} »`);
     }
     else if (m.type === 'rate_limit_event') recordQuota(engine, compte.id, m.rate_limit_info);
     else if (m.type === 'system' && m.subtype === 'api_retry') live('systeme', `Nouvel essai de l’API (${m.error})`, `essai ${m.attempt} sur ${m.max_retries}`);

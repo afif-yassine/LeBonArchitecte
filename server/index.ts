@@ -17,6 +17,7 @@ import { runArchitectCommand } from './architectCommands.ts';
 import { parseCommand } from '../src/shared/commands.ts';
 import { addCompte, authStatus, comptes, openLogin, pickCompte, probeQuota, projection, quotaOf, removeCompte, updateCompte } from './comptes.ts';
 import { pieceType, piecesDir, piecesOf, savePiece } from './pieces.ts';
+import { proposeRoles, ROLE_TEMPLATES, roleOf, rolesOf, saveRoles, setEquipeDirs, type Role } from './equipe.ts';
 import { askMap, refreshMap } from './carte.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
@@ -27,6 +28,7 @@ import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 const PORT = Number(process.env.LBA_PORT ?? 4317);
 // Dossier de chaque vrai projet. Les projets d'exemple n'en ont pas.
 const PROJECT_DIRS: Record<string, string> = { lba: process.cwd() };
+setEquipeDirs(PROJECT_DIRS); // fiches de rôle lues dans le dossier principal, jamais dans la branche d'un ticket
 const db = openDb(join(process.cwd(), '.lba', 'lba.db'));
 // Sauvegarde de l'état de l'outil : au démarrage (avant tout changement), puis chaque heure.
 const saveState = () => { try { backupDb(db, join(process.cwd(), '.lba', 'sauvegardes')); } catch (err) { console.error(`Sauvegarde impossible : ${(err as Error).message}`); } };
@@ -143,16 +145,40 @@ app.get('/api/busy', async () => {
   const architect = Object.keys(PROJECT_DIRS).filter(architectRunning);
   return { busy: running.length + validating.length + architect.length > 0, running, validating, architect };
 });
-app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string; from?: string } }>('/api/projects/:id/tickets', async (req) => {
+app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string; from?: string; role?: string } }>('/api/projects/:id/tickets', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
   const model = req.body.model && ['Opus', 'Sonnet', 'Haiku'].includes(req.body.model) ? req.body.model as 'Opus' | 'Sonnet' | 'Haiku' : undefined;
   if (req.body.model && !model) throw new Refused('Modèle inconnu : Opus, Sonnet ou Haiku (jamais Fable).');
   // Ticket fait depuis un élément du backlog (lot B) : on vérifie l'élément AVANT de créer le ticket.
   const from = req.body.from ? engine.backlog(req.params.id).items.find((b) => b.id === req.body.from) : undefined;
   if (req.body.from && !from) throw new Refused(`${req.body.from} n’est pas dans le backlog (déjà devenu un ticket, ou retiré).`);
-  const t = engine.createTicket(req.params.id, { ...req.body, model, criteria: req.body.criteria ?? [] });
+  // Rôle (décision 0019) : il doit exister et être actif ; il donne le modèle par défaut si aucun n'est choisi.
+  const role = req.body.role ? rolesOf(req.params.id).roles.find((r) => r.id === req.body.role && r.actif) : undefined;
+  if (req.body.role && !role) throw new Refused(`Rôle « ${req.body.role} » inconnu ou inactif. Voir : lba equipe.`);
+  const t = engine.createTicket(req.params.id, { ...req.body, model: model ?? role?.modele, criteria: req.body.criteria ?? [], role: role?.id });
   if (from) engine.backlogToTicket(req.params.id, from.id, t.id);
   return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.${from ? ` ${from.id} quitte le backlog.` : ''}`, ticket: t };
+});
+// Équipe (décision 0019) : fiches de rôle, ce que chaque rôle a vraiment fait, et l'équipe proposée à l'import.
+app.get<Id>('/api/projects/:id/equipe', async (req) => {
+  const p = req.params.id;
+  const { roles, source } = rolesOf(p);
+  const recl = engine.reclamationsByTicket(p);
+  const stats: Record<string, { tickets: number; finis: number; premierCoup: number; tokens: number; enCours: string[] }> = {};
+  for (const t of engine.tickets(p)) {
+    const r = roleOf(t, roles);
+    const x = stats[r.id] ??= { tickets: 0, finis: 0, premierCoup: 0, tokens: 0, enCours: [] };
+    x.tickets += 1; x.tokens += t.used ?? 0;
+    if (t.status === 'termine') { x.finis += 1; if (!recl.get(t.id)) x.premierCoup += 1; }
+    if (t.status === 'en-cours') x.enCours.push(t.id);
+  }
+  const repo = PROJECT_DIRS[p];
+  return { roles, source, stats, templates: ROLE_TEMPLATES.filter((t) => !roles.some((r) => r.id === t.id)), proposition: source === 'defaut' && repo ? proposeRoles(repo) : null };
+});
+app.put<Id & { Body: { roles?: Role[] } }>('/api/projects/:id/equipe', async (req) => {
+  if (!Array.isArray(req.body?.roles)) throw new Refused('Il manque la liste des rôles.');
+  const roles = saveRoles(req.params.id, req.body.roles);
+  return { message: `Équipe enregistrée : ${roles.length} rôles dans .lba/equipe.json. Elle vaut pour les prochains lancements.` };
 });
 // Backlog (lot B) : idées et besoins pas encore décidés. Retirer (DELETE) reste au propriétaire.
 app.get<Id>('/api/projects/:id/backlog', async (req) => engine.backlog(req.params.id));
