@@ -10,7 +10,7 @@ Ce qu'une machine peut vérifier, c'est le programme qui le vérifie (0 token). 
    - Le programme lit toutes les lignes ajoutées de `main..ticket/<id>`, commit par commit : un secret ajouté puis effacé est trouvé quand même, car la réunion copierait l'historique dans main.
    - Les règles : les formats exacts des fournisseurs (Anthropic, OpenAI, GitHub, AWS, Google, Slack, Stripe, clé privée), plus les mots de passe écrits en dur.
    - Une fausse valeur de test peut porter `lba:pas-un-secret` sur sa ligne. Le marqueur ne vaut que pour la règle des mots de passe, jamais pour une vraie clé de fournisseur.
-   - Si **gitleaks** est installé dans `.lba/outils/gitleaks/`, il s'ajoute à ces règles (avec `--redact`). Sinon, le programme le dit.
+   - **gitleaks** 8.30.1 (installé le 19 nov., empreinte vérifiée) s’ajoute à ces règles, avec `--redact`. S’il manque, le programme le dit et ses règles tournent seules.
    - **Aucune valeur n'est gardée ni affichée** : seulement le fichier et le genre de secret.
 2. **Fichiers interdits dans git** : `.env` et `.env.*` (sauf `.example`, `.sample`, `.template`), `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `id_rsa` et ses variantes, `credentials.json`.
 3. **`.env` pas ignoré** : si un `.env` existe dans le projet et que git ne l'ignore pas, c'est signalé. Si le ticket a changé `.gitignore` et rendu un `.env` visible, la réunion est bloquée. Les noms seulement : le contenu n'est jamais lu.

@@ -340,4 +340,4 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Failles de logique : le programme repère les zones sensibles (connexion, quotas, paiement, envoi de fichiers). L'Architecte ajoute un critère « Test d'abus », et l'agent écrit un test qui essaie la triche.
 - Deux trous fermés chez les agents : ils pouvaient écrire un `.env`, et lire un `.env` avec `tail`, `head` ou `grep`.
 - Vérifié : 68 tests verts, compilation sans erreur. Tout l'historique de LBA est propre : 0 secret, 0 fichier interdit, après la correction d'une fausse alerte.
-- En attente de votre « oui » : installer gitleaks (8,4 Mo, depuis GitHub). Sans lui, les règles du programme tournent seules.
+- gitleaks 8.30.1 installé avec votre « oui » (19 nov.) dans `.lba/outils/gitleaks/`. Empreinte SHA-256 vérifiée contre la liste officielle. Les 55 commits de LBA ont été contrôlés en 0,8 s : aucun secret. Le contrôle l’utilise maintenant, en plus des règles du programme.
