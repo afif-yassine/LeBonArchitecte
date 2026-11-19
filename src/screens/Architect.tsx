@@ -34,7 +34,7 @@ const COMMANDS: { cmd: string; args?: string; desc: string }[] = [
 const now = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const MODELS = ['Haiku', 'Sonnet', 'Opus'];
 
-export function Architect({ projectId, go, ask }: { projectId: string; go: Go; ask?: string }) {
+export function Architect({ projectId, ask }: { projectId: string; go: Go; ask?: string }) {
   const notify = useNotify();
   const store = useStore();
   const p = projects.find((x) => x.id === projectId)!;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Clock, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert, Square } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Clock, Hand, KeyRound, ListChecks, Pause, Play, Plus, RotateCcw, ShieldAlert } from 'lucide-react';
 import { agents, projects } from '../mock/data';
 import { COLUMNS, budgetFor, type Ticket } from '../shared/contract';
 import { Bar, Switch, fmtTokens, toolShort } from '../components/ui';

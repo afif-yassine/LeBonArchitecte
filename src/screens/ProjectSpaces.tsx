@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import {
   ArrowLeftRight, BookOpenCheck, Bug, CircleCheck, Code2, Download, Globe, Layout, Lock, MessageSquare, PenLine, Scale,
-  Search, ShieldCheck, Telescope, TestTube2, Trash2, type LucideIcon,
+  ShieldCheck, Telescope, TestTube2, type LucideIcon,
 } from 'lucide-react';
 import { agentRoles, agents, audit, decisions, epics, interventions, roles, setupSteps } from '../mock/data';
 import { Bar, Soon, StatePill, Tabs, fmtTokens, toolShort } from '../components/ui';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, ChevronRight, CircleHelp, Focus, Lock, Moon, PanelRightOpen, Search, Sun } from 'lucide-react';
 import { projects } from './mock/data';
-import { RealDocs, RealGit, RealRules } from './screens/RealSpaces';
+import { RealDocs, RealRules } from './screens/RealSpaces';
 import { CahierScreen } from './screens/Cahier'; // cahier des charges réel (point 2)
 import { GitGraphScreen } from './screens/GitGraph'; // Git en schéma (point 3)
 import { Soon } from './components/ui';

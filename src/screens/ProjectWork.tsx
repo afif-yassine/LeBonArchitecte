@@ -12,7 +12,7 @@ import { useStore } from '../store';
 import type { Go } from '../view';
 
 // ---------------- Cahier des charges ----------------
-export function Cdc({ projectId, go }: { projectId: string; go: Go }) {
+export function Cdc({ go }: { projectId: string; go: Go }) {
   const notify = useNotify();
   const { tickets } = useStore();
   const status = (ids: string[]) => {

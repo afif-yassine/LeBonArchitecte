@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowLeftRight, Check, ChevronDown,
-  Image as ImageIcon, Info, Lock, Paperclip, Pause, Play, RotateCcw, SendHorizontal, Settings2, Square, X,
+  ArrowLeft, Check, ChevronDown,
+  Info, Lock, SendHorizontal, Settings2, X,
 } from 'lucide-react';
-import { accounts, agentRoles, agents, projects, requirements, roles } from '../mock/data';
+import { accounts, projects, requirements } from '../mock/data';
 import { TOOLS, budgetFor, type Effort, type LiveItem, type Ticket, type ToolId } from '../shared/contract';
 import '../ticket-side.css';
 import { Deroule, PhaseFrise } from '../components/Deroule';
@@ -11,7 +11,7 @@ import { TicketStatus } from '../components/TicketStatus';
 import { FileViewer } from '../components/FileViewer';
 import { TestsTab } from '../components/TestsTab';
 import { ReportTab } from '../components/ReportTab';
-import { Bar, STATE, Tabs, fmtTokens } from '../components/ui';
+import { Tabs, fmtTokens } from '../components/ui';
 import { LaunchDialog } from '../components/LaunchDialog';
 import { useNotify } from '../components/notify';
 import { useStore } from '../store';
@@ -154,21 +154,15 @@ export function TicketView({ ticketId, go }: { ticketId: string; go: Go }) {
   const doValidate = () => { if (busy) return; setBusy(true); validate(ticketId).finally(() => setBusy(false)); };
   const [problem, setProblem] = useState('');
   const t = tickets.find((x) => x.id === ticketId)!;
-  const agent = t.status === 'en-cours' || t.status === 'action' ? agents.find((a) => a.id === t.agentId) : undefined;
-  const role = agent ? roles.find((r) => r.id === agentRoles[agent.id]) : undefined;
   const [tab, setTab] = useState<Tab>(t.status === 'a-tester' ? 'realise' : 'deroule');
   const [showNoisy, setShowNoisy] = useState(false);
   const [conf, setConf] = useState({ tool: t.tool, accountId: t.accountId, model: t.model, effort: t.effort });
   const [menu, setMenu] = useState(false);
-  const paused = t.status === 'a-faire' && !!t.paused;
   const [launching, setLaunching] = useState(false);
   const [feed, setFeed] = useState<LiveItem[] | null>(null); // null = pas encore lu
   const [journal, setJournal] = useState<RawEvent[]>([]);
   const [text, setText] = useState('');
   const demo = Boolean(projects.find((p) => p.id === t.projectId)?.demo);
-  const proven = t.steps.filter((s) => s.state === 'prouve').length;
-  const account = accounts.find((a) => a.id === conf.accountId);
-  const other: ToolId = conf.tool === 'codex' ? 'claude-code' : 'codex';
 
   // Le moteur prévient à chaque changement (rev) : on relit le direct et le journal du ticket.
   useEffect(() => {

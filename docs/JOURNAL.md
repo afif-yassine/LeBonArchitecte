@@ -360,3 +360,11 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Mesuré sur 3 messages (Opus) : 2 à 3 fois plus court, plus rapide (4 à 5 s au lieu de 7 à 16 s) et moins cher (0,07 à 0,10 $ au lieu de 0,14 à 0,20 $).
 - La même erreur des 5 minutes est corrigée pour les agents des tickets.
 - 69 tests verts.
+
+## Nettoyage : fichiers d'essai et code mort (19 nov. 2026)
+- `docs/rapports/essai-opus-recherche` (HTML et PDF), jamais enregistrés dans git, sont mis à la **corbeille de Windows**, à votre demande. Vous pouvez encore les récupérer.
+- Code mort cherché sans IA (0 token) : le compilateur en mode strict (imports et variables jamais utilisés), puis un script qui cherche les fonctions exportées que personne n'appelle et les fichiers que personne n'importe.
+- Enlevé : 20 imports ou variables inutiles, restés après les refontes, surtout dans la fiche d'un ticket. Les icônes et les variables enlevées venaient des anciennes maquettes. Plus un réexport inutile (`pickArchitectModel` dans `architectAgent.ts`).
+- Aucun fichier abandonné : les 5 fichiers que personne n'importe sont les points d'entrée (serveur, écran, scripts `npm`).
+- Vérifié : compilation stricte sans aucune remarque, 69 tests verts, construction de l'écran réussie, fiche d'un ticket ouverte dans le navigateur sans erreur.
+- Pas regardé : les styles CSS jamais utilisés. Les noms de classes sont parfois construits par le code, donc un outil peut se tromper. À faire seulement si vous le voulez.

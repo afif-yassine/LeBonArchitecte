@@ -80,7 +80,8 @@ test('Architecte : ses actions sont écrites à son nom, et les portes du propri
 });
 
 test('Architecte autonome : modèle choisi par règle, état préparé sans token, fil et tokens comptés', async () => {
-  const { pickArchitectModel, projectDigest } = await import('./architectAgent.ts');
+  const { projectDigest } = await import('./architectAgent.ts');
+  const { pickArchitectModel } = await import('../src/shared/architect.ts');
   const { Engine } = await import('./engine.ts');
   const { openDb } = await import('./db.ts');
   assert.equal(pickArchitectModel('Crée un ticket pour corriger le titre de la page Git'), 'Sonnet');

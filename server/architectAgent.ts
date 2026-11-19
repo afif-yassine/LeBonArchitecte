@@ -55,9 +55,6 @@ const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pe
   'Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git -C *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npx *)', 'Bash(npm *)',
   'WebFetch', 'WebSearch'];
 
-// Choix du modèle : règle partagée avec l'écran (src/shared/architect.ts).
-export { pickArchitectModel };
-
 // État du projet préparé par le programme (0 token) : ce que l'Architecte demanderait sinon avec un outil.
 export function projectDigest(engine: Engine, project: string): string {
   const ts = engine.tickets(project);
