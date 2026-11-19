@@ -368,3 +368,11 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Aucun fichier abandonné : les 5 fichiers que personne n'importe sont les points d'entrée (serveur, écran, scripts `npm`).
 - Vérifié : compilation stricte sans aucune remarque, 69 tests verts, construction de l'écran réussie, fiche d'un ticket ouverte dans le navigateur sans erreur.
 - Pas regardé : les styles CSS jamais utilisés. Les noms de classes sont parfois construits par le code, donc un outil peut se tromper. À faire seulement si vous le voulez.
+
+## Lot A : l'Architecte en direct, et plus rapide (19 nov. 2026)
+- Mesuré d'abord : Claude Code démarre en 0,6 s. Les 30 s venaient d'Opus en réflexion poussée, de 5 petites recherches au lieu d'une seule (aucun fichier relu), et d'un écran qui ne montrait rien pendant ce temps.
+- Il s'affiche maintenant **en direct**, comme dans Claude Code : ses actions (« Lit… », « Cherche… », « lba carte… »), puis son texte mot par mot (`--include-partial-messages`, lu par l'écran toutes les 0,7 s, sans recharger le fil).
+- Une nouvelle règle lui demande **une seule recherche large** au lieu de plusieurs petites. La liste des écrans encore en maquette est donnée dans l'état du projet (`src/shared/screens.ts`) : il n'a plus besoin de la chercher.
+- Opus réfléchit moins (« moyen ») pour discuter, et plus (« poussé ») seulement pour une longue demande.
+- Mesuré sur une vraie question : première étape affichée à 3,6 s, premiers mots à 5,7 s, fini à 6,4 s.
+- Défaut trouvé et corrigé dans `scripts/dev.mjs` : un moteur arrêté par une erreur n'était jamais relancé (le relanceur attendait sa fin, qui avait déjà eu lieu).

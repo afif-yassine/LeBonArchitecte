@@ -6,14 +6,7 @@ import { CahierScreen } from './screens/Cahier'; // cahier des charges réel (po
 import { GitGraphScreen } from './screens/GitGraph'; // Git en schéma (point 3)
 import { Soon } from './components/ui';
 
-// Onglets pas encore branchés sur les vraies données : ce qu'il manque, en clair (au lieu de faux contenu).
-const NOT_PLUGGED: Record<string, string> = {
-  flux: 'Le schéma du flux de travail sera tiré des vrais tickets et de leurs dépendances (lot 2).',
-  backlog: 'Le backlog viendra des vrais tickets « à faire » et de docs/backlog.md, écrit par LBA-13 (lot 2).',
-  equipe: 'L’équipe montrera les rôles configurés et les agents qui tournent vraiment (lot 2).',
-  sante: 'La santé montrera les vrais résultats des tests, de la compilation et les bugs du direct (lot 2).',
-  memoire: 'La mémoire partagée n’est pas encore construite : elle suivra la stratégie choisie au cadrage (rapport LBA-10).',
-};
+import { NOT_PLUGGED } from './shared/screens';
 import { SPACES, type Go, type View } from './view';
 import { useSettings } from './settings';
 import { StoreProvider, useStore } from './store';

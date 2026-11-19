@@ -12,7 +12,7 @@ import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
 import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
-import { adviceMarkdown, architectRunning, askArchitectAgent, askBtw, btwBusy } from './architectAgent.ts';
+import { adviceMarkdown, architectLive, architectRunning, askArchitectAgent, askBtw, btwBusy } from './architectAgent.ts';
 import { runArchitectCommand } from './architectCommands.ts';
 import { parseCommand } from '../src/shared/commands.ts';
 import { addCompte, authStatus, comptes, openLogin, pickCompte, probeQuota, projection, quotaOf, removeCompte, updateCompte } from './comptes.ts';
@@ -268,6 +268,8 @@ app.get<Id>('/api/projects/:id/architecte', async (req) => {
     comptes: allowed.map((c) => ({ id: c.id, name: c.name, five: quotaOf(engine, c.id)?.five?.used })),
   };
 });
+// Ce qu'il fait en ce moment (lot A) : lu toutes les 0,7 s par l'écran pendant qu'il travaille, sans recharger le fil.
+app.get<Id>('/api/projects/:id/architecte/direct', async (req) => ({ busy: architectRunning(req.params.id), live: architectLive(req.params.id) }));
 // Modèle et compte de l'Architecte, choisis dans la barre du chat (lot C1). « auto » = choix du programme.
 app.post<Id & { Body: { model?: string; compte?: string } }>('/api/projects/:id/architecte/reglages', async (req) => {
   const p = req.params.id; const b = req.body ?? {};

@@ -91,3 +91,9 @@
 }
 .ar__headr { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 @media (max-width: 640px) { .ar__headr { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; } }
+/* Lot A : en direct, comme dans Claude Code (ses actions, puis le texte qui s'écrit). */
+.ar__live { display: grid; gap: 8px; }
+.ar__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.ar__steps li { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--faint); min-width: 0; }
+.ar__steps code { font-family: var(--mono); font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar__him.is-live { opacity: .92; border-style: dashed; }

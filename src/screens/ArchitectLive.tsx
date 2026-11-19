@@ -36,6 +36,7 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [uploading, setUploading] = useState(0);
   const [drag, setDrag] = useState(false);
+  const [live, setLive] = useState<{ steps: { at: string; text: string }[]; text: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(Date.now());
   const scroll = useRef<HTMLDivElement>(null);
@@ -44,8 +45,17 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
   const thread = data?.thread ?? [];
   const working = Boolean(data?.busy); // l'Architecte travaille : seules les commandes et /btw partent
   const busy = working || sending;
+  // En direct (lot A) : ses actions et son texte au fur et à mesure, comme dans Claude Code.
+  useEffect(() => {
+    if (!working) { setLive(null); return; }
+    let on = true;
+    const tick = async () => { try { const j = await (await fetch(`/api/projects/${projectId}/architecte/direct`)).json(); if (on) setLive(j.live); } catch { /* moteur coupé */ } };
+    void tick();
+    const t = setInterval(tick, 700);
+    return () => { on = false; clearInterval(t); };
+  }, [working, projectId]);
 
-  useEffect(() => { scroll.current?.scrollTo({ top: scroll.current.scrollHeight }); }, [thread.length, busy]);
+  useEffect(() => { scroll.current?.scrollTo({ top: scroll.current.scrollHeight }); }, [thread.length, busy, live?.text.length, live?.steps.length]);
   useEffect(() => { input.current?.focus(); }, []);
   // Chrono pendant qu'il travaille.
   useEffect(() => { if (!busy) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [busy]);
@@ -182,7 +192,13 @@ export function ArchitectLive({ projectId, go, ask }: { projectId: string; go: G
             </article>
           );
         })}
-        {working && <div className="ar__busy"><Loader2 size={14} className="spin" aria-hidden="true" />L’Architecte travaille… {elapsed} s</div>}
+        {working && (
+          <div className="ar__live" aria-live="off">
+            {!!live?.steps.length && <ul className="ar__steps">{live.steps.slice(-5).map((s, i) => <li key={s.at + i}><Wrench size={11} aria-hidden="true" /><code>{s.text}</code></li>)}</ul>}
+            {live?.text && <article className="ar__him is-live"><div className="ar__md"><Markdown text={live.text} onLink={() => undefined} /></div></article>}
+            <div className="ar__busy"><Loader2 size={14} className="spin" aria-hidden="true" />{live?.text ? 'Il écrit' : live?.steps.length ? 'Il cherche' : 'Il réfléchit'}… {elapsed} s</div>
+          </div>
+        )}
         {data?.btw && <div className="ar__busy"><Loader2 size={14} className="spin" aria-hidden="true" />Réponse en passant…</div>}
       </div>
 

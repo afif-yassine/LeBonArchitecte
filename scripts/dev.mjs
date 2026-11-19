@@ -35,6 +35,9 @@ setInterval(async () => {
   } catch { /* moteur arrêté ou en panne : on le relance */ }
   pending = false;
   console.log('Moteur libre : redémarrage avec le nouveau code.');
+  // Déjà arrêté (ex. erreur dans le code) : on le relance tout de suite. Sinon on attend sa fin pour le relancer
+  // (avant, on attendait un « exit » qui ne venait jamais : le moteur restait arrêté, vu le 19 nov.).
+  if (engine.exitCode !== null || engine.signalCode !== null) { engine = startEngine(); return; }
   engine.lbaRestart = true;
   engine.once('exit', () => { engine = startEngine(); });
   engine.kill();

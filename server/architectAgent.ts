@@ -18,6 +18,7 @@ import { Refused } from './tickets.ts';
 import { cacheWarm } from './supervisor.ts';
 import { configDir, envOf, pickCompte, recordQuota } from './comptes.ts';
 import { piecesDir, type Piece } from './pieces.ts';
+import { NOT_PLUGGED } from '../src/shared/screens.ts';
 
 export const ARCHITECT_ID = 'architecte';
 const MODEL = { Opus: 'opus', Sonnet: 'sonnet', Haiku: 'haiku' } as const; // jamais Fable
@@ -39,6 +40,7 @@ const RULES = [
   'Sécurité : si un ticket touche la connexion, les droits, un quota ou une limite, un paiement ou un envoi de fichiers, ajoute un critère « Test d’abus : <la triche précise> échoue » (exemple : « Test d’abus : supprimer puis remettre le fichier ne remet pas le quota à zéro »). Si la règle n’existe pas encore, propose-la pour les règles du projet. Le programme cherche déjà les secrets et les fichiers .env : pas besoin d’un ticket pour cela.',
   'Économie de tokens : l’état du projet t’est donné, ne le redemande que s’il a changé. Ne relis jamais un fichier déjà lu. Lis par morceaux (Grep, Read avec offset). Ne lis pas docs/JOURNAL.md ni toutes les décisions sauf si la demande les concerne.',
   'Pour trouver du code : la carte attend un NOM du code (souvent en anglais : architectRefusal, mergeTicket, Engine…), pas un mot français. Si tu connais le nom, lance node scripts/lba.mjs carte <nom> (où il est, qui l’utilise, avec fichiers et lignes ; avec deux noms : le chemin entre eux). Sinon, un seul Grep pour trouver le nom, puis la carte pour ses liens au lieu d’ouvrir les fichiers un par un. Lis ensuite seulement les lignes utiles. Ne lis jamais le dossier graphify-out (trop gros).',
+  'Chaque outil est un aller-retour de 2 à 4 secondes : fais UNE recherche large (Grep en mode contenu, avec les lignes trouvées, sur tout le projet) plutôt que plusieurs petites fichier par fichier. Ne cherche pas ce que l’état du projet te donne déjà (écrans en maquette, tickets, budget).',
   'Tu ne modifies aucun fichier toi-même. Pour écrire ou changer un document ou du code : crée un ticket précis puis lance-le ; un agent le fait dans sa branche, le propriétaire valide. Le programme choisit le mode le moins cher (un document simple coûte environ 6 k).',
   'Tu es un conseiller critique, pas un exécutant : le propriétaire ne connaît pas la technique et compte sur toi pour l’arrêter quand une idée est mauvaise, même s’il insiste.',
   'Demande petite et claire (ordre du kanban, lancer, pause, message, un ticket simple) : fais-la tout de suite. Quand il te demande de FAIRE quelque chose de gros ou de structurel (nouveaux agents ou équipe, chaîne d’agents, changement d’architecture, nouvelle fonction, plus de 3 tickets, plus de 50 k estimés) : NE FAIS RIEN avant son « oui ». Seulement dans ce cas, réponds dans cet ordre, en restant court : « Avis : je conseille / je déconseille / à adapter » ; les problèmes, même si l’idée est bonne, expliqués comme à un débutant ; « Existe déjà ? » (dans le projet, ou un logiciel gratuit que tu connais, marqué « à vérifier » ; si une recherche web est utile, propose un petit ticket de recherche) ; le coût en tokens de son idée et de ta proposition côte à côte ; ta meilleure proposition, la plus simple qui marche ; puis « Dites oui, ou choisissez ».',
@@ -72,6 +74,7 @@ export function projectDigest(engine: Engine, project: string): string {
   return [
     `État du projet ${project} (préparé par le programme) :`,
     `Pilote ${p.on ? 'allumé' : 'coupé'}, budget du jour ${Math.round(p.spentToday / 1000)} k sur ${Math.round(p.dayBudget / 1000)} k${p.budgetHit ? ' : ATTEINT, aucun ticket ne part' : ''}.`,
+    `Écrans encore en maquette, pas branchés sur les vraies données : ${Object.keys(NOT_PLUGGED).join(', ')}.`,
     col('action', 'Besoin d’action'), col('en-cours', 'En cours'), col('a-tester', 'À tester'), col('a-faire', 'À faire'), col('termine', 'Fini', 6),
   ].filter(Boolean).join('\n');
 }
@@ -183,6 +186,16 @@ export function forgetArchitectSession(engine: Engine, project: string): void { 
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const running = new Map<string, ChildProcess>();
 export const architectRunning = (project: string) => running.has(project);
+// Ce qu'il fait en ce moment (lot A) : ses dernières actions, lectures comprises, et le texte en train de s'écrire.
+const liveNow = new Map<string, { steps: { at: string; text: string }[]; text: string }>();
+export const architectLive = (project: string) => liveNow.get(project) ?? null;
+function liveStep(project: string, what: string) {
+  const l = liveNow.get(project);
+  if (!l) return;
+  const nice = what.replace(/^Read /, 'Lit ').replace(/^Grep /, 'Cherche ').replace(/^Glob /, 'Liste ').replace(/^Bash /, '')
+    .replace(/[A-Za-z]:[\\/][^ ]*?[\\/](?=(src|server|docs|scripts|tests?|\.lba)[\\/])/g, ''); // chemin court, lisible
+  l.steps = [...l.steps, { at: new Date().toISOString(), text: nice }].slice(-12);
+}
 
 export function askArchitectAgent(engine: Engine, project: string, repo: string, text: string, pieces: Piece[] = []): string {
   if (!text.trim() && !pieces.length) throw new Refused('Écrivez votre demande à l’Architecte.');
@@ -196,9 +209,10 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   const compte = plan.compte;
   const resume = plan.resume ? plan.prev : undefined;
   // Réflexion légère pour une question courte sur Sonnet : réponse plus rapide (décision 0018).
-  const effort = model === 'Opus' ? 'high' : model === 'Haiku' || ask.length < 300 ? 'low' : 'medium';
+  // Opus : réflexion moyenne pour discuter, poussée seulement pour une longue demande (décision, action).
+  const effort = model === 'Opus' ? (ask.length < 300 ? 'medium' : 'high') : model === 'Haiku' || ask.length < 300 ? 'low' : 'medium';
 
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[model],
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', MODEL[model],
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','),
     '--max-budget-usd', model === 'Opus' ? '6' : model === 'Haiku' ? '1' : '2',
@@ -219,6 +233,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
     : `Nouvelle conversation sur ${model}, avec son carnet, les derniers échanges et l’état du projet (${plan.why})`) + `, compte « ${compte.name} ».`);
   const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, ...envOf(compte), CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   running.set(project, child);
+  liveNow.set(project, { steps: [], text: '' });
   child.stdin.end(prompt);
 
   const tools = new Map<string, string>();
@@ -227,12 +242,20 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init' && m.session_id) engine.setSession(key, String(m.session_id));
     else if (m.type === 'rate_limit_event') recordQuota(engine, compte.id, m.rate_limit_info);
+    // Texte écrit au fur et à mesure (comme dans Claude Code) : gardé en mémoire, lu par l'écran pendant qu'il travaille.
+    else if (m.type === 'stream_event' && !m.parent_tool_use_id) {
+      const ev = m.event ?? {};
+      const l = liveNow.get(project);
+      if (l && ev.type === 'message_start') l.text = '';
+      if (l && ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') l.text = (l.text + String(ev.delta.text ?? '')).slice(-8000);
+    }
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
       for (const b of m.message?.content ?? []) {
         if (b.type === 'tool_use') {
           const i = b.input ?? {};
           const what = b.name === 'Bash' ? short(i.command, 200).replace(/^node scripts\/lba\.mjs /, 'lba ') : `${b.name} ${short(i.file_path ?? i.pattern ?? '', 120)}`;
           tools.set(b.id, what);
+          liveStep(project, what);
           // Seules les actions qui changent quelque chose vont dans le carnet ; les lectures restent discrètes.
           if (/^lba (creer|valider-plan|replanifier|lancer|pause|reprendre|arreter|resoudre|tester|message|refuser|ordre)\b/.test(what)) engine.architectSay(project, 'action', what);
         }
@@ -266,6 +289,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   child.on('error', (e) => { err += e.message; });
   child.on('close', (code) => {
     running.delete(project);
+    liveNow.delete(project);
     if (!done) engine.architectSay(project, 'systeme', `L’Architecte s’est arrêté sans répondre (code ${code}) : ${short(err, 200) || 'sans message'}`, { ok: false });
     engine.notify();
   });
