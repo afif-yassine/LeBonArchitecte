@@ -1,12 +1,12 @@
 # Fiche du projet, écrite par le scan gratuit du Bon Architecte. Vous pouvez la corriger.
 nom: "le-bon-architecte"
-scanne_le: "2026-11-19T00:36:38.881Z"
-fichiers: 163
+scanne_le: "2026-11-19T01:23:55.495Z"
+fichiers: 174
 langages:
-  - { nom: "TypeScript", fichiers: 72 }
-  - { nom: "Markdown", fichiers: 23 }
-  - { nom: "CSS", fichiers: 10 }
-  - { nom: "HTML", fichiers: 5 }
+  - { nom: "TypeScript", fichiers: 75 }
+  - { nom: "Markdown", fichiers: 24 }
+  - { nom: "CSS", fichiers: 11 }
+  - { nom: "HTML", fichiers: 4 }
   - { nom: "JavaScript", fichiers: 3 }
 outils: ["React", "Vite", "Fastify", "TypeScript"]
 commandes:
