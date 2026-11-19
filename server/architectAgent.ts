@@ -20,6 +20,7 @@ import { configDir, envOf, pickCompte, recordQuota } from './comptes.ts';
 import { piecesDir, type Piece } from './pieces.ts';
 import { NOT_PLUGGED } from '../src/shared/screens.ts';
 import { rolesOf } from './equipe.ts';
+import { changes, coverage } from './sprints.ts';
 
 export const ARCHITECT_ID = 'architecte';
 const MODEL = { Opus: 'opus', Sonnet: 'sonnet', Haiku: 'haiku' } as const; // jamais Fable
@@ -38,6 +39,8 @@ const RULES = [
   'Restent au propriétaire (le serveur te les refuse) : réunir dans main (Valider), git, le pilote et le budget, supprimer, décider de tes propres propositions. Si c’est nécessaire, dis-lui précisément quoi faire.',
   'Règles du projet : ne jamais perturber un ticket en cours sans raison ; un changement de périmètre devient un nouveau ticket ; jamais le modèle Fable ; Opus seulement pour le risqué ou l’architecture, sinon Sonnet, Haiku pour le très simple.',
   'Équipe : chaque ticket a un rôle (lba equipe : mission, quand il est appelé, ce qu’il peut faire). Le programme le trouve par les mots du ticket ; mets --role id à la création seulement si ce n’est pas évident. Un rôle ne crée pas d’agent en plus. Changer l’équipe (nouveau rôle, commandes, MCP) reste au propriétaire : propose-le, il décide dans l’écran Équipe.',
+  'Backlog, comme une ESN (décision 0020) : il part du cahier des charges, des décisions, des règles ET de l’état actuel du projet (ce qui existe déjà n’y va pas). Il va jusqu’à l’état final, en gros morceaux reliés aux exigences (backlog-ajouter --exigences E3,E5 --taille S|M|L), dans l’ordre de priorité. Le détail en tickets seulement pour le sprint ouvert : 1 à 4 tickets par élément, avec lba creer … --depuis B-n (le sprint et les exigences suivent seuls). Ouvrir ou fermer un sprint reste au propriétaire : propose l’objectif et les éléments.',
+  'Changement du cahier ou d’une décision (ligne CHANGEMENT de l’état) : liste seulement les éléments et tickets touchés, et ce que tu changerais (backlog-modifier, nouvel élément, ticket à replanifier). Ne change rien avant son oui ; ne recalcule pas tout.',
   'Backlog ou ticket : une idée ou un besoin pas encore décidé va dans le backlog (lba backlog-ajouter, avec une taille S, M ou L) ; un ticket seulement pour du travail décidé. Ne mets pas en double ce qui est déjà dans le backlog ou les tickets.',
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Sécurité : si un ticket touche la connexion, les droits, un quota ou une limite, un paiement ou un envoi de fichiers, ajoute un critère « Test d’abus : <la triche précise> échoue » (exemple : « Test d’abus : supprimer puis remettre le fichier ne remet pas le quota à zéro »). Si la règle n’existe pas encore, propose-la pour les règles du projet. Le programme cherche déjà les secrets et les fichiers .env : pas besoin d’un ticket pour cela.',
@@ -62,9 +65,16 @@ const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pe
 
 // Les 5 premiers éléments du backlog (lot B) : il sait ce qui attend une décision sans le chercher.
 function backlogLine(engine: Engine, project: string): string {
-  const b = engine.backlog(project).items;
-  if (!b.length) return 'Backlog : vide.';
-  return [`Backlog (${b.length}, dans l’ordre voulu) :`, ...b.slice(0, 5).map((x) => `- ${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}`), ...(b.length > 5 ? [`- … ${b.length - 5} autres (lba backlog)`] : [])].join('\n');
+  const all = engine.backlog(project);
+  const b = all.items;
+  const cov = coverage(engine, project);
+  const ch = changes(engine, project);
+  return [
+    ...(cov.total ? [`Cahier des charges : ${cov.covered}/${cov.total} exigences couvertes (backlog ou ticket)${cov.missing.length ? ` ; sans rien : ${cov.missing.map((m) => m.id).join(', ')}` : ''}.`] : []),
+    ...(ch.changed ? [`CHANGEMENT non encore analysé : exigences ajoutées ${ch.added.join(', ') || '—'}, modifiées ${ch.modified.join(', ') || '—'}, enlevées ${ch.removed.join(', ') || '—'}, décisions ${ch.decisions.join(', ') || '—'}.`] : []),
+    all.sprint ? `Sprint ${all.sprint.n} ouvert : « ${all.sprint.objectif} » (${all.sprint.elements.map((x) => `${x.id}${x.tickets.length ? ` → ${x.tickets.join(', ')}` : ' pas découpé'}`).join(' ; ')}).` : 'Aucun sprint ouvert.',
+    b.length ? [`Backlog à venir (${b.length}, dans l’ordre voulu) :`, ...b.slice(0, 5).map((x) => `- ${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}${x.refs?.length ? ` (${x.refs.join(', ')})` : ''}`), ...(b.length > 5 ? [`- … ${b.length - 5} autres (lba backlog)`] : [])].join('\n') : 'Backlog à venir : vide.',
+  ].join('\n');
 }
 
 // État du projet préparé par le programme (0 token) : ce que l'Architecte demanderait sinon avec un outil.

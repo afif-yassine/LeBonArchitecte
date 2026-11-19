@@ -409,3 +409,12 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - **E3 :** à l'import, le programme propose l'équipe d'après ce que contient le projet (0 token) : Docker ou CI donne DevOps, images ou vidéos donnent Média, des documents donnent Rédacteur. Pour LBA, il propose la base plus Rédacteur, en attente de votre « Accepter ».
 - Équipe et Backlog ne sont plus des maquettes : l'Architecte le sait par l'état du projet.
 - Décision 0019. 71 tests verts, écran contrôlé sur PC et téléphone, sans erreur.
+
+## Lots S1 à S4 : backlog depuis le cahier, sprints, rapport de sprint, changements (19 nov. 2026)
+- Votre idée : un backlog tiré du cahier, de l'architecture, des règles et de l'état actuel, puis des sprints jusqu'à l'état final, un rapport complet par sprint, et un recalcul à chaque changement. C'est bon, avec trois adaptations : des gros morceaux et pas 80 tickets d'avance ; un sprint, c'est un paquet de tickets avec un objectif (pas les colonnes du Kanban) ; seul ce qui est touché est recalculé. Décision 0020.
+- **S1 :** chaque élément du backlog cite ses exigences (E1, A3…). Le programme calcule la couverture du cahier : 28 sur 34 sur LBA. Le bouton « Remplir le backlog depuis le cahier et l'état actuel » demande à l'Architecte les gros morceaux jusqu'à l'état final.
+- **S2 :** sprints avec objectif et éléments choisis en tête. L'Architecte découpe en tickets (`--depuis B-n` : sprint et exigences suivent). Ouvrir et fermer restent à vous. Les sprints continuent les lots : le prochain est le sprint 3.
+- **S3 :** le rapport de sprint est calculé par le programme depuis le journal et git (tickets, changements de code par dossier, fichiers nouveaux, décisions, outils, tests et contrôles, vitesse), avec un court résumé par Sonnet à la fermeture. Il est en PDF dans Documents. Essai sur le vrai dépôt : 4 commits et 22 fichiers repérés, PDF de 127 Ko.
+- **S4 :** le programme voit qu'une exigence ou une décision a changé depuis votre dernier « c'est vu ». « Analyser l'impact » demande à l'Architecte seulement ce qui est touché, sans rien changer avant votre oui.
+- L'Architecte a `lba backlog` (couverture, sprint, à venir, faits) et `backlog-modifier`, avec `--exigences`. Ses règles et l'état du projet en parlent.
+- Vérifié : 72 tests verts, écran contrôlé sur PC et téléphone, sans erreur.

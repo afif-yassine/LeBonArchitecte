@@ -1,7 +1,7 @@
 // Le moteur : il écrit chaque événement dans le journal, met à jour la vue des tickets dans la même
 // transaction, puis applique les règles (0 token). Aucune IA ici.
 import type { DatabaseSync } from 'node:sqlite';
-import type { BacklogItem, HumanAction, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
+import type { BacklogItem, HumanAction, Sprint, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
 import { Refused, assertMove, lastProvedStep, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
@@ -13,6 +13,9 @@ const now = () => new Date().toISOString();
 const DEFAULT_PILOT: PilotSettings = { on: true, maxParallel: 2, stopAtLotEnd: true, respectBudget: true, dayBudget: DAY_BUDGET };
 // Minuit à l'heure du PC : le « jour » du budget est celui du propriétaire.
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+
+// Exigences du cahier (« E3 ») : majuscules, sans doublon.
+const cleanRefs = (r?: string[]) => [...new Set((r ?? []).map((x) => String(x).trim().toUpperCase()).filter((x) => /^[A-Z]{1,3}\d{1,3}~?$/.test(x)))]; // « E3~ » : couverte en partie
 
 export class Engine {
   private listeners = new Set<Listener>();
@@ -561,57 +564,86 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return new Map(rows.map((r) => [r.ticket, r.n]));
   }
 
-  // ---------- Backlog (lot B) : chaque changement est un événement du journal ----------
-  backlog(project: string): { items: BacklogItem[]; done: BacklogItem[] } {
-    const rows = this.db.prepare("SELECT type, actor, at, data FROM events WHERE project = ? AND type LIKE 'backlog-%' ORDER BY id").all(project) as { type: string; actor: string; at: string; data: string }[];
+  // ---------- Backlog (lot B) et sprints (décision 0020) : chaque changement est un événement du journal ----------
+  // Un élément est d'abord « à venir ». Choisi pour un sprint, il y est découpé en tickets ; il est « fait » quand
+  // son sprint est fermé (ou, sans sprint, dès qu'il a son ticket). Ordre = priorité.
+  backlog(project: string): { items: BacklogItem[]; sprint: (Sprint & { elements: BacklogItem[] }) | null; done: BacklogItem[] } {
+    const rows = this.db.prepare("SELECT type, actor, at, data FROM events WHERE project = ? AND (type LIKE 'backlog-%' OR type LIKE 'sprint-%') ORDER BY id").all(project) as { type: string; actor: string; at: string; data: string }[];
     const map = new Map<string, BacklogItem>();
     let order: string[] = [];
+    const sprints = new Map<number, Sprint>();
     for (const r of rows) {
       const d = JSON.parse(r.data) as Record<string, any>;
-      if (r.type === 'backlog-ajout') { map.set(d.item.id, { ...d.item, origin: r.actor, at: r.at }); order.push(d.item.id); }
+      if (r.type === 'backlog-ajout') { map.set(d.item.id, { tickets: [], ...d.item, origin: r.actor, at: r.at }); order.push(d.item.id); }
       else if (r.type === 'backlog-maj' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, ...d.patch });
       else if (r.type === 'backlog-ordre') order = [...(d.ids as string[]), ...order.filter((x) => !(d.ids as string[]).includes(x))];
-      else if (r.type === 'backlog-ticket' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, ticket: d.ticket });
+      else if (r.type === 'backlog-ticket' && map.has(d.id)) { const b = map.get(d.id)!; map.set(d.id, { ...b, tickets: [...b.tickets, d.ticket] }); }
       else if (r.type === 'backlog-retire' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, removed: true });
+      else if (r.type === 'sprint-ouvert') {
+        sprints.set(d.sprint.n, { ...d.sprint, openedAt: r.at });
+        for (const id of d.sprint.items as string[]) if (map.has(id)) map.set(id, { ...map.get(id)!, sprint: d.sprint.n });
+      } else if (r.type === 'sprint-ferme' && sprints.has(d.n)) sprints.set(d.n, { ...sprints.get(d.n)!, closedAt: r.at, endCommit: d.endCommit });
+      else if (r.type === 'sprint-resume' && sprints.has(d.n)) sprints.set(d.n, { ...sprints.get(d.n)!, summary: d.text });
     }
-    const all = order.map((id) => map.get(id)).filter((b): b is BacklogItem => Boolean(b));
-    return { items: all.filter((b) => !b.ticket && !b.removed), done: all.filter((b) => b.ticket).slice(-10) };
+    const all = order.map((id) => map.get(id)).filter((b): b is BacklogItem => Boolean(b) && !b!.removed);
+    const open = [...sprints.values()].find((s) => !s.closedAt) ?? null;
+    const closed = new Set([...sprints.values()].filter((s) => s.closedAt).map((s) => s.n));
+    return {
+      items: all.filter((b) => !b.sprint && !b.tickets.length),
+      sprint: open ? { ...open, elements: all.filter((b) => b.sprint === open.n) } : null,
+      done: all.filter((b) => (b.sprint ? closed.has(b.sprint) : b.tickets.length > 0)).slice(-20),
+    };
   }
+  sprints(project: string): Sprint[] {
+    const rows = this.db.prepare("SELECT type, at, data FROM events WHERE project = ? AND type LIKE 'sprint-%' ORDER BY id").all(project) as { type: string; at: string; data: string }[];
+    const out = new Map<number, Sprint>();
+    for (const r of rows) {
+      const d = JSON.parse(r.data) as Record<string, any>;
+      if (r.type === 'sprint-ouvert') out.set(d.sprint.n, { ...d.sprint, openedAt: r.at });
+      else if (r.type === 'sprint-ferme' && out.has(d.n)) out.set(d.n, { ...out.get(d.n)!, closedAt: r.at, endCommit: d.endCommit });
+      else if (r.type === 'sprint-resume' && out.has(d.n)) out.set(d.n, { ...out.get(d.n)!, summary: d.text });
+    }
+    return [...out.values()].sort((a, b) => a.n - b.n);
+  }
+  // Un élément encore modifiable : à venir, ou dans le sprint ouvert.
   private backlogItem(project: string, id: string): BacklogItem {
-    const b = this.backlog(project).items.find((x) => x.id === id);
-    if (!b) throw new Refused(`${id} n’est pas dans le backlog (déjà devenu un ticket, ou retiré).`);
-    return b;
+    const b = this.backlog(project);
+    const x = b.items.find((i) => i.id === id) ?? b.sprint?.elements.find((i) => i.id === id);
+    if (!x) throw new Refused(`${id} n’est pas dans le backlog (déjà fait, ou retiré).`);
+    return x;
   }
-  addBacklog(project: string, o: { title?: string; detail?: string; size?: string }): BacklogItem {
+  addBacklog(project: string, o: { title?: string; detail?: string; size?: string; refs?: string[] }): BacklogItem {
     const title = String(o.title ?? '').trim().slice(0, 160);
     if (!title) throw new Refused('Un élément du backlog a besoin d’un titre.');
     const n = (this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE project = ? AND type = 'backlog-ajout'").get(project) as { n: number }).n + 1;
     const size = o.size === 'S' || o.size === 'M' || o.size === 'L' ? o.size : undefined;
-    const item = { id: `B-${n}`, title, detail: String(o.detail ?? '').trim().slice(0, 2000), ...(size ? { size } : {}) };
+    const refs = cleanRefs(o.refs);
+    const item = { id: `B-${n}`, title, detail: String(o.detail ?? '').trim().slice(0, 2000), ...(size ? { size } : {}), ...(refs.length ? { refs } : {}) };
     this.record({ project, type: 'backlog-ajout', actor: 'vous', data: { item } });
     this.changed();
     return this.backlog(project).items.find((b) => b.id === item.id)!;
   }
-  updateBacklog(project: string, id: string, patch: { title?: string; detail?: string; size?: string }): string {
+  updateBacklog(project: string, id: string, patch: { title?: string; detail?: string; size?: string; refs?: string[] }): string {
     this.backlogItem(project, id);
-    const p: Record<string, string> = {};
+    const p: Record<string, unknown> = {};
     if (patch.title !== undefined) { const t = String(patch.title).trim().slice(0, 160); if (!t) throw new Refused('Le titre ne peut pas être vide.'); p.title = t; }
     if (patch.detail !== undefined) p.detail = String(patch.detail).trim().slice(0, 2000);
     if (patch.size !== undefined) p.size = patch.size === 'S' || patch.size === 'M' || patch.size === 'L' ? patch.size : '';
+    if (patch.refs !== undefined) p.refs = cleanRefs(patch.refs);
     this.record({ project, type: 'backlog-maj', actor: 'vous', data: { id, patch: p } });
     this.changed();
     return `${id} modifié.`;
   }
-  // to : nouvelle place (0 = en tête).
+  // to : nouvelle place parmi les éléments à venir (0 = en tête).
   moveBacklog(project: string, id: string, to: number): string {
-    this.backlogItem(project, id);
+    if (!this.backlog(project).items.some((b) => b.id === id)) throw new Refused(`${id} n’est pas dans les éléments à venir.`);
     const ids = this.backlog(project).items.map((b) => b.id).filter((x) => x !== id);
     ids.splice(Math.max(0, Math.min(ids.length, Math.round(Number(to) || 0))), 0, id);
     this.record({ project, type: 'backlog-ordre', actor: 'vous', data: { ids } });
     this.changed();
     return `${id} placé en position ${ids.indexOf(id) + 1}.`;
   }
-  // Devenu un ticket : il quitte le backlog ; le lien reste dans le journal et dans « Devenus des tickets ».
+  // Un ticket fait depuis un élément. Sans sprint, l'élément est fait ; dans un sprint, il peut avoir plusieurs tickets.
   backlogToTicket(project: string, id: string, ticket: string): void {
     this.backlogItem(project, id);
     this.record({ project, type: 'backlog-ticket', actor: 'vous', data: { id, ticket } });
@@ -619,9 +651,37 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
   }
   removeBacklog(project: string, id: string): string {
     const b = this.backlogItem(project, id);
+    if (b.tickets.length) throw new Refused(`${id} a déjà des tickets (${b.tickets.join(', ')}) : il ne se retire plus.`);
     this.record({ project, type: 'backlog-retire', actor: 'vous', data: { id } });
     this.changed();
     return `${id} « ${b.title} » retiré du backlog (il reste dans le journal).`;
+  }
+  // Sprint (décision 0020) : un objectif et des éléments choisis en tête du backlog. Il continue la numérotation
+  // des lots (un lot était déjà un sprint) : ses tickets ont lot = n. Un seul sprint ouvert à la fois.
+  openSprint(project: string, o: { objectif?: string; items?: string[]; startCommit?: string }): Sprint {
+    const b = this.backlog(project);
+    if (b.sprint) throw new Refused(`Le sprint ${b.sprint.n} est encore ouvert : fermez-le d’abord.`);
+    const objectif = String(o.objectif ?? '').trim().slice(0, 300);
+    if (!objectif) throw new Refused('Un sprint a besoin d’un objectif, par exemple « la connexion des comptes marche ».');
+    const items = [...new Set(o.items ?? [])];
+    if (!items.length) throw new Refused('Choisissez au moins un élément du backlog pour ce sprint.');
+    for (const id of items) if (!b.items.some((x) => x.id === id)) throw new Refused(`${id} n’est pas dans les éléments à venir.`);
+    const n = Math.max(0, ...this.sprints(project).map((s) => s.n), ...this.tickets(project).map((t) => t.lot)) + 1;
+    const sprint = { n, objectif, items, ...(o.startCommit ? { startCommit: o.startCommit } : {}) };
+    this.record({ project, type: 'sprint-ouvert', actor: 'vous', data: { sprint } });
+    this.changed();
+    return this.sprints(project).find((s) => s.n === n)!;
+  }
+  closeSprint(project: string, endCommit?: string): Sprint {
+    const s = this.backlog(project).sprint;
+    if (!s) throw new Refused('Aucun sprint ouvert.');
+    this.record({ project, type: 'sprint-ferme', actor: 'vous', data: { n: s.n, ...(endCommit ? { endCommit } : {}) } });
+    this.changed();
+    return this.sprints(project).find((x) => x.n === s.n)!;
+  }
+  sprintSummary(project: string, n: number, text: string, cost: { tokens: number; costUsd: number }): void {
+    this.record({ project, type: 'sprint-resume', actor: 'architecte', data: { n, text, ...cost } });
+    this.changed();
   }
 
   // Réglage simple (comptes, quotas, compte choisi) : une clé, une valeur texte.

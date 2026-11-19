@@ -17,9 +17,10 @@ import { runArchitectCommand } from './architectCommands.ts';
 import { parseCommand } from '../src/shared/commands.ts';
 import { addCompte, authStatus, comptes, openLogin, pickCompte, probeQuota, projection, quotaOf, removeCompte, updateCompte } from './comptes.ts';
 import { pieceType, piecesDir, piecesOf, savePiece } from './pieces.ts';
+import { acknowledgeChanges, changes, coverage, sprintDocs, sprintFacts, summarizeSprint } from './sprints.ts';
 import { proposeRoles, ROLE_TEMPLATES, roleOf, rolesOf, saveRoles, setEquipeDirs, type Role } from './equipe.ts';
 import { askMap, refreshMap } from './carte.ts';
-import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
+import { assertMainReady, diffFile, fileAt, fileBytesAt, headOf, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
 import { runCommand } from './executor.ts';
 import { architectBusy, askArchitect, CDC_PATH, CHOICES_PATH, choicesDoc, readCdc } from './architect.ts';
@@ -28,6 +29,8 @@ import { humanActions, tickets as seedTickets } from '../src/mock/data.ts';
 const PORT = Number(process.env.LBA_PORT ?? 4317);
 // Dossier de chaque vrai projet. Les projets d'exemple n'en ont pas.
 const PROJECT_DIRS: Record<string, string> = { lba: process.cwd() };
+// Comptes rendus des tickets, des lots et des jours, plus les rapports de sprint (décision 0020) : tous calculés.
+const allReports = (p: string) => [...reportDocs(engine, p), ...sprintDocs(engine, p)];
 setEquipeDirs(PROJECT_DIRS); // fiches de rôle lues dans le dossier principal, jamais dans la branche d'un ticket
 const db = openDb(join(process.cwd(), '.lba', 'lba.db'));
 // Sauvegarde de l'état de l'outil : au démarrage (avant tout changement), puis chaque heure.
@@ -150,14 +153,16 @@ app.post<Id & { Body: { title: string; context?: string; expected: string; crite
   const model = req.body.model && ['Opus', 'Sonnet', 'Haiku'].includes(req.body.model) ? req.body.model as 'Opus' | 'Sonnet' | 'Haiku' : undefined;
   if (req.body.model && !model) throw new Refused('Modèle inconnu : Opus, Sonnet ou Haiku (jamais Fable).');
   // Ticket fait depuis un élément du backlog (lot B) : on vérifie l'élément AVANT de créer le ticket.
-  const from = req.body.from ? engine.backlog(req.params.id).items.find((b) => b.id === req.body.from) : undefined;
+  const bl = engine.backlog(req.params.id);
+  const from = req.body.from ? [...bl.items, ...(bl.sprint?.elements ?? [])].find((b) => b.id === req.body.from) : undefined;
   if (req.body.from && !from) throw new Refused(`${req.body.from} n’est pas dans le backlog (déjà devenu un ticket, ou retiré).`);
   // Rôle (décision 0019) : il doit exister et être actif ; il donne le modèle par défaut si aucun n'est choisi.
   const role = req.body.role ? rolesOf(req.params.id).roles.find((r) => r.id === req.body.role && r.actif) : undefined;
   if (req.body.role && !role) throw new Refused(`Rôle « ${req.body.role} » inconnu ou inactif. Voir : lba equipe.`);
-  const t = engine.createTicket(req.params.id, { ...req.body, model: model ?? role?.modele, criteria: req.body.criteria ?? [], role: role?.id });
+  const t = engine.createTicket(req.params.id, { ...req.body, model: model ?? role?.modele, criteria: req.body.criteria ?? [], role: role?.id, lot: req.body.lot ?? from?.sprint });
   if (from) engine.backlogToTicket(req.params.id, from.id, t.id);
-  return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.${from ? ` ${from.id} quitte le backlog.` : ''}`, ticket: t };
+  if (from?.refs?.length) engine.linkRequirements(t.id, from.refs); // traçabilité : cahier → backlog → ticket
+  return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.${from ? (from.sprint ? ` Relié à ${from.id}, sprint ${from.sprint}.` : ` ${from.id} quitte le backlog.`) : ''}`, ticket: t };
 });
 // Équipe (décision 0019) : fiches de rôle, ce que chaque rôle a vraiment fait, et l'équipe proposée à l'import.
 app.get<Id>('/api/projects/:id/equipe', async (req) => {
@@ -181,12 +186,34 @@ app.put<Id & { Body: { roles?: Role[] } }>('/api/projects/:id/equipe', async (re
   return { message: `Équipe enregistrée : ${roles.length} rôles dans .lba/equipe.json. Elle vaut pour les prochains lancements.` };
 });
 // Backlog (lot B) : idées et besoins pas encore décidés. Retirer (DELETE) reste au propriétaire.
-app.get<Id>('/api/projects/:id/backlog', async (req) => engine.backlog(req.params.id));
-app.post<Id & { Body: { title?: string; detail?: string; size?: string } }>('/api/projects/:id/backlog', async (req) => {
+// Backlog complet (décision 0020) : à venir, sprint ouvert, fait ; couverture du cahier ; changements ; sprints passés.
+app.get<Id>('/api/projects/:id/backlog', async (req) => {
+  const p = req.params.id;
+  const b = engine.backlog(p);
+  const tickets = engine.tickets(p);
+  const status = Object.fromEntries(tickets.map((t) => [t.id, t.status]));
+  return {
+    ...b, status, coverage: coverage(engine, p), changes: changes(engine, p),
+    sprints: engine.sprints(p).map((s) => ({ ...s, facts: sprintFacts(engine, p, s) })),
+    nextSprint: Math.max(0, ...engine.sprints(p).map((s) => s.n), ...tickets.map((t) => t.lot)) + 1,
+  };
+});
+// Ouvrir et fermer un sprint restent au propriétaire (comme Valider) : l'Architecte propose, il décide.
+app.post<Id & { Body: { objectif?: string; items?: string[] } }>('/api/projects/:id/sprints', async (req) => {
+  const s = engine.openSprint(req.params.id, { ...(req.body ?? {}), startCommit: headOf(repoOf(req.params.id)) });
+  return { message: `Sprint ${s.n} ouvert : « ${s.objectif} », ${s.items.length} élément(s). Prochaine étape : les découper en tickets.` };
+});
+app.post<Id>('/api/projects/:id/sprints/fermer', async (req) => {
+  const s = engine.closeSprint(req.params.id, headOf(repoOf(req.params.id)));
+  summarizeSprint(engine, req.params.id, s.n); // résumé court en tête du rapport (environ 5 à 8 k), le reste est déjà calculé
+  return { message: `Sprint ${s.n} fermé. Son rapport est dans Documents (lba/comptes-rendus/sprint-${s.n}) ; le résumé arrive dans une minute.` };
+});
+app.post<Id>('/api/projects/:id/backlog/changement-vu', async (req) => ({ message: acknowledgeChanges(engine, req.params.id) }));
+app.post<Id & { Body: { title?: string; detail?: string; size?: string; refs?: string[] } }>('/api/projects/:id/backlog', async (req) => {
   const b = engine.addBacklog(req.params.id, req.body ?? {});
   return { message: `${b.id} ajouté au backlog.`, item: b };
 });
-app.patch<{ Params: { id: string; bid: string }; Body: { title?: string; detail?: string; size?: string } }>('/api/projects/:id/backlog/:bid', async (req) => ({ message: engine.updateBacklog(req.params.id, req.params.bid, req.body ?? {}) }));
+app.patch<{ Params: { id: string; bid: string }; Body: { title?: string; detail?: string; size?: string; refs?: string[] } }>('/api/projects/:id/backlog/:bid', async (req) => ({ message: engine.updateBacklog(req.params.id, req.params.bid, req.body ?? {}) }));
 app.post<{ Params: { id: string; bid: string }; Body: { to?: number } }>('/api/projects/:id/backlog/:bid/ordre', async (req) => ({ message: engine.moveBacklog(req.params.id, req.params.bid, Number(req.body?.to ?? 0)) }));
 app.delete<{ Params: { id: string; bid: string } }>('/api/projects/:id/backlog/:bid', async (req) => ({ message: engine.removeBacklog(req.params.id, req.params.bid) }));
 app.post<Id & { Body: { problem?: string } }>('/api/tickets/:id/reject', async (req) => ({ message: engine.reject(req.params.id, req.body?.problem ?? '') }));
@@ -242,12 +269,12 @@ app.get<Id>('/api/projects/:id/docs', async (req) => {
   const c = choicesDoc(engine, req.params.id);
   if (c) { const { content: _, ...entry } = c; docs.push(entry); }
   // Chaque compte rendu a aussi son PDF (créé au premier clic) : size 0 = pas encore créé.
-  for (const { content: _, ...entry } of reportDocs(engine, req.params.id)) docs.push(entry, { ...entry, path: entry.path.replace(/\.md$/, '.pdf'), size: 0 });
+  for (const { content: _, ...entry } of allReports(req.params.id)) docs.push(entry, { ...entry, path: entry.path.replace(/\.md$/, '.pdf'), size: 0 });
   return docs;
 });
 app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/doc', async (req) => {
   if (req.query.path === CHOICES_PATH) return { path: CHOICES_PATH, content: choicesDoc(engine, req.params.id)?.content ?? '' };
-  if (req.query.path?.startsWith(REPORTS_DIR)) return { path: req.query.path, content: reportDocs(engine, req.params.id).find((d) => d.path === req.query.path)?.content ?? '' };
+  if (req.query.path?.startsWith(REPORTS_DIR)) return { path: req.query.path, content: allReports(req.params.id).find((d) => d.path === req.query.path)?.content ?? '' };
   return { path: req.query.path, content: readDoc(repoOf(req.params.id), req.query.path ?? '') };
 });
 // PDF ouvert directement dans le navigateur (affichage, pas téléchargement).
@@ -260,7 +287,7 @@ app.get<Id & { Querystring: { path?: string } }>('/api/projects/:id/raw', async 
   const path = req.query.path ?? '';
   // Compte rendu : PDF créé à la demande depuis la page calculée (décision 0013).
   if (path.startsWith(REPORTS_DIR) && path.endsWith('.pdf')) {
-    const doc = reportDocs(engine, req.params.id).find((d) => d.path === path.replace(/\.pdf$/, '.md'));
+    const doc = allReports(req.params.id).find((d) => d.path === path.replace(/\.pdf$/, '.md'));
     if (!doc) throw new Refused('Ce compte rendu n’existe pas (ou plus).');
     return pdf(reply, await reportPdf(repoOf(req.params.id), path, doc.content), path.split('/').pop() ?? 'compte-rendu.pdf');
   }

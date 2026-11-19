@@ -18,6 +18,7 @@ const OWNER_ONLY: { method: string; re: RegExp; why: string }[] = [
   { method: 'POST', re: /^\/api\/tickets\/[^/]+\/(steps\/[^/]+\/prove|agent-done|simulate-run)$/, why: 'les preuves sont écrites par le programme, jamais par un agent' },
   { method: 'DELETE', re: /./, why: 'supprimer reste à vous' },
   // Comptes Claude (décision 0017) : les ajouter, connecter, choisir et dépenser pour lire un quota restent à vous.
+  { method: 'POST', re: /^\/api\/projects\/[^/]+\/(sprints|sprints\/fermer|backlog\/changement-vu)$/, why: 'ouvrir ou fermer un sprint, et dire « c’est vu » à un changement du cahier, restent à vous : proposez-le' },
   { method: 'PUT', re: /^\/api\/projects\/[^/]+\/equipe$/, why: 'l’équipe (fiches de rôle) reste à vous : proposez-la, il décide' },
   { method: 'POST', re: /^\/api\/comptes/, why: 'les comptes restent à vous' },
   { method: 'PATCH', re: /^\/api\/comptes/, why: 'les comptes restent à vous' },

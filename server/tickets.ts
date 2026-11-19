@@ -31,7 +31,8 @@ export type EventType =
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
   | 'exigences-liees' | 'architecte-revue' | 'architecte-fil' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
   | 'ticket-interrompu' | 'ticket-repris' | 'activite'
-  | 'backlog-ajout' | 'backlog-maj' | 'backlog-ordre' | 'backlog-ticket' | 'backlog-retire';
+  | 'backlog-ajout' | 'backlog-maj' | 'backlog-ordre' | 'backlog-ticket' | 'backlog-retire'
+  | 'sprint-ouvert' | 'sprint-ferme' | 'sprint-resume';
 
 export interface EngineEvent {
   id?: number;

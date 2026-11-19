@@ -43,7 +43,8 @@ const COMMANDS = {
   creer: ['--titre T --attendu A [--pourquoi P] [--criteres "a|b"] [--deps "LBA-1,LBA-2"] [--lot n] [--modele Opus|Sonnet|Haiku] [--depuis B-n] [--role id]', 'nouveau ticket (plan à valider) ; --depuis : il vient du backlog, qu’il quitte ; --role : fiche de rôle (voir equipe)'],
   equipe: ['', 'les fiches de rôle : mission, quand le rôle est appelé, ce qu’il peut faire'],
   backlog: ['', 'le backlog : idées et besoins pas encore décidés, dans l’ordre'],
-  'backlog-ajouter': ['--titre T [--detail D] [--taille S|M|L]', 'ajouter une idée ou un besoin au backlog'],
+  'backlog-ajouter': ['--titre T [--detail D] [--taille S|M|L] [--exigences "E3,E5"]', 'ajouter un morceau ou une idée au backlog, relié aux exigences du cahier'],
+  'backlog-modifier': ['<B-n> [--titre T] [--detail D] [--taille S|M|L] [--exigences "E3,E5"]', 'modifier un élément (à venir ou dans le sprint)'],
   'backlog-placer': ['<B-n> <place>', 'changer sa place dans le backlog (1 = en tête)'],
   'valider-plan': ['<id> [id…]', 'valider des plans : le pilote pourra les lancer'],
   replanifier: ['<id>', 'refaire le plan d’un ticket à faire'],
@@ -110,15 +111,24 @@ const run = {
   },
   async backlog() {
     const b = await api('GET', `/projects/${PROJECT}/backlog`);
-    if (!b.items.length) console.log('Backlog vide.');
-    b.items.forEach((x, i) => console.log(`${i + 1}. ${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}${x.detail ? ` : ${x.detail.slice(0, 160)}` : ''} (par ${x.origin})`));
-    if (b.done.length) console.log(`Devenus des tickets : ${b.done.map((x) => `${x.id} → ${x.ticket}`).join(', ')}`);
+    const it = (x) => `${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}${x.refs?.length ? ` (exigences ${x.refs.join(', ')})` : ''}${x.detail ? ` : ${x.detail.slice(0, 160)}` : ''}`;
+    console.log(`Cahier : ${b.coverage.covered}/${b.coverage.total} exigences couvertes${b.coverage.missing.length ? ` ; sans rien : ${b.coverage.missing.map((m) => `${m.id} ${m.title}`).join(', ')}` : ''}.`);
+    if (b.changes?.changed) console.log(`CHANGEMENT depuis la dernière fois : exigences ajoutées ${b.changes.added.join(', ') || '—'}, modifiées ${b.changes.modified.join(', ') || '—'}, enlevées ${b.changes.removed.join(', ') || '—'}, décisions ${b.changes.decisions.join(', ') || '—'}.`);
+    if (b.sprint) { console.log(`Sprint ${b.sprint.n} ouvert : ${b.sprint.objectif}`); for (const x of b.sprint.elements) console.log(`  ${it(x)} → tickets : ${x.tickets.map((t) => `${t} (${b.status[t] ?? '?'})`).join(', ') || 'pas encore découpé'}`); }
+    else console.log(`Aucun sprint ouvert (le prochain sera le sprint ${b.nextSprint}).`);
+    console.log(b.items.length ? 'À venir, dans l’ordre :' : 'Rien à venir.');
+    b.items.forEach((x, i) => console.log(`  ${i + 1}. ${it(x)}`));
+    if (b.done.length) console.log(`Faits : ${b.done.map((x) => `${x.id} → ${x.tickets.join(', ')}`).join(' ; ')}`);
   },
   async equipe() {
     const e = await api('GET', `/projects/${PROJECT}/equipe`);
     for (const r of e.roles) console.log(`${r.id}${r.actif ? '' : ' (inactif)'} : ${r.nom}${r.modele ? `, ${r.modele}` : ''}. ${r.mission}${r.mots?.length ? ` Appelé pour : ${r.mots.join(', ')}.` : ''}${r.ecrire?.length ? ` Écrit seulement dans : ${r.ecrire.join(', ')}.` : ''}`);
   },
-  async 'backlog-ajouter'() { say(await api('POST', `/projects/${PROJECT}/backlog`, { title: need(opts.titre, '--titre'), detail: opts.detail, size: opts.taille })); },
+  async 'backlog-ajouter'() { say(await api('POST', `/projects/${PROJECT}/backlog`, { title: need(opts.titre, '--titre'), detail: opts.detail, size: opts.taille, refs: list(opts.exigences) })); },
+  async 'backlog-modifier'() {
+    const body = Object.fromEntries(Object.entries({ title: opts.titre, detail: opts.detail, size: opts.taille, refs: opts.exigences === undefined ? undefined : list(opts.exigences) }).filter(([, v]) => v !== undefined));
+    say(await api('PATCH', `/projects/${PROJECT}/backlog/${need(args[0], 'l’id B-n')}`, body));
+  },
   async 'backlog-placer'() { say(await api('POST', `/projects/${PROJECT}/backlog/${need(args[0], 'l’id B-n')}/ordre`, { to: Number(need(args[1], 'la place')) - 1 })); },
   async 'valider-plan'() { say(await api('POST', `/projects/${PROJECT}/plans/validate`, { ids: args.length ? args : need(null, 'au moins un id') })); },
   async replanifier() { say(await api('POST', `/tickets/${need(args[0], 'l’id')}/plan/redo`, {})); },

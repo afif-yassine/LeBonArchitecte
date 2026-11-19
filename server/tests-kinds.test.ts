@@ -231,13 +231,14 @@ test('backlog : ajouter, ranger, modifier, devenir un ticket, retirer (lot B)', 
   // Devenu un ticket : il quitte le backlog, le lien reste.
   e.backlogToTicket('p', 'B-2', 'P-1');
   assert.deepEqual(e.backlog('p').items.map((x) => x.id), ['B-3', 'B-1']);
-  assert.deepEqual(e.backlog('p').done.map((x) => [x.id, x.ticket]), [['B-2', 'P-1']]);
-  assert.throws(() => e.backlogToTicket('p', 'B-2', 'P-2'), /déjà devenu un ticket/, 'jamais deux fois');
+  assert.deepEqual(e.backlog('p').done.map((x) => [x.id, x.tickets]), [['B-2', ['P-1']]]);
+  assert.throws(() => e.backlogToTicket('p', 'B-2', 'P-2'), /déjà fait/, 'sans sprint : un seul ticket');
   assert.match(e.removeBacklog('p', 'B-3'), /reste dans le journal/);
   assert.deepEqual(e.backlog('p').items.map((x) => x.id), ['B-1']);
   // L'Architecte le voit dans l'état du projet (0 token), avec la liste des écrans en maquette.
   const d = projectDigest(e, 'p');
-  assert.match(d, /Backlog \(1, dans l’ordre voulu\) :\n- B-1 \[M\] Thème sombre/);
+  assert.match(d, /Backlog à venir \(1, dans l’ordre voulu\) :\n- B-1 \[M\] Thème sombre/);
+  assert.match(d, /Aucun sprint ouvert/);
   assert.match(d, /Écrans encore en maquette[^\n]*sante/);
   assert.doesNotMatch(d, /maquette[^\n]*equipe/, 'l’équipe n’est plus une maquette (décision 0019)');
   assert.match(d, /Équipe \(rôles actifs\) : developpeur, eclaireur, securite/);
@@ -283,4 +284,66 @@ test('fiches de rôle : garde-fous, rôle d’un ticket, périmètre, équipe pr
   saveRoles('p', prop.roles, repo);
   assert.equal(rolesOf('p', repo).source, 'fichier');
   assert.ok(rolesOf('p', repo).roles.some((r) => r.id === 'devops' && r.actif));
+});
+
+test('sprints, couverture du cahier, changements et rapport de sprint (décision 0020)', async () => {
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { coverage, changes, acknowledgeChanges, sprintMarkdown, sprintFacts } = await import('./sprints.ts');
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const repo = mkdtempSync(join(tmpdir(), 'lba-sprint-'));
+  mkdirSync(join(repo, 'docs', 'cahier-des-charges'), { recursive: true });
+  mkdirSync(join(repo, 'docs', 'decisions'), { recursive: true });
+  const cdc = (extra: string) => writeFileSync(join(repo, 'docs', 'cahier-des-charges', 'cahier-des-charges.md'),
+    `# Cahier\nVersion 1\n\n## 2. Exigences\n- **E1 Connexion** : se connecter.\n- **E2 Export** : exporter en PDF.\n${extra}`);
+  cdc('');
+  const e = new Engine(openDb(':memory:'));
+
+  // S1 : couverture. Un élément relié à E1 la couvre ; E2 n'a rien.
+  e.addBacklog('p', { title: 'Comptes et connexion', size: 'L', refs: ['e1', 'zz'] });
+  e.addBacklog('p', { title: 'Export', refs: ['E2~'] });
+  assert.deepEqual(e.backlog('p').items[0].refs, ['E1'], 'exigences en majuscules, les fausses sont ignorées');
+  const cov = coverage(e, 'p', repo);
+  assert.equal(cov.total, 2);
+  assert.equal(cov.covered, 2, 'E2~ (en partie) compte aussi');
+
+  // S2 : un sprint, avec un objectif et des éléments à venir. Il suit les lots (lot 2 existe → sprint 3).
+  e.createTicket('p', { title: 'Ancien', expected: 'x', criteria: ['x'], lot: 2 });
+  assert.throws(() => e.openSprint('p', { objectif: '', items: ['B-1'] }), /objectif/);
+  assert.throws(() => e.openSprint('p', { objectif: 'Connexion', items: ['B-9'] }), /pas dans les éléments à venir/);
+  const s = e.openSprint('p', { objectif: 'La connexion marche', items: ['B-1'], startCommit: 'abc1234' });
+  assert.equal(s.n, 3);
+  assert.throws(() => e.openSprint('p', { objectif: 'Autre', items: ['B-2'] }), /encore ouvert/);
+  const b = e.backlog('p');
+  assert.deepEqual(b.items.map((x) => x.id), ['B-2'], 'B-1 a quitté « à venir »');
+  assert.equal(b.sprint?.elements[0].id, 'B-1');
+  // Découpage : deux tickets pour le même élément, dans le lot du sprint.
+  const t1 = e.createTicket('p', { title: 'Écran de connexion', expected: 'x', criteria: ['x'], lot: 3 });
+  const t2 = e.createTicket('p', { title: 'Mot de passe oublié', expected: 'x', criteria: ['x'], lot: 3 });
+  e.backlogToTicket('p', 'B-1', t1.id); e.backlogToTicket('p', 'B-1', t2.id);
+  assert.deepEqual(e.backlog('p').sprint?.elements[0].tickets, [t1.id, t2.id], 'dans un sprint, un élément peut avoir plusieurs tickets');
+  assert.deepEqual(sprintFacts(e, 'p', e.sprints('p')[0]).ids, [t1.id, t2.id]);
+  // S3 : le rapport, calculé, même en cours.
+  const md = sprintMarkdown(e, 'p', e.sprints('p')[0], repo);
+  assert.match(md, /# Rapport du sprint 3/);
+  assert.match(md, /Objectif : \*\*La connexion marche\*\*/);
+  assert.match(md, /0 ticket\(s\) fini\(s\) sur 2/);
+  assert.match(md, /B-1 : Comptes et connexion \| E1 \|/);
+  assert.match(md, /## Changements d’architecture et de code[\s\S]*## Décisions prises[\s\S]*## Outils utilisés[\s\S]*## Tests et contrôles[\s\S]*## Vitesse/);
+  e.closeSprint('p', 'def5678');
+  assert.equal(e.backlog('p').sprint, null);
+  assert.deepEqual(e.backlog('p').done.map((x) => x.id), ['B-1'], 'sprint fermé : son élément est fait');
+  assert.equal(e.sprints('p')[0].endCommit, 'def5678');
+
+  // S4 : changement du cahier ou des décisions depuis « c'est vu ».
+  assert.equal(changes(e, 'p', repo).changed, false, 'première fois : point de départ');
+  cdc('- **E3 Notifications** : prévenir.\n');
+  writeFileSync(join(repo, 'docs', 'decisions', '0001-choix.md'), '# 0001 : choix');
+  const ch = changes(e, 'p', repo);
+  assert.equal(ch.changed, true);
+  assert.deepEqual([ch.added, ch.modified, ch.removed, ch.decisions], [['E3'], [], [], ['0001-choix.md']]);
+  acknowledgeChanges(e, 'p', repo);
+  assert.equal(changes(e, 'p', repo).changed, false);
 });

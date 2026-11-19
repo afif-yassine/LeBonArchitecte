@@ -138,3 +138,17 @@ export function removeWorktree(repo: string, id: string): void {
   // Windows garde parfois le dossier, vide : on le retire seulement s'il est vide (jamais récursif).
   try { if (existsSync(dir)) rmdirSync(dir); } catch { /* pas vide ou verrouillé : on le laisse */ }
 }
+
+// Sprints (décision 0020) : le commit de main au début et à la fin, puis ce qui a changé entre les deux.
+export function headOf(repo: string): string | undefined {
+  const r = tryRun(repo, ['rev-parse', '--short', MAIN]);
+  return r.ok ? r.out : undefined;
+}
+export function rangeChanges(repo: string, from: string, to = MAIN): { files: { status: string; path: string; plus: number; minus: number }[]; commits: number } {
+  const ns = tryRun(repo, ['-c', 'core.quotepath=off', 'diff', '--name-status', `${from}..${to}`]);
+  const num = tryRun(repo, ['-c', 'core.quotepath=off', 'diff', '--numstat', `${from}..${to}`]);
+  const stat = new Map(num.ok ? num.out.split('\n').filter(Boolean).map((l) => { const [p, m, path] = l.split('\t'); return [path, { plus: Number(p) || 0, minus: Number(m) || 0 }] as const; }) : []);
+  const files = ns.ok ? ns.out.split('\n').filter(Boolean).map((l) => { const [s, ...rest] = l.split('\t'); const path = rest[rest.length - 1]; return { status: s[0], path, ...(stat.get(path) ?? { plus: 0, minus: 0 }) }; }) : [];
+  const c = tryRun(repo, ['rev-list', '--count', `${from}..${to}`]);
+  return { files, commits: c.ok ? Number(c.out) || 0 : 0 };
+}

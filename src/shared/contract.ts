@@ -148,7 +148,10 @@ export interface TicketActivity {
 
 // Backlog (lot B) : les idées et besoins pas encore décidés. Un élément qui devient un ticket quitte le backlog
 // (une information à un seul endroit) : il garde seulement le lien vers son ticket.
-export interface BacklogItem { id: string; title: string; detail: string; origin: string; size?: 'S' | 'M' | 'L'; at: string; ticket?: string; removed?: boolean }
+// refs : exigences du cahier qu'il couvre (« E3 ») ; sprint : le sprint qui l'a pris ; tickets : ceux faits depuis lui.
+export interface BacklogItem { id: string; title: string; detail: string; origin: string; size?: 'S' | 'M' | 'L'; at: string; refs?: string[]; sprint?: number; tickets: string[]; removed?: boolean }
+// Sprint (décision 0020) : un objectif, des éléments du backlog, un début et une fin (avec les commits de git).
+export interface Sprint { n: number; objectif: string; items: string[]; openedAt: string; closedAt?: string; startCommit?: string; endCommit?: string; summary?: string }
 
 export interface Ticket {
   id: string;
