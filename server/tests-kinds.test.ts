@@ -145,6 +145,11 @@ test('commandes du chat de l’Architecte : reconnues, faites par le programme, 
   assert.equal(e.architectModel('p'), 'Opus');
   assert.equal(pickArchitectModel('mets LBA-3 en tête', e.architectModel('p')), 'Opus');
   assert.equal(pickArchitectModel('/sonnet mets LBA-3 en tête', e.architectModel('p')), 'Sonnet', 'le préfixe passe avant');
+  await runArchitectCommand(e, 'p', process.cwd(), '/modele haiku');
+  assert.equal(e.architectModel('p'), 'Haiku', 'Haiku se choisit (lot C1), jamais tout seul');
+  assert.equal(pickArchitectModel('/haiku mets LBA-3 en tête'), 'Haiku');
+  assert.equal(parseCommand('/haiku fais ça'), undefined);
+  assert.equal(parseCommand('/btw combien de tickets ?')?.arg, 'combien de tickets ?');
   await runArchitectCommand(e, 'p', process.cwd(), '/modele auto');
   assert.equal(e.architectModel('p'), undefined);
 
@@ -159,4 +164,46 @@ test('commandes du chat de l’Architecte : reconnues, faites par le programme, 
   assert.equal(last().tokens, 0);
   assert.equal(e.spentToday(), 0, 'les commandes ne coûtent aucun token');
   assert.doesNotMatch(notebook(e, 'p'), /\/usage|\/modele/, 'les commandes ne vont pas dans le carnet');
+});
+
+test('comptes, quotas et pièces jointes (décision 0017, lots C1 à C4)', async () => {
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { comptes, pickCompte, projection, quotaOf, recordQuota, updateCompte, removeCompte } = await import('./comptes.ts');
+  const { imageTokens, estimate, savePiece } = await import('./pieces.ts');
+  const { notebook } = await import('./architectAgent.ts');
+  const e = new Engine(openDb(':memory:'));
+  assert.deepEqual(comptes(e).map((c) => c.id), ['machine'], 'le compte de la machine existe toujours');
+  assert.throws(() => removeCompte(e, 'machine'), /ne se retire pas/);
+  assert.throws(() => updateCompte(e, 'machine', { on: false }), /au moins un compte actif/);
+
+  // Quota lu dans le message officiel de Claude Code (forme mesurée le 19 nov.).
+  const reset = Math.round(Date.now() / 1000) + 2 * 3600;
+  assert.ok(recordQuota(e, 'machine', { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.95, resetsAt: reset }, seven_day: { utilization: 0.11, resetsAt: reset } } }));
+  assert.equal(quotaOf(e, 'machine')?.five?.used, 0.95);
+  assert.equal(recordQuota(e, 'machine', {}), false, 'sans fenêtres : rien d’écrit');
+  // Deux comptes : au-delà de 90 % sur la 5 h, le suivant part ; un compte fixé passe avant.
+  e.setSetting('comptes', JSON.stringify([...comptes(e), { id: 'perso', name: 'Perso', dir: 'x', on: true, projects: [] }]));
+  assert.equal(pickCompte(e, 'p', 'agents').id, 'perso');
+  e.setSetting('compte-agents:p', 'machine');
+  assert.equal(pickCompte(e, 'p', 'agents').id, 'machine');
+  updateCompte(e, 'perso', { projects: ['autre'] });
+  e.setSetting('compte-agents:p', '');
+  assert.equal(pickCompte(e, 'p', 'agents').id, 'machine', 'un compte réservé à un autre projet n’est pas pris');
+  // Prévision : 50 % utilisés à mi-fenêtre → 100 % prévus à la remise à zéro.
+  assert.equal(Math.round(projection({ used: 0.5, resetsAt: new Date(Date.now() + 2.5 * 3600_000).toISOString() }, 5)! * 100), 100);
+
+  // Pièces : coût estimé par le programme. Image 400 × 300 → 160 tokens ; grande image plafonnée à 1 600.
+  assert.equal(imageTokens(400, 300), 160);
+  assert.equal(imageTokens(4000, 3000), 1600);
+  const png = Buffer.alloc(24); png.writeUInt32BE(0x89504e47, 0); png.writeUInt32BE(800, 16); png.writeUInt32BE(600, 20);
+  assert.deepEqual(estimate('a.png', png), { kind: 'image', tokens: 640, detail: '800 × 600 px' });
+  assert.equal(estimate('n.md', Buffer.from('x'.repeat(400))).tokens, 100);
+  assert.throws(() => savePiece('p', '.env', Buffer.from('A=1').toString('base64')), /secrets/);
+  assert.throws(() => savePiece('p', 'virus.exe', Buffer.from('x').toString('base64')), /type non pris/);
+
+  // /btw n'entre jamais dans le carnet de l'Architecte.
+  e.architectSay('p', 'vous', '/btw une question en passant', { btw: true });
+  e.architectSay('p', 'architecte', 'réponse en passant', { btw: true });
+  assert.doesNotMatch(notebook(e, 'p'), /en passant/);
 });

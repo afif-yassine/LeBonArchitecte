@@ -3,9 +3,10 @@
 // Sortie « stream-json » lue ligne par ligne et racontée dans le direct.
 // Interdits appliqués par Claude Code lui-même (règles deny), en plus du contrôle du moteur.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
+import { compteOfDir, configDirs, envOf, pickCompte, recordQuota } from './comptes.ts';
 import type { Ticket } from '../src/shared/contract.ts';
 import { RESEARCH_DIRS } from '../src/shared/plan.ts';
 import { isTestCommand, readTestOutput, testDetail } from '../src/shared/tests.ts';
@@ -25,6 +26,8 @@ const DENIED = ['Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'B
   'Read(**/.env*)', 'Read(**/*.pem)', 'Write(**/.env*)', 'Edit(**/*.pem)', 'Write(**/*.pem)', 'Read(**/*.key)', 'Read(**/id_rsa*)',
   // tail, head et grep sont permis : sans ceci, « tail .env » lirait un secret (lot S, décision 0016).
   'Bash(* .env*)', 'Bash(*/.env*)', 'Bash(*.pem*)', 'Bash(*id_rsa*)',
+  // Dossiers des comptes Claude (décision 0017) : ils gardent les connexions, jamais lus par un agent.
+  'Read(**/.lba/comptes/**)', 'Grep(**/.lba/comptes/**)', 'Glob(**/.lba/comptes/**)', 'Read(**/.credentials.json)', 'Bash(*.lba/comptes*)', 'Bash(*.lba\\comptes*)', 'Bash(*.credentials.json*)',
   // Mémoire personnelle du propriétaire et journaux des sessions (~/.claude) : hors du projet, jamais lus ni écrits.
   'Read(~/.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)', 'Edit(**/.env*)', 'Edit(**/package.json)', 'Write(**/package.json)', 'WebFetch', 'WebSearch'];
 
@@ -102,8 +105,13 @@ const DENIED_MSG = /^Permission to use|was denied|denied by/i;
 const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 // Journal d'une session Claude Code (dossier = chemin du travail, avec : \ / . remplacés par -).
+// Avec plusieurs comptes (décision 0017), le journal est dans le dossier du compte qui l'a écrit : on le cherche.
+const transcriptIn = (dir: string, cwd: string, session: string) => join(dir, 'projects', cwd.replace(/[:\\/.]/g, '-'), `${session}.jsonl`);
+export function sessionDir(cwd: string, session: string): string | undefined {
+  return configDirs().find((d) => existsSync(transcriptIn(d, cwd, session)));
+}
 export const transcriptOf = (cwd: string, session: string) =>
-  join(homedir(), '.claude', 'projects', cwd.replace(/[:\\/.]/g, '-'), `${session}.jsonl`);
+  transcriptIn(sessionDir(cwd, session) ?? join(homedir(), '.claude'), cwd, session);
 
 // Ce que la partie coupée d'une session a lu et consommé : rien n'est perdu à la reprise.
 export function sessionSoFar(cwd: string, session: string): { read: string[]; used: number; cacheRead: number; turns: number } {
@@ -192,8 +200,10 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
     '--effort', t.model === 'Haiku' || t.effort === 'bas' ? 'low' : t.effort === 'haut' || t.model === 'Opus' ? 'high' : 'medium',
     '--append-system-prompt', 'Tu travailles pour Le Bon Architecte. Réponds et résume en français simple, sans jargon.'];
   if (resume) args.push('--resume', resume);
+  // Compte : une conversation reprise reste sur le compte qui l'a commencée ; sinon le compte choisi (décision 0017).
+  const compte = (resume && compteOfDir(engine, sessionDir(cwd, resume))) || pickCompte(engine, t.projectId, 'agents');
   // Mémoire automatique coupée : l'agent ne charge pas la mémoire personnelle du propriétaire (vu dans LBA-17).
-  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
+  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, ...envOf(compte), CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   const brief = resume && why === 'reparation'
     ? `Le programme a vérifié ton travail. ${complaint} Corrige seulement cela : c’est ta seule tentative de réparation. Lance les tests, annonce les étapes reprises (« ÉTAPE n : faite »), puis écris ton résumé.`
     : resume && why === 'message'
@@ -241,8 +251,9 @@ export function runClaude(engine: Engine, t: Ticket, cwd: string, complaint: str
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init') {
       if (m.session_id) try { engine.setSession(t.id, String(m.session_id)); } catch { /* ignore */ }
-      live('agent', resume ? `Agent Claude repris sur ${m.model}` : `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket`);
+      live('agent', resume ? `Agent Claude repris sur ${m.model}` : `Agent Claude démarré sur ${m.model}`, `${m.tools?.length ?? 0} outils, dossier du ticket, compte « ${compte.name} »`);
     }
+    else if (m.type === 'rate_limit_event') recordQuota(engine, compte.id, m.rate_limit_info);
     else if (m.type === 'system' && m.subtype === 'api_retry') live('systeme', `Nouvel essai de l’API (${m.error})`, `essai ${m.attempt} sur ${m.max_retries}`);
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
       for (const b of m.message?.content ?? []) {

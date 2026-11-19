@@ -1,0 +1,27 @@
+/* Comptes et quotas (décision 0017, lots C3 et C4). */
+.qw { min-width: 0; }
+.qw__reset { margin-top: 4px; font-size: .75rem; color: var(--faint); }
+.qw__prevu { font-weight: 600; }
+.qw__prevu.is-green { color: var(--ok); }
+.qw__prevu.is-orange { color: var(--wait); }
+.qw__prevu.is-red { color: var(--danger); }
+.conn.is-off { opacity: .65; }
+.conn__add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.conn__add input { flex: 1; min-width: 220px; padding: 7px 10px; border-radius: var(--r-m); border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; }
+.conn__add input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.qchip { position: relative; }
+.qchip__btn { gap: 6px; font-variant-numeric: tabular-nums; }
+.qchip__btn.is-orange { color: var(--wait); }
+.qchip__btn.is-red { color: var(--danger); }
+.qchip__pop { position: fixed; z-index: 1000; width: 340px; max-width: calc(100vw - 32px); padding: 14px; border-radius: var(--r-l); border: 1px solid var(--line); background: var(--raised); box-shadow: var(--shadow); display: grid; gap: 12px; }
+.qchip__title { font-weight: 650; color: var(--text-strong); }
+.qchip__acc { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.qchip__name { font-weight: 600; color: var(--text-strong); font-size: .9rem; }
+.qchip__wins { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.qchip__note { margin: 0; }
+@media (max-width: 700px) {
+  .qchip__txt { display: none; }
+  .qchip__pop { left: 16px; right: 16px !important; width: auto; }
+}
+.qchip__pop > .btn { justify-self: start; }

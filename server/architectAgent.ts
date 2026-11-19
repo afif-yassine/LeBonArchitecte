@@ -11,14 +11,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { contextOf } from './claude.ts';
+import { contextOf, sessionDir } from './claude.ts';
 import { pickArchitectModel } from '../src/shared/architect.ts';
 import type { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
 import { cacheWarm } from './supervisor.ts';
+import { configDir, envOf, pickCompte, recordQuota } from './comptes.ts';
+import { piecesDir, type Piece } from './pieces.ts';
 
 export const ARCHITECT_ID = 'architecte';
-const MODEL = { Opus: 'opus', Sonnet: 'sonnet' } as const;
+const MODEL = { Opus: 'opus', Sonnet: 'sonnet', Haiku: 'haiku' } as const; // jamais Fable
 
 // Consigne fixe (jamais de valeur qui change ici : sinon le cache ne sert plus).
 const RULES = [
@@ -44,6 +46,7 @@ const RULES = [
 const ALLOWED = ['Read', 'Glob', 'Grep', 'Bash(node scripts/lba.mjs *)', 'Bash(git status)', 'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)'];
 const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pem)', 'Read(~/.claude/**)', 'Glob(~/.claude/**)', 'Grep(~/.claude/**)',
   'Read(**/graphify-out/**)', 'Grep(**/graphify-out/**)', 'Glob(**/graphify-out/**)',
+  'Read(**/.lba/comptes/**)', 'Grep(**/.lba/comptes/**)', 'Glob(**/.lba/comptes/**)', 'Read(**/.credentials.json)',
   'Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git -C *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npx *)', 'Bash(npm *)',
   'WebFetch', 'WebSearch'];
 
@@ -75,7 +78,8 @@ export function projectDigest(engine: Engine, project: string): string {
 // Vos 10 dernières consignes + ses 12 dernières actions + le titre de chaque décision : de quoi voir une contradiction.
 export function notebook(engine: Engine, project: string, repo?: string): string {
   // Les commandes (/usage, /context…) sont faites par le programme : ni consignes ni réponses à retenir.
-  const fil = engine.architectThread(project, 120).filter((m) => !m.commande);
+  // /btw non plus : une question en passant ne doit pas entrer dans sa mémoire (comme dans Claude Code).
+  const fil = engine.architectThread(project, 120).filter((m) => !m.commande && !m.btw);
   const when = (at: string) => at.slice(5, 16).replace('T', ' ');
   const asks = fil.filter((m) => m.who === 'vous').slice(-10);
   const acts = fil.filter((m) => m.who === 'action').slice(-12);
@@ -152,35 +156,42 @@ const short = (s: unknown, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim
 const running = new Map<string, ChildProcess>();
 export const architectRunning = (project: string) => running.has(project);
 
-export function askArchitectAgent(engine: Engine, project: string, repo: string, text: string): string {
-  if (!text.trim()) throw new Refused('Écrivez votre demande à l’Architecte.');
-  if (running.has(project)) throw new Refused('L’Architecte travaille déjà sur votre demande précédente : attendez sa réponse.');
+export function askArchitectAgent(engine: Engine, project: string, repo: string, text: string, pieces: Piece[] = []): string {
+  if (!text.trim() && !pieces.length) throw new Refused('Écrivez votre demande à l’Architecte.');
+  if (running.has(project)) throw new Refused('L’Architecte travaille déjà sur votre demande précédente : attendez sa réponse. Une question en passant reste possible avec /btw.');
   const model = pickArchitectModel(text, engine.architectModel(project));
-  const ask = text.replace(/^\/(opus|sonnet)\s*/i, '').trim();
+  const ask = text.replace(/^\/(opus|sonnet|haiku)\s*/i, '').trim() || 'Regarde les pièces jointes et dis-moi ce que tu en penses pour le projet.';
   const cwd = repo; // lecture seule : il voit main tel qu'il est maintenant
   const key = `${ARCHITECT_ID}-${project}`;
   const prev = engine.sessionOf(key);
+  // Compte choisi (décision 0017). Une conversation gardée par un autre compte ne se reprend pas.
+  const compte = pickCompte(engine, project, 'architecte');
+  const otherAccount = Boolean(prev && sessionDir(cwd, prev) && sessionDir(cwd, prev)!.toLowerCase() !== configDir(compte).toLowerCase());
   // Reprendre seulement si le cache est chaud (moins de 5 min) ET la conversation encore courte.
   const size = prev ? contextOf(cwd, prev).end : 0;
-  const resume = prev && cacheWarm(cwd, prev) && size < MAX_RESUME_CONTEXT ? prev : undefined;
-  const fresh = prev && !resume ? (size >= MAX_RESUME_CONTEXT ? `conversation trop longue (${Math.round(size / 1000)} k)` : 'pause de plus de 5 min') : '';
+  const resume = prev && !otherAccount && cacheWarm(cwd, prev) && size < MAX_RESUME_CONTEXT ? prev : undefined;
+  const fresh = prev && !resume ? (otherAccount ? `autre compte : « ${compte.name} »` : size >= MAX_RESUME_CONTEXT ? `conversation trop longue (${Math.round(size / 1000)} k)` : 'pause de plus de 5 min') : '';
 
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL[model],
     '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
     '--allowedTools', ALLOWED.join(','), '--disallowedTools', DENIED.join(','),
-    '--max-budget-usd', model === 'Opus' ? '6' : '2',
+    '--max-budget-usd', model === 'Opus' ? '6' : model === 'Haiku' ? '1' : '2',
     '--strict-mcp-config', '--disable-slash-commands', '--tools', 'Read,Glob,Grep,Bash',
-    '--effort', model === 'Opus' ? 'high' : 'medium',
+    '--effort', model === 'Opus' ? 'high' : model === 'Haiku' ? 'low' : 'medium',
     '--append-system-prompt', RULES];
   if (resume) args.push('--resume', resume);
+  // Pièces jointes (lot C2) : il les lit lui-même avec Read, dans leur dossier rangé (accès ajouté pour cette demande).
+  if (pieces.length) args.push('--add-dir', piecesDir(project));
+  const joined = pieces.length ? ['Pièces jointes par le propriétaire (lis-les avec Read ; images et PDF se lisent directement) :',
+    ...pieces.map((p) => `- ${join(piecesDir(project), p.file)} (${p.kind}, ${p.detail})`)].join('\n') : '';
   // Carnet lu AVANT d'écrire la nouvelle demande dans le fil (sinon elle s'y trouverait deux fois).
-  const prompt = [resume ? '' : notebook(engine, project, repo), projectDigest(engine, project), '', `Demande du propriétaire : ${ask}`].filter((x) => x !== '').join('\n\n');
+  const prompt = [resume ? '' : notebook(engine, project, repo), projectDigest(engine, project), '', `Demande du propriétaire : ${ask}`, joined].filter((x) => x !== '').join('\n\n');
 
-  engine.architectSay(project, 'vous', ask, { model });
-  engine.architectSay(project, 'systeme', resume
-    ? `Reprend sa conversation (${Math.round(size / 1000)} k, moins de 5 min) sur ${model}.`
-    : `Nouvelle conversation sur ${model}, avec son carnet et l’état du projet${fresh ? ` (${fresh})` : ''}.`);
-  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
+  engine.architectSay(project, 'vous', text.replace(/^\/(opus|sonnet|haiku)\s*/i, '').trim(), { model, ...(pieces.length ? { pieces } : {}) });
+  engine.architectSay(project, 'systeme', (resume
+    ? `Reprend sa conversation (${Math.round(size / 1000)} k, moins de 5 min) sur ${model}`
+    : `Nouvelle conversation sur ${model}, avec son carnet et l’état du projet${fresh ? ` (${fresh})` : ''}`) + `, compte « ${compte.name} ».`);
+  const child = spawn('claude', args, { cwd, windowsHide: true, env: { ...process.env, ...envOf(compte), CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
   running.set(project, child);
   child.stdin.end(prompt);
 
@@ -189,6 +200,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   const started = Date.now(); // durée affichée sous chaque réponse
   const onMsg = (m: Record<string, any>) => {
     if (m.type === 'system' && m.subtype === 'init' && m.session_id) engine.setSession(key, String(m.session_id));
+    else if (m.type === 'rate_limit_event') recordQuota(engine, compte.id, m.rate_limit_info);
     else if (m.type === 'assistant' && !m.parent_tool_use_id) {
       for (const b of m.message?.content ?? []) {
         if (b.type === 'tool_use') {
@@ -210,7 +222,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
       const used = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
       engine.architectTokens(project, { used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, model });
       engine.architectSay(project, 'architecte', String(m.result ?? (m.is_error ? 'Erreur sans message.' : '')).slice(0, 6000), {
-        model, tokens: used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, ok: m.subtype === 'success' && !m.is_error,
+        model, compte: compte.name, tokens: used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: m.num_turns ?? 0, ok: m.subtype === 'success' && !m.is_error,
         context: m.session_id ? contextOf(cwd, String(m.session_id)).end : undefined, // taille de sa conversation après ce tour
         ms: Date.now() - started,
       });
@@ -234,3 +246,59 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
   return `L’Architecte a reçu votre demande (${model}${resume ? ', suite de la conversation' : ''}).`;
 }
 
+
+// /btw (lot C1) : une question en passant, comme dans Claude Code. Pas d'outils, pas de conversation gardée,
+// rien dans son carnet. Il voit seulement l'état du projet (préparé par le programme) et vos derniers échanges.
+// Possible même pendant que l'Architecte travaille. Mesuré le 19 nov. : 2 488 tokens, 0,011 $, 3 s (au lieu de 7 à 60 k pour une vraie demande).
+const BTW = [
+  'Tu réponds à une question en passant du propriétaire de « Le Bon Architecte », en français simple, sans jargon.',
+  'Tu n’as aucun outil et tu n’agis pas : réponds seulement avec l’état du projet et les derniers échanges fournis, en 2 à 6 phrases.',
+  'Si la réponse demande de lire le code ou d’agir, dis-le en une phrase et propose de poser la question à l’Architecte (sans /btw). N’invente rien.',
+  'Jamais le modèle Fable.',
+].join('\n');
+const btwRunning = new Set<string>();
+export const btwBusy = (project: string) => btwRunning.has(project);
+
+export function askBtw(engine: Engine, project: string, question: string): string {
+  const q = question.trim();
+  if (!q) throw new Refused('Écrivez votre question après /btw, par exemple : /btw combien de tickets restent ?');
+  if (btwRunning.has(project)) throw new Refused('Une question /btw est déjà en cours : attendez sa réponse.');
+  const compte = pickCompte(engine, project, 'architecte');
+  const recent = engine.architectThread(project, 40).filter((m) => (m.who === 'vous' || m.who === 'architecte') && !m.commande)
+    .slice(-6).map((m) => `${m.who === 'vous' ? 'Propriétaire' : 'Architecte'} : ${String(m.text).slice(0, 700)}`);
+  const prompt = [projectDigest(engine, project), recent.length ? `Derniers échanges :\n${recent.join('\n')}` : '', `Question en passant : ${q}`].filter(Boolean).join('\n\n');
+  engine.architectSay(project, 'vous', `/btw ${q}`, { btw: true });
+  const args = ['-p', '--model', 'sonnet', '--output-format', 'stream-json', '--verbose', '--system-prompt', BTW, '--tools', '',
+    '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '--effort', 'low', '--max-budget-usd', '0.5'];
+  const child = spawn('claude', args, { cwd: process.cwd(), windowsHide: true, env: { ...process.env, ...envOf(compte), CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } });
+  btwRunning.add(project);
+  child.stdin.end(prompt);
+  const started = Date.now();
+  let buf = ''; let err = ''; let done = false;
+  child.stdout.on('data', (d) => {
+    buf += d;
+    let i: number;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      let m: Record<string, any>;
+      try { m = JSON.parse(line); } catch { continue; }
+      if (m.type === 'rate_limit_event') recordQuota(engine, compte.id, m.rate_limit_info);
+      if (m.type !== 'result') continue;
+      done = true;
+      const u = m.usage ?? {};
+      const used = (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      engine.architectTokens(project, { used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, turns: 1, model: 'Sonnet' });
+      engine.architectSay(project, 'architecte', String(m.result ?? (m.is_error ? 'Erreur sans message.' : '')).slice(0, 4000), {
+        btw: true, model: 'Sonnet', compte: compte.name, tokens: used, cacheRead: u.cache_read_input_tokens ?? 0, costUsd: m.total_cost_usd ?? 0, ms: Date.now() - started, ok: !m.is_error,
+      });
+    }
+  });
+  child.stderr.on('data', (d) => { err += d; });
+  child.on('error', (e) => { err += e.message; });
+  child.on('close', (code) => {
+    btwRunning.delete(project);
+    if (!done) engine.architectSay(project, 'systeme', `La question /btw s’est arrêtée sans réponse (code ${code}) : ${short(err, 200) || 'sans message'}`, { ok: false, btw: true });
+    engine.notify();
+  });
+  return 'Question en passant envoyée (Sonnet, sans outils).';
+}

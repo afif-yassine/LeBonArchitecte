@@ -8,6 +8,7 @@ import type { Ticket } from '../src/shared/contract.ts';
 import type { Engine } from './engine.ts';
 import type { ProjectProfile } from './scan.ts';
 import type { RunOutcome } from './claude.ts';
+import { envOf, pickCompte } from './comptes.ts';
 
 const SYSTEM = [
   'Tu écris des fichiers de texte pour un projet logiciel, en français simple, sans jargon.',
@@ -74,7 +75,7 @@ export function runDirect(engine: Engine, t: Ticket, dir: string, prof: ProjectP
 
   const args = ['-p', '--model', 'haiku', '--output-format', 'json', '--system-prompt', SYSTEM, '--tools', '',
     '--strict-mcp-config', '--disable-slash-commands', '--effort', 'low', '--max-budget-usd', '0.5'];
-  const child = spawn('claude', args, { cwd: dir, windowsHide: true, env: { ...process.env } });
+  const child = spawn('claude', args, { cwd: dir, windowsHide: true, env: { ...process.env, ...envOf(pickCompte(engine, t.projectId, 'agents')) } });
   child.stdin.end(prompt);
   let out = '';
   let err = '';

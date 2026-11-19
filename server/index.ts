@@ -1,7 +1,7 @@
 // Serveur local du Bon Architecte. Écoute seulement sur 127.0.0.1 : rien n'est exposé au réseau.
 import Fastify from 'fastify';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { backupDb, openDb } from './db.ts';
 import { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
@@ -12,8 +12,11 @@ import { contextOf } from './claude.ts';
 import { REPORTS_DIR, reportDocs, ticketReport } from './reports.ts';
 import { reportPdf } from './reportPdf.ts';
 import { ACTOR_HEADER, actorStore, architectRefusal, currentActor } from './acteurs.ts';
-import { adviceMarkdown, architectRunning, askArchitectAgent } from './architectAgent.ts';
+import { adviceMarkdown, architectRunning, askArchitectAgent, askBtw, btwBusy } from './architectAgent.ts';
 import { runArchitectCommand } from './architectCommands.ts';
+import { parseCommand } from '../src/shared/commands.ts';
+import { addCompte, authStatus, comptes, openLogin, pickCompte, probeQuota, projection, quotaOf, removeCompte, updateCompte } from './comptes.ts';
+import { pieceType, piecesDir, piecesOf, savePiece } from './pieces.ts';
 import { askMap, refreshMap } from './carte.ts';
 import { assertMainReady, diffFile, fileAt, fileBytesAt, revertMerge, worktreeOf } from './git.ts';
 import { branchFrom, commitInfo, gitGraph, gitInfo, listDocs, readDoc, readPdf } from './projectData.ts';
@@ -255,7 +258,38 @@ app.get<Id>('/api/projects/:id/cdc', async (req) => {
 });
 app.get<Id>('/api/projects/:id/architect', async (req) => ({ busy: architectBusy(req.params.id), reviews: engine.reviews(req.params.id) }));
 // Architecte autonome (décision 0014) : vous lui écrivez, il agit avec la commande lba ; son fil garde tout.
-app.get<Id>('/api/projects/:id/architecte', async (req) => ({ busy: architectRunning(req.params.id), thread: engine.architectThread(req.params.id), model: engine.architectModel(req.params.id) ?? null }));
+app.get<Id>('/api/projects/:id/architecte', async (req) => {
+  const p = req.params.id;
+  const allowed = comptes(engine).filter((c) => c.on && (!c.projects.length || c.projects.includes(p)));
+  return {
+    busy: architectRunning(p), btw: btwBusy(p), thread: engine.architectThread(p), model: engine.architectModel(p) ?? null,
+    // Barre du chat (lot C1) : le compte fixé (ou null = automatique) et celui qui partirait maintenant.
+    compte: engine.setting(`compte-architecte:${p}`) ?? null, compteAuto: pickCompte(engine, p, 'architecte').name,
+    comptes: allowed.map((c) => ({ id: c.id, name: c.name, five: quotaOf(engine, c.id)?.five?.used })),
+  };
+});
+// Modèle et compte de l'Architecte, choisis dans la barre du chat (lot C1). « auto » = choix du programme.
+app.post<Id & { Body: { model?: string; compte?: string } }>('/api/projects/:id/architecte/reglages', async (req) => {
+  const p = req.params.id; const b = req.body ?? {};
+  if (b.model !== undefined) {
+    if (/fable/i.test(b.model)) throw new Refused('Refusé : jamais le modèle Fable (votre règle).');
+    engine.setArchitectModel(p, b.model === 'Opus' || b.model === 'Sonnet' || b.model === 'Haiku' ? b.model : undefined);
+  }
+  if (b.compte !== undefined) {
+    if (b.compte !== 'auto' && !comptes(engine).some((c) => c.id === b.compte && c.on)) throw new Refused('Ce compte n’existe pas ou n’est pas actif.');
+    engine.setSetting(`compte-architecte:${p}`, b.compte === 'auto' ? '' : b.compte);
+  }
+  return { message: 'Réglage enregistré : il vaut pour la prochaine demande.' };
+});
+// Pièces jointes (lot C2) : une par envoi, 10 Mo au plus ; le coût estimé revient tout de suite.
+app.post<Id & { Body: { name?: string; data?: string } }>('/api/projects/:id/pieces', { bodyLimit: 15_000_000 }, async (req) => {
+  if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple n’ont pas d’Architecte branché.');
+  return savePiece(req.params.id, String(req.body?.name ?? ''), String(req.body?.data ?? ''));
+});
+app.get<{ Params: { id: string; file: string } }>('/api/projects/:id/pieces/:file', async (req, reply) => {
+  const [p] = piecesOf(req.params.id, [req.params.file]);
+  return reply.type(pieceType(p.file)).send(readFileSync(join(piecesDir(req.params.id), p.file)));
+});
 // Carte du code (décision 0015) : petites questions (lba carte <nom>), jamais la carte entière.
 app.get<Id & { Querystring: { q?: string; to?: string } }>('/api/projects/:id/carte', async (req) => ({ text: await askMap(repoOf(req.params.id), req.query.q ?? '', req.query.to || undefined) }));
 app.post<Id>('/api/projects/:id/carte', async (req) => ({ message: (await refreshMap(repoOf(req.params.id))).text }));
@@ -264,12 +298,64 @@ app.get<{ Params: { id: string; msg: string } }>('/api/projects/:id/architecte/a
   if (!md) throw new Refused('Cette réponse de l’Architecte n’existe pas.');
   return pdf(reply, await reportPdf(repoOf(req.params.id), `avis-architecte-${req.params.msg}.pdf`, md), `avis-architecte-${req.params.msg}.pdf`);
 });
-app.post<Id & { Body: { text?: string } }>('/api/projects/:id/architecte', async (req) => {
+app.post<Id & { Body: { text?: string; pieces?: string[] } }>('/api/projects/:id/architecte', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple n’ont pas d’Architecte branché.');
+  const text = req.body?.text ?? '';
+  // /btw : une petite question à part, possible même pendant qu'il travaille (lot C1).
+  const c = parseCommand(text);
+  if (c?.name === 'btw') return { message: askBtw(engine, req.params.id, c.arg) };
   // /usage, /context, /compact… : le programme répond seul, 0 token (décision 0015).
-  const cmd = await runArchitectCommand(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '');
+  const cmd = await runArchitectCommand(engine, req.params.id, repoOf(req.params.id), text);
   if (cmd) return { message: cmd };
-  return { message: askArchitectAgent(engine, req.params.id, repoOf(req.params.id), req.body?.text ?? '') };
+  const pieces = Array.isArray(req.body?.pieces) ? piecesOf(req.params.id, req.body.pieces) : [];
+  return { message: askArchitectAgent(engine, req.params.id, repoOf(req.params.id), text, pieces) };
+});
+
+// Comptes Claude et quotas (décision 0017, lots C3 et C4). Quota : lu dans chaque appel de Claude Code (gratuit),
+// ou par « Actualiser » (un petit appel Haiku, environ 3 800 tokens). « Prévu » = au rythme actuel, à la remise à zéro.
+app.get<{ Querystring: { frais?: string } }>('/api/comptes', async (req) => {
+  const list = comptes(engine);
+  const states = await Promise.all(list.map((c) => authStatus(c, req.query.frais === '1')));
+  return {
+    comptes: list.map((c, i) => {
+      const q = quotaOf(engine, c.id);
+      return { ...c, dir: c.dir ? `.lba/comptes/${c.id}` : '~/.claude', machine: !c.dir, ...states[i], quota: q ? { ...q, fivePrevu: projection(q.five, 5), weekPrevu: projection(q.week, 168) } : null };
+    }),
+    projets: Object.keys(PROJECT_DIRS),
+    choix: Object.fromEntries(Object.keys(PROJECT_DIRS).map((p) => [p, { architecte: engine.setting(`compte-architecte:${p}`) ?? null, agents: engine.setting(`compte-agents:${p}`) ?? null, autoArchitecte: pickCompte(engine, p, 'architecte').id, autoAgents: pickCompte(engine, p, 'agents').id }])),
+  };
+});
+app.post<{ Body: { name?: string } }>('/api/comptes', async (req) => {
+  const c = addCompte(engine, String(req.body?.name ?? ''));
+  return { message: `Compte « ${c.name} » ajouté. ${openLogin(c)}`, id: c.id };
+});
+app.patch<{ Params: { cid: string }; Body: { name?: string; on?: boolean; projects?: string[]; move?: -1 | 1 } }>('/api/comptes/:cid', async (req) => {
+  const c = updateCompte(engine, req.params.cid, req.body ?? {});
+  return { message: `Compte « ${c.name} » enregistré.` };
+});
+app.delete<{ Params: { cid: string } }>('/api/comptes/:cid', async (req) => ({ message: removeCompte(engine, req.params.cid) }));
+app.post<{ Params: { cid: string } }>('/api/comptes/:cid/connexion', async (req) => {
+  const c = comptes(engine).find((x) => x.id === req.params.cid);
+  if (!c) throw new Refused('Compte inconnu.');
+  return { message: openLogin(c) };
+});
+app.post<{ Params: { cid: string } }>('/api/comptes/:cid/quota', async (req) => {
+  const c = comptes(engine).find((x) => x.id === req.params.cid);
+  if (!c) throw new Refused('Compte inconnu.');
+  const r = await probeQuota(engine, c);
+  if (r.tokens) engine.architectTokens(Object.keys(PROJECT_DIRS)[0] ?? 'lba', { used: r.tokens, cacheRead: 0, costUsd: r.costUsd, turns: 1, model: 'Haiku' });
+  if (!r.ok) throw new Refused(`Quota de « ${c.name} » pas lu : ${r.message}`);
+  return { message: `Quota de « ${c.name} » lu : ${r.tokens.toLocaleString('fr-FR')} tokens (Haiku), ${r.costUsd.toFixed(4).replace('.', ',')} $.` };
+});
+app.post<Id & { Body: { architecte?: string; agents?: string } }>('/api/projects/:id/comptes', async (req) => {
+  const ids = new Set(comptes(engine).filter((c) => c.on).map((c) => c.id));
+  for (const who of ['architecte', 'agents'] as const) {
+    const v = req.body?.[who];
+    if (v === undefined) continue;
+    if (v !== 'auto' && !ids.has(v)) throw new Refused('Ce compte n’existe pas ou n’est pas actif.');
+    engine.setSetting(`compte-${who}:${req.params.id}`, v === 'auto' ? '' : v);
+  }
+  return { message: 'Compte du projet enregistré : il vaut pour les prochains lancements.' };
 });
 app.post<Id & { Body: { mode?: string; question?: string } }>('/api/projects/:id/architect', async (req) => ({ message: askArchitect(engine, req.params.id, repoOf(req.params.id), req.body ?? {}) }));
 app.post<Id & { Body: { review: number; index: number; decision: 'acceptee' | 'refusee' } }>('/api/projects/:id/architect/decide', async (req) =>

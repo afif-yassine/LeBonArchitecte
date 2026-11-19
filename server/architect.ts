@@ -7,6 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Engine } from './engine.ts';
 import { Refused } from './tickets.ts';
+import { envOf, pickCompte } from './comptes.ts';
 
 export const CDC_PATH = 'docs/cahier-des-charges/cahier-des-charges.md';
 
@@ -109,7 +110,7 @@ export function askArchitect(engine: Engine, project: string, repo: string, o: {
   engine.notify();
   const args = ['-p', '--model', 'opus', '--output-format', 'json', '--system-prompt', SYSTEM, '--tools', '',
     '--strict-mcp-config', '--disable-slash-commands', '--effort', 'high', '--max-budget-usd', '3'];
-  const child = spawn('claude', args, { cwd: repo, windowsHide: true, env: { ...process.env } });
+  const child = spawn('claude', args, { cwd: repo, windowsHide: true, env: { ...process.env, ...envOf(pickCompte(engine, project, 'architecte')) } });
   child.stdin.end(prompt);
   let out = '';
   let err = '';

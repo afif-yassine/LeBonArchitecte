@@ -24,6 +24,7 @@ import { CommandBar } from './components/CommandBar';
 import { LaunchDialog } from './components/LaunchDialog';
 import { OrchestratorPanel } from './components/OrchestratorPanel';
 import { HelpSheet } from './components/HelpSheet';
+import { QuotaChip } from './components/Comptes';
 import { Frise } from './components/ui';
 import { ProjectBoard } from './screens/ProjectBoard';
 import { TicketView } from './screens/TicketView';
@@ -37,7 +38,7 @@ import { MemoryContext, Rules } from './screens/Knowledge';
 import { ProjectSettings } from './screens/ProjectSettings';
 import { SettingsScreen } from './screens/Settings';
 
-const TAB_LABEL = { connexions: 'Connexions', quotas: 'Quotas et budgets', securite: 'Sécurité', apparence: 'Apparence', notifications: 'Notifications' } as const;
+const TAB_LABEL = { connexions: 'Comptes et quotas', quotas: 'Quotas et budgets', securite: 'Sécurité', apparence: 'Apparence', notifications: 'Notifications' } as const;
 
 const isTyping = (e: KeyboardEvent) => {
   const el = e.target as HTMLElement;
@@ -179,6 +180,7 @@ function Shell() {
               <button className="search" onClick={() => setPalette(true)} aria-label="Commandes (Ctrl+K)">
                 <Search size={15} /><span className="search__text">Chercher ou aller à</span><span className="kbd">Ctrl K</span>
               </button>
+              {online && <QuotaChip onOpen={() => go({ kind: 'reglages', tab: 'connexions' })} />}
               <button className="btn btn--ghost btn--icon bell" onClick={() => go({ kind: 'projet', projectId, space: 'pour-vous' })} aria-label={`${waiting} actions pour vous dans ce projet`} title="Pour vous">
                 <Bell size={17} />{waiting > 0 && <span className="bell__count" aria-hidden="true">{waiting}</span>}
               </button>

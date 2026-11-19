@@ -74,14 +74,13 @@ async function answer(engine: Engine, project: string, repo: string, name: strin
     case 'modele': {
       const a = arg.toLowerCase();
       if (/fable/.test(a)) return 'Refusé : jamais le modèle Fable (votre règle).';
-      if (/haiku/.test(a)) return 'Pas pour l’Architecte : Haiku est trop faible pour tenir le projet. Choisissez opus, sonnet ou auto.';
       const now = engine.architectModel(project);
-      if (!a) return `Modèle actuel : **${now ?? 'automatique'}**${now ? '' : ' (Sonnet pour une consigne, Opus pour l’architecture, les décisions et l’équipe)'}. Pour changer : \`/modele opus\`, \`/modele sonnet\` ou \`/modele auto\`.`;
+      if (!a) return `Modèle actuel : **${now ?? 'automatique'}**${now ? '' : ' (Sonnet pour une consigne, Opus pour l’architecture, les décisions et l’équipe)'}. Pour changer : \`/modele opus\`, \`/modele sonnet\`, \`/modele haiku\` ou \`/modele auto\`. Fable : jamais.`;
       if (/^auto/.test(a)) { engine.setArchitectModel(project, undefined); return 'Modèle **automatique** : Sonnet pour une consigne, Opus pour l’architecture, les décisions et l’équipe.'; }
-      const m = /^opus/.test(a) ? 'Opus' : /^sonnet/.test(a) ? 'Sonnet' : undefined;
-      if (!m) return 'Je ne connais pas ce modèle. Choisissez `opus`, `sonnet` ou `auto`.';
+      const m = /^opus/.test(a) ? 'Opus' : /^sonnet/.test(a) ? 'Sonnet' : /^haiku/.test(a) ? 'Haiku' : undefined;
+      if (!m) return 'Je ne connais pas ce modèle. Choisissez `opus`, `sonnet`, `haiku` ou `auto`.';
       engine.setArchitectModel(project, m);
-      return `Modèle fixé : **${m}** pour toutes les demandes suivantes${m === 'Opus' ? ' (environ 3 fois plus cher que Sonnet)' : ''}. \`/modele auto\` pour revenir au choix automatique.`;
+      return `Modèle fixé : **${m}** pour toutes les demandes suivantes${m === 'Opus' ? ' (environ 3 fois plus cher que Sonnet)' : m === 'Haiku' ? ' (le moins cher ; moins fiable pour agir sur le projet : gardez-le pour les consignes simples)' : ''}. \`/modele auto\` pour revenir au choix automatique.`;
     }
 
     case 'graphify': {

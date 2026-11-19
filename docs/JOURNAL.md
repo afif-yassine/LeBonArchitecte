@@ -341,3 +341,13 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Deux trous fermés chez les agents : ils pouvaient écrire un `.env`, et lire un `.env` avec `tail`, `head` ou `grep`.
 - Vérifié : 68 tests verts, compilation sans erreur. Tout l'historique de LBA est propre : 0 secret, 0 fichier interdit, après la correction d'une fausse alerte.
 - gitleaks 8.30.1 installé avec votre « oui » (19 nov.) dans `.lba/outils/gitleaks/`. Empreinte SHA-256 vérifiée contre la liste officielle. Les 55 commits de LBA ont été contrôlés en 0,8 s : aucun secret. Le contrôle l’utilise maintenant, en plus des règles du programme.
+
+## Lots C1 à C4 : modèle et compte dans le chat, comptes, quotas, pièces jointes, /btw (19 nov. 2026)
+- Votre demande, à partir de vos 15 captures. Décision 0017.
+- **Chat** : le modèle (Auto, Opus 5.5, Sonnet 5.5, Haiku 5.5 ; Fable grisé, jamais) et le compte se choisissent sous la zone d'écriture. Haiku est ajouté à votre demande.
+- **/btw** : une question en passant, sans outils ni mémoire, même pendant qu'il travaille. Mesuré : 2 488 tokens, 0,011 $, 3 s.
+- **Pièces jointes** : photos, PDF et documents (bouton, glisser ou coller), avec le coût estimé avant l'envoi.
+- **Comptes** : Réglages › Comptes et quotas. Vous vous connectez vous-même dans une fenêtre Claude ; LBA ne voit jamais de mot de passe. Chaque projet peut fixer son compte. Sinon, LBA prend le premier compte sous 90 % de sa fenêtre de 5 h.
+- **Quotas** : lus dans le message officiel de Claude Code à chaque appel (gratuit). Une jauge en haut de l'écran ; un clic montre tous les comptes, avec la prévision.
+- Vérifié : 69 tests verts, écran contrôlé sur PC et téléphone, sans erreur. `.lba/comptes/` et `.lba/pieces/` n'étaient pas ignorés par git : corrigé.
+- Vu en passant : le cache de Claude semble durer 1 h, et non 5 min. À mesurer, car cela pourrait rendre les reprises moins chères.

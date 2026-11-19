@@ -121,8 +121,8 @@ export function Sidebar({ view, go, projectId, mini, toggleMini }: Props) {
           <span className="sdot" style={{ background: 'currentColor' }} />{online ? 'Moteur connecté' : 'Moteur arrêté'}
         </div>
       </div>
-      <button className="nav" aria-current={view.kind === 'reglages' && view.tab === 'connexions' ? 'page' : undefined} onClick={() => go({ kind: 'reglages', tab: 'connexions' })} title="Connexions et quotas">
-        <Plug size={16} /><span className="nav__text">Connexions et quotas</span>
+      <button className="nav" aria-current={view.kind === 'reglages' && view.tab === 'connexions' ? 'page' : undefined} onClick={() => go({ kind: 'reglages', tab: 'connexions' })} title="Comptes Claude et quotas">
+        <Plug size={16} /><span className="nav__text">Comptes et quotas</span>
       </button>
       <button className="nav" aria-current={view.kind === 'reglages' && view.tab !== 'connexions' ? 'page' : undefined} onClick={() => go({ kind: 'reglages', tab: 'apparence' })} title="Réglages">
         <Settings2 size={16} /><span className="nav__text">Réglages</span>

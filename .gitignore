@@ -9,3 +9,5 @@ dist/
 .lba/passations/
 .lba/comptes-rendus/
 .lba/outils/
+.lba/comptes/
+.lba/pieces/

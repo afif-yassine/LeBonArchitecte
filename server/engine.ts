@@ -547,13 +547,21 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     return { architect, tickets: [...tk].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.used - a.used) };
   }
   // Modèle choisi avec /modele pour les demandes suivantes ; vide = choix automatique.
-  architectModel(project: string): 'Opus' | 'Sonnet' | undefined {
+  architectModel(project: string): 'Opus' | 'Sonnet' | 'Haiku' | undefined {
     const v = (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(`architecte-modele:${project}`) as { value: string } | undefined)?.value;
-    return v === 'Opus' || v === 'Sonnet' ? v : undefined;
+    return v === 'Opus' || v === 'Sonnet' || v === 'Haiku' ? v : undefined;
   }
-  setArchitectModel(project: string, model?: 'Opus' | 'Sonnet'): void {
+  setArchitectModel(project: string, model?: 'Opus' | 'Sonnet' | 'Haiku'): void {
     this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`architecte-modele:${project}`, model ?? '');
     this.changed();
+  }
+  // Réglage simple (comptes, quotas, compte choisi) : une clé, une valeur texte.
+  setting(key: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value || undefined;
+  }
+  setSetting(key: string, value: string, quiet = false): void {
+    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+    if (!quiet) this.changed();
   }
 
   recordReview(project: string, data: { question: string; answer: unknown; tokens: number; model: string }): number {
