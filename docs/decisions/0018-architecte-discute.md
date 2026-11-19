@@ -50,4 +50,6 @@
 
 - Le modèle de l'Architecte était fixé sur **Opus** : c'est le plus cher et le plus lent. Pour discuter, « Auto » ou Sonnet coûte environ 3 fois moins.
 - Une ancienne conversation reprise garde ses vieilles réponses en mémoire. Les règles disent de ne pas les imiter, et « Nouvelle discussion » repart au propre.
-- Le prix exact d'une reprise après plus d'une heure : un essai de 22 k tokens a été lancé, et son résultat est ajouté ci-dessous dès qu'il arrive.
+- **Reprise après plus d'une heure, mesurée** (Haiku, conversation de 22 k) : après 62 minutes, seuls 649 tokens sont relus du cache, et **22 124 tokens sont réécrits**. La reprise a coûté **2 fois** la création de la conversation (0,0089 $ contre 0,0044 $), parce que l'écriture en cache d'une heure coûte 2 fois le prix normal.
+  - Sur Sonnet, garder une conversation de 12 k après plus d'une heure coûte environ 0,07 $, contre environ 0,03 à 0,05 $ pour repartir avec le carnet. C'est **quelques centimes de plus pour ne rien oublier** : on garde la règle des moins de 30 k.
+  - Au-delà, repartir avec le carnet coûte nettement moins cher.
