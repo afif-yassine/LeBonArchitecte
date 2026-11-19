@@ -402,3 +402,10 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - **Périmètre :** le contrôle qui était réservé aux recherches vaut pour tout rôle qui a des dossiers permis. Un fichier écrit ailleurs met « Périmètre respecté » en échec.
 - Rôles de base : Développeur, Éclaireur, Sécurité. Modèles prêts : DevOps, Média, Rédacteur.
 - 71 tests verts.
+
+## Lots E2 et E3 : le vrai écran Équipe, et l'équipe proposée à l'import (19 nov. 2026)
+- L'écran Équipe montre chaque fiche de rôle (mission, quand il est appelé, où il écrit, ses commandes et MCP, son budget) et **ce que le rôle a vraiment fait**, lu dans le journal. Sur LBA : Développeur, 11 tickets finis sur 12 (9 du premier coup) ; Sécurité, 2 sur 5 ; Éclaireur, 1 sur 1.
+- Chaque fiche se règle avec le crayon. On peut aussi l'activer, la désactiver ou la retirer, et ajouter DevOps, Média ou Rédacteur en un clic. L'enregistrement reste au propriétaire.
+- **E3 :** à l'import, le programme propose l'équipe d'après ce que contient le projet (0 token) : Docker ou CI donne DevOps, images ou vidéos donnent Média, des documents donnent Rédacteur. Pour LBA, il propose la base plus Rédacteur, en attente de votre « Accepter ».
+- Équipe et Backlog ne sont plus des maquettes : l'Architecte le sait par l'état du projet.
+- Décision 0019. 71 tests verts, écran contrôlé sur PC et téléphone, sans erreur.

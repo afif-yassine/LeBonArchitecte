@@ -28,6 +28,7 @@ import { Backlog, Documents, Team } from './screens/ProjectSpaces';
 import { Architect } from './screens/Architect';
 import { ArchitectLive } from './screens/ArchitectLive';
 import { BacklogLive } from './screens/BacklogLive';
+import { TeamLive } from './screens/TeamLive';
 import { MemoryContext, Rules } from './screens/Knowledge';
 import { ProjectSettings } from './screens/ProjectSettings';
 import { SettingsScreen } from './screens/Settings';
@@ -133,6 +134,7 @@ function Shell() {
         case 'regles': return <RealRules projectId={pid} />;
         case 'git': return <GitGraphScreen projectId={pid} go={go} />;
         case 'backlog': return <BacklogLive projectId={pid} go={go} />;
+        case 'equipe': return <TeamLive projectId={pid} go={go} />;
         case 'architecte': return <ArchitectLive key={`${pid}-${view.kind === 'projet' ? view.ask ?? '' : ''}`} projectId={pid} go={go} ask={view.kind === 'projet' ? view.ask : undefined} />;
       }
       const later = NOT_PLUGGED[space];

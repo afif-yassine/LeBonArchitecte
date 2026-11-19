@@ -238,7 +238,9 @@ test('backlog : ajouter, ranger, modifier, devenir un ticket, retirer (lot B)', 
   // L'Architecte le voit dans l'état du projet (0 token), avec la liste des écrans en maquette.
   const d = projectDigest(e, 'p');
   assert.match(d, /Backlog \(1, dans l’ordre voulu\) :\n- B-1 \[M\] Thème sombre/);
-  assert.match(d, /Écrans encore en maquette[^\n]*equipe/);
+  assert.match(d, /Écrans encore en maquette[^\n]*sante/);
+  assert.doesNotMatch(d, /maquette[^\n]*equipe/, 'l’équipe n’est plus une maquette (décision 0019)');
+  assert.match(d, /Équipe \(rôles actifs\) : developpeur, eclaireur, securite/);
   assert.doesNotMatch(d, /maquette[^\n]*backlog/, 'le backlog n’est plus une maquette');
 });
 
