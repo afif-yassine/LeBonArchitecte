@@ -143,13 +143,26 @@ app.get('/api/busy', async () => {
   const architect = Object.keys(PROJECT_DIRS).filter(architectRunning);
   return { busy: running.length + validating.length + architect.length > 0, running, validating, architect };
 });
-app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string } }>('/api/projects/:id/tickets', async (req) => {
+app.post<Id & { Body: { title: string; context?: string; expected: string; criteria?: string[]; deps?: string[]; part?: string; lot?: number; model?: string; from?: string } }>('/api/projects/:id/tickets', async (req) => {
   if (!PROJECT_DIRS[req.params.id]) throw new Refused('Les projets d’exemple ne reçoivent pas de nouveaux tickets.');
   const model = req.body.model && ['Opus', 'Sonnet', 'Haiku'].includes(req.body.model) ? req.body.model as 'Opus' | 'Sonnet' | 'Haiku' : undefined;
   if (req.body.model && !model) throw new Refused('Modèle inconnu : Opus, Sonnet ou Haiku (jamais Fable).');
+  // Ticket fait depuis un élément du backlog (lot B) : on vérifie l'élément AVANT de créer le ticket.
+  const from = req.body.from ? engine.backlog(req.params.id).items.find((b) => b.id === req.body.from) : undefined;
+  if (req.body.from && !from) throw new Refused(`${req.body.from} n’est pas dans le backlog (déjà devenu un ticket, ou retiré).`);
   const t = engine.createTicket(req.params.id, { ...req.body, model, criteria: req.body.criteria ?? [] });
-  return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.`, ticket: t };
+  if (from) engine.backlogToTicket(req.params.id, from.id, t.id);
+  return { message: `${t.id} créé avec un plan de ${t.steps.length} étapes, à valider.${from ? ` ${from.id} quitte le backlog.` : ''}`, ticket: t };
 });
+// Backlog (lot B) : idées et besoins pas encore décidés. Retirer (DELETE) reste au propriétaire.
+app.get<Id>('/api/projects/:id/backlog', async (req) => engine.backlog(req.params.id));
+app.post<Id & { Body: { title?: string; detail?: string; size?: string } }>('/api/projects/:id/backlog', async (req) => {
+  const b = engine.addBacklog(req.params.id, req.body ?? {});
+  return { message: `${b.id} ajouté au backlog.`, item: b };
+});
+app.patch<{ Params: { id: string; bid: string }; Body: { title?: string; detail?: string; size?: string } }>('/api/projects/:id/backlog/:bid', async (req) => ({ message: engine.updateBacklog(req.params.id, req.params.bid, req.body ?? {}) }));
+app.post<{ Params: { id: string; bid: string }; Body: { to?: number } }>('/api/projects/:id/backlog/:bid/ordre', async (req) => ({ message: engine.moveBacklog(req.params.id, req.params.bid, Number(req.body?.to ?? 0)) }));
+app.delete<{ Params: { id: string; bid: string } }>('/api/projects/:id/backlog/:bid', async (req) => ({ message: engine.removeBacklog(req.params.id, req.params.bid) }));
 app.post<Id & { Body: { problem?: string } }>('/api/tickets/:id/reject', async (req) => ({ message: engine.reject(req.params.id, req.body?.problem ?? '') }));
 app.post<Id & { Body: { command?: string } }>('/api/tickets/:id/run', async (req) => {
   const t = engine.ticket(req.params.id);

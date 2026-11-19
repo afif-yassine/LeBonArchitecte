@@ -27,6 +27,7 @@ import { Cdc, Git, Health } from './screens/ProjectWork';
 import { Backlog, Documents, Team } from './screens/ProjectSpaces';
 import { Architect } from './screens/Architect';
 import { ArchitectLive } from './screens/ArchitectLive';
+import { BacklogLive } from './screens/BacklogLive';
 import { MemoryContext, Rules } from './screens/Knowledge';
 import { ProjectSettings } from './screens/ProjectSettings';
 import { SettingsScreen } from './screens/Settings';
@@ -131,6 +132,7 @@ function Shell() {
         case 'docs': return <RealDocs projectId={pid} title="Documents" exclude="docs/cahier-des-charges/" lead="Décisions, rapports, recherches et journal du projet. Un PDF s’ouvre dans un nouvel onglet. Le cahier des charges a son propre onglet." />;
         case 'regles': return <RealRules projectId={pid} />;
         case 'git': return <GitGraphScreen projectId={pid} go={go} />;
+        case 'backlog': return <BacklogLive projectId={pid} go={go} />;
         case 'architecte': return <ArchitectLive key={`${pid}-${view.kind === 'projet' ? view.ask ?? '' : ''}`} projectId={pid} go={go} ask={view.kind === 'projet' ? view.ask : undefined} />;
       }
       const later = NOT_PLUGGED[space];

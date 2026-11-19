@@ -211,3 +211,33 @@ test('comptes, quotas et pièces jointes (décision 0017, lots C1 à C4)', async
   e.architectSay('p', 'architecte', 'réponse en passant', { btw: true });
   assert.doesNotMatch(notebook(e, 'p'), /en passant/);
 });
+
+test('backlog : ajouter, ranger, modifier, devenir un ticket, retirer (lot B)', async () => {
+  const { Engine } = await import('./engine.ts');
+  const { openDb } = await import('./db.ts');
+  const { projectDigest } = await import('./architectAgent.ts');
+  const e = new Engine(openDb(':memory:'));
+  assert.throws(() => e.addBacklog('p', { title: '  ' }), /titre/);
+  const a = e.addBacklog('p', { title: 'Mode sombre', size: 'S' });
+  const b = e.addBacklog('p', { title: 'Export PDF', detail: 'pour le client', size: 'X' });
+  e.addBacklog('p', { title: 'Recherche' });
+  assert.deepEqual([a.id, b.id], ['B-1', 'B-2']);
+  assert.equal(b.size, undefined, 'taille inconnue ignorée');
+  assert.equal(a.origin, 'vous');
+  e.moveBacklog('p', 'B-3', 0);
+  assert.deepEqual(e.backlog('p').items.map((x) => x.id), ['B-3', 'B-1', 'B-2']);
+  e.updateBacklog('p', 'B-1', { title: 'Thème sombre', size: 'M' });
+  assert.equal(e.backlog('p').items[1].title, 'Thème sombre');
+  // Devenu un ticket : il quitte le backlog, le lien reste.
+  e.backlogToTicket('p', 'B-2', 'P-1');
+  assert.deepEqual(e.backlog('p').items.map((x) => x.id), ['B-3', 'B-1']);
+  assert.deepEqual(e.backlog('p').done.map((x) => [x.id, x.ticket]), [['B-2', 'P-1']]);
+  assert.throws(() => e.backlogToTicket('p', 'B-2', 'P-2'), /déjà devenu un ticket/, 'jamais deux fois');
+  assert.match(e.removeBacklog('p', 'B-3'), /reste dans le journal/);
+  assert.deepEqual(e.backlog('p').items.map((x) => x.id), ['B-1']);
+  // L'Architecte le voit dans l'état du projet (0 token), avec la liste des écrans en maquette.
+  const d = projectDigest(e, 'p');
+  assert.match(d, /Backlog \(1, dans l’ordre voulu\) :\n- B-1 \[M\] Thème sombre/);
+  assert.match(d, /Écrans encore en maquette[^\n]*equipe/);
+  assert.doesNotMatch(d, /maquette[^\n]*backlog/, 'le backlog n’est plus une maquette');
+});

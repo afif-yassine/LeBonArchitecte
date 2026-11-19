@@ -40,7 +40,10 @@ const COMMANDS = {
   ticket: ['<id>', 'un ticket : plan, critères, ce qui bloque, derniers messages'],
   deroule: ['<id> [n]', 'les n derniers moments du direct (20 par défaut)'],
   'compte-rendu': ['<id>', 'le compte rendu mesuré du ticket'],
-  creer: ['--titre T --attendu A [--pourquoi P] [--criteres "a|b"] [--deps "LBA-1,LBA-2"] [--lot n] [--modele Opus|Sonnet|Haiku]', 'nouveau ticket (plan à valider)'],
+  creer: ['--titre T --attendu A [--pourquoi P] [--criteres "a|b"] [--deps "LBA-1,LBA-2"] [--lot n] [--modele Opus|Sonnet|Haiku] [--depuis B-n]', 'nouveau ticket (plan à valider) ; --depuis : il vient du backlog, qu’il quitte'],
+  backlog: ['', 'le backlog : idées et besoins pas encore décidés, dans l’ordre'],
+  'backlog-ajouter': ['--titre T [--detail D] [--taille S|M|L]', 'ajouter une idée ou un besoin au backlog'],
+  'backlog-placer': ['<B-n> <place>', 'changer sa place dans le backlog (1 = en tête)'],
   'valider-plan': ['<id> [id…]', 'valider des plans : le pilote pourra les lancer'],
   replanifier: ['<id>', 'refaire le plan d’un ticket à faire'],
   lancer: ['<id>', 'lancer un agent sur le ticket'],
@@ -101,9 +104,17 @@ const run = {
   async creer() {
     say(await api('POST', `/projects/${PROJECT}/tickets`, {
       title: need(opts.titre, '--titre'), expected: need(opts.attendu, '--attendu'), context: opts.pourquoi,
-      criteria: list(opts.criteres), deps: list(opts.deps), lot: opts.lot ? Number(opts.lot) : undefined, model: opts.modele,
+      criteria: list(opts.criteres), deps: list(opts.deps), lot: opts.lot ? Number(opts.lot) : undefined, model: opts.modele, from: opts.depuis,
     }));
   },
+  async backlog() {
+    const b = await api('GET', `/projects/${PROJECT}/backlog`);
+    if (!b.items.length) console.log('Backlog vide.');
+    b.items.forEach((x, i) => console.log(`${i + 1}. ${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}${x.detail ? ` : ${x.detail.slice(0, 160)}` : ''} (par ${x.origin})`));
+    if (b.done.length) console.log(`Devenus des tickets : ${b.done.map((x) => `${x.id} → ${x.ticket}`).join(', ')}`);
+  },
+  async 'backlog-ajouter'() { say(await api('POST', `/projects/${PROJECT}/backlog`, { title: need(opts.titre, '--titre'), detail: opts.detail, size: opts.taille })); },
+  async 'backlog-placer'() { say(await api('POST', `/projects/${PROJECT}/backlog/${need(args[0], 'l’id B-n')}/ordre`, { to: Number(need(args[1], 'la place')) - 1 })); },
   async 'valider-plan'() { say(await api('POST', `/projects/${PROJECT}/plans/validate`, { ids: args.length ? args : need(null, 'au moins un id') })); },
   async replanifier() { say(await api('POST', `/tickets/${need(args[0], 'l’id')}/plan/redo`, {})); },
   async lancer() { say(await api('POST', `/tickets/${need(args[0], 'l’id')}/launch`, { who: 'architecte' })); },

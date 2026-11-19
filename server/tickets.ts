@@ -30,7 +30,8 @@ export type EventType =
   | 'plan-valide' | 'plan-refait' | 'etape-commencee' | 'etape-annoncee' | 'direct'
   | 'priorite' | 'action-ouverte' | 'action-resolue' | 'tokens' | 'reuni'
   | 'exigences-liees' | 'architecte-revue' | 'architecte-fil' | 'proposition-decidee' | 'reparation' | 'ticket-pause'
-  | 'ticket-interrompu' | 'ticket-repris' | 'activite';
+  | 'ticket-interrompu' | 'ticket-repris' | 'activite'
+  | 'backlog-ajout' | 'backlog-maj' | 'backlog-ordre' | 'backlog-ticket' | 'backlog-retire';
 
 export interface EngineEvent {
   id?: number;

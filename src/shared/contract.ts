@@ -146,6 +146,10 @@ export interface TicketActivity {
   at: string;
 }
 
+// Backlog (lot B) : les idées et besoins pas encore décidés. Un élément qui devient un ticket quitte le backlog
+// (une information à un seul endroit) : il garde seulement le lien vers son ticket.
+export interface BacklogItem { id: string; title: string; detail: string; origin: string; size?: 'S' | 'M' | 'L'; at: string; ticket?: string; removed?: boolean }
+
 export interface Ticket {
   id: string;
   projectId: string;

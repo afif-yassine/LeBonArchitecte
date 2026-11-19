@@ -1,7 +1,7 @@
 // Le moteur : il écrit chaque événement dans le journal, met à jour la vue des tickets dans la même
 // transaction, puis applique les règles (0 token). Aucune IA ici.
 import type { DatabaseSync } from 'node:sqlite';
-import type { HumanAction, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
+import type { BacklogItem, HumanAction, LiveItem, LiveKind, Ticket, TicketActivity } from '../src/shared/contract.ts';
 import { Refused, assertMove, lastProvedStep, reduce, type EngineEvent } from './tickets.ts';
 import { runCommand, type RunResult } from './executor.ts';
 import { draftPlan } from '../src/shared/plan.ts';
@@ -555,6 +555,69 @@ Sortie complète : ${r.log} (${r.lines} lignes, ${(r.durationMs / 1000).toFixed(
     this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`architecte-modele:${project}`, model ?? '');
     this.changed();
   }
+  // ---------- Backlog (lot B) : chaque changement est un événement du journal ----------
+  backlog(project: string): { items: BacklogItem[]; done: BacklogItem[] } {
+    const rows = this.db.prepare("SELECT type, actor, at, data FROM events WHERE project = ? AND type LIKE 'backlog-%' ORDER BY id").all(project) as { type: string; actor: string; at: string; data: string }[];
+    const map = new Map<string, BacklogItem>();
+    let order: string[] = [];
+    for (const r of rows) {
+      const d = JSON.parse(r.data) as Record<string, any>;
+      if (r.type === 'backlog-ajout') { map.set(d.item.id, { ...d.item, origin: r.actor, at: r.at }); order.push(d.item.id); }
+      else if (r.type === 'backlog-maj' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, ...d.patch });
+      else if (r.type === 'backlog-ordre') order = [...(d.ids as string[]), ...order.filter((x) => !(d.ids as string[]).includes(x))];
+      else if (r.type === 'backlog-ticket' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, ticket: d.ticket });
+      else if (r.type === 'backlog-retire' && map.has(d.id)) map.set(d.id, { ...map.get(d.id)!, removed: true });
+    }
+    const all = order.map((id) => map.get(id)).filter((b): b is BacklogItem => Boolean(b));
+    return { items: all.filter((b) => !b.ticket && !b.removed), done: all.filter((b) => b.ticket).slice(-10) };
+  }
+  private backlogItem(project: string, id: string): BacklogItem {
+    const b = this.backlog(project).items.find((x) => x.id === id);
+    if (!b) throw new Refused(`${id} n’est pas dans le backlog (déjà devenu un ticket, ou retiré).`);
+    return b;
+  }
+  addBacklog(project: string, o: { title?: string; detail?: string; size?: string }): BacklogItem {
+    const title = String(o.title ?? '').trim().slice(0, 160);
+    if (!title) throw new Refused('Un élément du backlog a besoin d’un titre.');
+    const n = (this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE project = ? AND type = 'backlog-ajout'").get(project) as { n: number }).n + 1;
+    const size = o.size === 'S' || o.size === 'M' || o.size === 'L' ? o.size : undefined;
+    const item = { id: `B-${n}`, title, detail: String(o.detail ?? '').trim().slice(0, 2000), ...(size ? { size } : {}) };
+    this.record({ project, type: 'backlog-ajout', actor: 'vous', data: { item } });
+    this.changed();
+    return this.backlog(project).items.find((b) => b.id === item.id)!;
+  }
+  updateBacklog(project: string, id: string, patch: { title?: string; detail?: string; size?: string }): string {
+    this.backlogItem(project, id);
+    const p: Record<string, string> = {};
+    if (patch.title !== undefined) { const t = String(patch.title).trim().slice(0, 160); if (!t) throw new Refused('Le titre ne peut pas être vide.'); p.title = t; }
+    if (patch.detail !== undefined) p.detail = String(patch.detail).trim().slice(0, 2000);
+    if (patch.size !== undefined) p.size = patch.size === 'S' || patch.size === 'M' || patch.size === 'L' ? patch.size : '';
+    this.record({ project, type: 'backlog-maj', actor: 'vous', data: { id, patch: p } });
+    this.changed();
+    return `${id} modifié.`;
+  }
+  // to : nouvelle place (0 = en tête).
+  moveBacklog(project: string, id: string, to: number): string {
+    this.backlogItem(project, id);
+    const ids = this.backlog(project).items.map((b) => b.id).filter((x) => x !== id);
+    ids.splice(Math.max(0, Math.min(ids.length, Math.round(Number(to) || 0))), 0, id);
+    this.record({ project, type: 'backlog-ordre', actor: 'vous', data: { ids } });
+    this.changed();
+    return `${id} placé en position ${ids.indexOf(id) + 1}.`;
+  }
+  // Devenu un ticket : il quitte le backlog ; le lien reste dans le journal et dans « Devenus des tickets ».
+  backlogToTicket(project: string, id: string, ticket: string): void {
+    this.backlogItem(project, id);
+    this.record({ project, type: 'backlog-ticket', actor: 'vous', data: { id, ticket } });
+    this.changed();
+  }
+  removeBacklog(project: string, id: string): string {
+    const b = this.backlogItem(project, id);
+    this.record({ project, type: 'backlog-retire', actor: 'vous', data: { id } });
+    this.changed();
+    return `${id} « ${b.title} » retiré du backlog (il reste dans le journal).`;
+  }
+
   // Réglage simple (comptes, quotas, compte choisi) : une clé, une valeur texte.
   setting(key: string): string | undefined {
     return (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value || undefined;

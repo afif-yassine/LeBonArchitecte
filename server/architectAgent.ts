@@ -33,9 +33,10 @@ const RULES = [
   'Une idée qu’il propose ou une question « et si… ? » est une discussion : donne ton avis en 3 à 6 phrases (ce qui est bien, le problème, ce que tu ferais à la place, son ordre de coût), puis demande ce qu’il en pense. Le format complet ci-dessous seulement quand il te dit de le faire.',
   'Une discussion d’architecture se fait en plusieurs messages : propose, écoute ses objections, ajuste ; ne refais pas toute l’analyse à chaque message, continue la discussion en cours. Quand il dit « on valide » ou « c’est décidé », résume la décision en 5 lignes au plus, puis crée UN ticket « Décision : <titre> » qui l’écrit dans docs/decisions. Pas de rapport avant.',
   'Tu agis seul, sans demander la permission, avec la commande : node scripts/lba.mjs <commande> (node scripts/lba.mjs aide pour la liste).',
-  'Tu peux : créer des tickets (titre, attendu, critères vérifiables, modèle), valider des plans, changer l’ordre, lancer, mettre en pause, reprendre, écrire aux agents, leur demander de résoudre, lire le code, les documents, les déroulés et les comptes rendus.',
+  'Tu peux : tenir le backlog (lba backlog, backlog-ajouter, backlog-placer : les idées et besoins pas encore décidés), créer des tickets (titre, attendu, critères vérifiables, modèle ; --depuis B-n quand il vient du backlog), valider des plans, changer l’ordre, lancer, mettre en pause, reprendre, écrire aux agents, leur demander de résoudre, lire le code, les documents, les déroulés et les comptes rendus.',
   'Restent au propriétaire (le serveur te les refuse) : réunir dans main (Valider), git, le pilote et le budget, supprimer, décider de tes propres propositions. Si c’est nécessaire, dis-lui précisément quoi faire.',
   'Règles du projet : ne jamais perturber un ticket en cours sans raison ; un changement de périmètre devient un nouveau ticket ; jamais le modèle Fable ; Opus seulement pour le risqué ou l’architecture, sinon Sonnet, Haiku pour le très simple.',
+  'Backlog ou ticket : une idée ou un besoin pas encore décidé va dans le backlog (lba backlog-ajouter, avec une taille S, M ou L) ; un ticket seulement pour du travail décidé. Ne mets pas en double ce qui est déjà dans le backlog ou les tickets.',
   'Un bon ticket : un titre court, ce qui est attendu, 2 à 4 critères vérifiables par un outil, les dépendances, le lot. Pas de ticket en double : regarde l’état fourni.',
   'Sécurité : si un ticket touche la connexion, les droits, un quota ou une limite, un paiement ou un envoi de fichiers, ajoute un critère « Test d’abus : <la triche précise> échoue » (exemple : « Test d’abus : supprimer puis remettre le fichier ne remet pas le quota à zéro »). Si la règle n’existe pas encore, propose-la pour les règles du projet. Le programme cherche déjà les secrets et les fichiers .env : pas besoin d’un ticket pour cela.',
   'Économie de tokens : l’état du projet t’est donné, ne le redemande que s’il a changé. Ne relis jamais un fichier déjà lu. Lis par morceaux (Grep, Read avec offset). Ne lis pas docs/JOURNAL.md ni toutes les décisions sauf si la demande les concerne.',
@@ -57,6 +58,13 @@ const DENIED = ['Edit', 'Write', 'NotebookEdit', 'Read(**/.env*)', 'Read(**/*.pe
   'Bash(git push *)', 'Bash(git merge *)', 'Bash(git reset *)', 'Bash(git checkout *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git -C *)', 'Bash(rm *)', 'Bash(curl *)', 'Bash(npx *)', 'Bash(npm *)',
   'WebFetch', 'WebSearch'];
 
+// Les 5 premiers éléments du backlog (lot B) : il sait ce qui attend une décision sans le chercher.
+function backlogLine(engine: Engine, project: string): string {
+  const b = engine.backlog(project).items;
+  if (!b.length) return 'Backlog : vide.';
+  return [`Backlog (${b.length}, dans l’ordre voulu) :`, ...b.slice(0, 5).map((x) => `- ${x.id}${x.size ? ` [${x.size}]` : ''} ${x.title}`), ...(b.length > 5 ? [`- … ${b.length - 5} autres (lba backlog)`] : [])].join('\n');
+}
+
 // État du projet préparé par le programme (0 token) : ce que l'Architecte demanderait sinon avec un outil.
 export function projectDigest(engine: Engine, project: string): string {
   const ts = engine.tickets(project);
@@ -75,6 +83,7 @@ export function projectDigest(engine: Engine, project: string): string {
     `État du projet ${project} (préparé par le programme) :`,
     `Pilote ${p.on ? 'allumé' : 'coupé'}, budget du jour ${Math.round(p.spentToday / 1000)} k sur ${Math.round(p.dayBudget / 1000)} k${p.budgetHit ? ' : ATTEINT, aucun ticket ne part' : ''}.`,
     `Écrans encore en maquette, pas branchés sur les vraies données : ${Object.keys(NOT_PLUGGED).join(', ')}.`,
+    backlogLine(engine, project),
     col('action', 'Besoin d’action'), col('en-cours', 'En cours'), col('a-tester', 'À tester'), col('a-faire', 'À faire'), col('termine', 'Fini', 6),
   ].filter(Boolean).join('\n');
 }
@@ -257,7 +266,7 @@ export function askArchitectAgent(engine: Engine, project: string, repo: string,
           tools.set(b.id, what);
           liveStep(project, what);
           // Seules les actions qui changent quelque chose vont dans le carnet ; les lectures restent discrètes.
-          if (/^lba (creer|valider-plan|replanifier|lancer|pause|reprendre|arreter|resoudre|tester|message|refuser|ordre)\b/.test(what)) engine.architectSay(project, 'action', what);
+          if (/^lba (creer|backlog-ajouter|backlog-placer|valider-plan|replanifier|lancer|pause|reprendre|arreter|resoudre|tester|message|refuser|ordre)\b/.test(what)) engine.architectSay(project, 'action', what);
         }
       }
     } else if (m.type === 'user' && !m.parent_tool_use_id) {

@@ -376,3 +376,12 @@ La règle 2 du cahier des charges demande des jalons mesurés. Voici les cibles,
 - Opus réfléchit moins (« moyen ») pour discuter, et plus (« poussé ») seulement pour une longue demande.
 - Mesuré sur une vraie question : première étape affichée à 3,6 s, premiers mots à 5,7 s, fini à 6,4 s.
 - Défaut trouvé et corrigé dans `scripts/dev.mjs` : un moteur arrêté par une erreur n'était jamais relancé (le relanceur attendait sa fin, qui avait déjà eu lieu).
+
+## Lot B : le vrai Backlog (19 nov. 2026)
+- Le Backlog garde les idées et les besoins **pas encore décidés** : titre, détail, taille (petit, moyen, gros), qui l'a ajouté. Chaque changement est un événement du journal, comme pour les tickets.
+- On les range par glisser-déposer, ou avec les flèches (au clavier aussi). On les modifie, ou on les retire (le retrait reste au propriétaire, et l'élément reste dans le journal).
+- **« En faire un ticket »** demande à l'Architecte d'écrire 2 à 4 critères, puis de créer le ticket avec `lba creer … --depuis B-n`. L'élément quitte alors le backlog : une information à un seul endroit. On le retrouve sous « Devenus des tickets ».
+- L'Architecte a `lba backlog`, `backlog-ajouter` et `backlog-placer`. Il voit les 5 premiers éléments dans l'état du projet. Sa règle : une idée pas encore décidée va dans le backlog, un ticket seulement pour du travail décidé.
+- Trois vrais éléments ajoutés, qui attendent une décision : la carte du code sur un gros projet, une relecture automatique pour les tickets risqués, les styles CSS jamais utilisés.
+- Vérifié : 70 tests verts, écran contrôlé sur PC et téléphone, sans erreur.
+- LBA-13 (un **rapport** de backlog) n'a plus de raison d'être : à vous de décider si on le garde.
